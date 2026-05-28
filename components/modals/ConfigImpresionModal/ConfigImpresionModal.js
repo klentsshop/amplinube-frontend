@@ -720,19 +720,19 @@ export default function ConfigImpresionModal({ isOpen, onClose, categorias, tena
                     )}
 
                     {/* 🍔 PESTAÑA 4: AGREGAR NUEVO PRODUCTO (Se queda aquí por ahora) */}
-                    {pestanaActiva === 'productos' && (
-                        <VistaProductos 
-                        nuevoPlato={nuevoPlato} setNuevoPlato={setNuevoPlato}
-                        categorias={listaCategoriasCompletas} handleCrearProducto={handleCrearProducto}
-                        guardando={guardando} setPestanaActiva={setPestanaActiva}
-                        listaProductosCompletas={listaProductosCompletas} 
-                        busquedaProd={busquedaProd} setBusquedaProd={setBusquedaProd}// 👈 Agrega estas
-                        listaInventario={listaInventario} // 👈 Agrega esta
-                        activarEdicionProducto={activarEdicionProducto}
-                        editandoProductoId={editandoProductoId} cancelarEdicionProducto={cancelarEdicionProducto}
-                       subirImagenASanity={subirImagenASanity}
-                     />
-                    )}
+                      {pestanaActiva === 'productos' && (
+    <VistaProductos 
+        nuevoPlato={nuevoPlato} setNuevoPlato={setNuevoPlato}
+        categorias={listaCategoriasCompletas} handleCrearProducto={handleCrearProducto}
+        guardando={guardando} setPestanaActiva={setPestanaActiva}
+        listaProductosCompletas={listaProductosCompletas} 
+        busquedaProd={busquedaProd} setBusquedaProd={setBusquedaProd}
+        listaInventario={listaInventario}
+        activarEdicionProducto={activarEdicionProducto}
+        editandoProductoId={editandoProductoId} cancelarEdicionProducto={cancelarEdicionProducto}
+        subirImagenASanity={subirImagenASanity}
+    />
+)}
                     {/* 💸 PESTAÑA 5: MÓDULO DE GASTOS (AGREGA ESTE BLOQUE EXACTAMENTE AQUÍ) */}
                     {pestanaActiva === 'gastos' && (
                         <VistaGastos 

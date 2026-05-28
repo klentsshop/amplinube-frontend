@@ -97,7 +97,7 @@ export function CartProvider({ children, tenantId }) {
   
  const addProduct = React.useCallback(async (product, cantidadManual = null) => {
     const pId = product._id || product.id;
-    const precioNum = cleanPrice(product.precio);
+    const precioNum = typeof product.precio === 'number' ? product.precio : cleanPrice(product.precio);
     
     // 🥩 LÓGICA DE PESO: Si viene de la báscula/manual lo usamos, si no, es 1.
     const cantAAgregar = cantidadManual !== null ? Number(cantidadManual) : 1;

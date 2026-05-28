@@ -80,15 +80,21 @@ export async function POST(req) {
         );
 
         // --- 5. MAPEO DE PLATOS PARA LA VENTA ---
-        const platosVenta = (payload.platosVendidosV2 || []).map(item => ({
-            _key: crypto.randomUUID(),
-            _type: 'platoVendidoV2',
-            nombrePlato: item.nombrePlato || item.nombre,
-            cantidad: Number(item.cantidad) || 1,
-            precioUnitario: Number(item.precioUnitario) || 0,
-            subtotal: Number(item.subtotal) || 0,
-            comentario: item.comentario || ""
-        }));
+        // ✅ CÓDIGO BLINDADO:
+const platosVenta = (payload.platosVendidosV2 || []).map(item => {
+    const precioFinal = Number(item.precioUnitario || item.precioNum || item.precio) || 0;
+    const cantidadFinal = Number(item.cantidad) || 1;
+    
+    return {
+        _key: crypto.randomUUID(),
+        _type: 'platoVendidoV2',
+        nombrePlato: item.nombrePlato || item.nombre,
+        cantidad: cantidadFinal,
+        precioUnitario: precioFinal,
+        subtotal: Number(item.subtotal) || (precioFinal * cantidadFinal),
+        comentario: item.comentario || ""
+    };
+});
 
         const detallePagosValido = (Array.isArray(payload.detallePagos) && payload.detallePagos.length > 0) 
             ? payload.detallePagos 
@@ -133,6 +139,11 @@ export async function POST(req) {
             tipoOrden,
             ...(datosEntrega && typeof datosEntrega === 'object' ? { datosEntrega } : {}),
             metodoPago: detallePagosValido.length > 1 ? 'múltiple' : metodoPago,
+            detallePagos: detallePagosValido.map(p => ({
+                _key: crypto.randomUUID(),
+                metodo: String(p.metodo || 'efectivo').toLowerCase().trim(),
+                monto: Number(p.monto || 0)
+            })),
             items: platosVenta.map(p => ({
                 _key: crypto.randomUUID(),
                 nombrePlato: p.nombrePlato,

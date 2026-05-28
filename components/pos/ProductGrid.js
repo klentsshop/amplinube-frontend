@@ -125,7 +125,59 @@ const platosFinales = useMemo(() => {
                 </div>
 
             {/* Cuadrícula de Platos con Diseño Split */}
+            {/* Cuadrícula de Platos con Diseño Split */}
             <div className={styles.productsGrid}>
+                
+                {/* 🚀 TARJETA COMODÍN: INTEGRACIÓN DE VALOR MANUAL */}
+                <div 
+                    className={styles.productCard} 
+                    style={{ border: '2px dashed #10b981', backgroundColor: '#f0fdf4' }}
+                    onClick={() => {
+                        const nombreManual = prompt("📝 Ingrese el nombre del artículo manual:");
+                        if (!nombreManual || !nombreManual.trim()) return;
+
+                        const precioManual = prompt(`💰 Ingrese el precio para "${nombreManual.toUpperCase()}":`);
+                        if (!precioManual || isNaN(precioManual) || Number(precioManual) <= 0) {
+                            alert("❌ Precio inválido.");
+                            return;
+                        }
+
+                        // Creamos un objeto simulado idéntico a la estructura de Sanity
+                        const itemSimulado = {
+                            _id: `manual_${Date.now()}`, // ID único temporal
+                            nombre: nombreManual.trim().toUpperCase(),
+                            precio: Number(precioManual),
+                            categoria: (categoriaActiva && categoriaActiva !== 'todos') ? categoriaActiva : 'MANUAL',
+                            disponible: true,
+                            controlaInventario: false,
+                            seImprime: true
+                        };
+
+                        // Se inyecta directo al carrito global de forma atómica
+                        agregarAlCarrito(itemSimulado);
+                    }}
+                >
+                    {/* Icono representativo o fondo */}
+                    <div 
+                        className={styles.cardImage} 
+                        style={{ 
+                            display: 'flex', 
+                            alignItems: 'center', 
+                            justifyContent: 'center', 
+                            backgroundColor: '#e6f4ea', 
+                            fontSize: '2rem' 
+                        }}
+                    >
+                        ➕💵
+                    </div>
+                    
+                    <div className={styles.cardInfo}>
+                        <div className={styles.cardTitle} style={{ color: '#047857', fontWeight: 'bold' }}>🛒 ÍTEM MANUAL</div>
+                        <div className={styles.cardPrice} style={{ color: '#10b981' }}>DIGITAR VALOR</div>
+                    </div>
+                </div>
+
+                {/* CONTINÚA EL RENDERIZADO DEL CATÁLOGO REAL */}
                 {platosFinales.map(plato => (
                     <div 
     key={plato._id} 
