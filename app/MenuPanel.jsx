@@ -30,10 +30,10 @@ import ModalPesaje from '@/components/modals/ModalPesaje'; // Asegúrate de que 
 import { useInventario } from '@/hooks/useInventario';
 
 
-export default function MenuPanel() {
+export default function MenuPanel({ configNegocio: configInyectada }) {
     // --- 1. ESTADOS DE IDENTIDAD Y CONFIGURACIÓN (Cimientos) ---
     const [tenantId, setTenantId] = useState(CURRENT_TENANT);
-    const [configNegocio, setConfigNegocio] = useState(null);
+    const [configNegocio, setConfigNegocio] = useState(configInyectada);
     const [platos, setPlatos] = useState([]);
     const [categoriaActiva, setCategoriaActiva] = useState('todos');
     const [cargando, setCargando] = useState(true);
@@ -86,19 +86,13 @@ export default function MenuPanel() {
         setMostrarCarritoMobile, nombreMesero, setNombreMesero, tipoOrden, validarPinAdmin: acc.validarPinAdmin, tenantId, config: configNegocio
     });
 
-    // --- 4. EFECTOS Y WATCHERS ---
-    // ✅ DESPUÉS (Bloque quirúrgico):
-useEffect(() => {
-    if (typeof window !== 'undefined') {
-        console.log("🔒 MenuPanel conectado al Tenant Dinámico:", CURRENT_TENANT);
-        setTenantId(CURRENT_TENANT);
-        
-        fetch(`/api/config/get?tenantId=${CURRENT_TENANT}`)
-            .then(res => res.json())
-            .then(data => setConfigNegocio(data))
-            .catch(err => console.error("Error cargando config:", err));
-    }
-}, []);
+// --- 4. EFECTOS Y WATCHERS ---
+    // 🚀 SINCRO MULTITENANT: Escucha los cambios vivos que vienen de Sanity a través del Wrapper
+    useEffect(() => {
+        if (configInyectada) {
+            setConfigNegocio(configInyectada);
+        }
+    }, [configInyectada]);
 
     // 🚀 AJUSTE SENIOR EN MENU PANEL
     useWindowsPrint(

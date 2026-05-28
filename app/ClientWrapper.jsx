@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react';
 import MenuPanel from '@/app/MenuPanel'; 
 import { getTenantKey } from '@/lib/utils'; // 👈 Tu función de detección
 import { sanityClientPublic as client } from '@/lib/sanity'; // Cliente sin token para config pública
+import { SITE_CONFIG } from '@/lib/config'; // 🚀 Importamos tu SITE_CONFIG global
 
 export default function ClientWrapper() {
   const [config, setConfig] = useState(null);
@@ -11,29 +12,39 @@ export default function ClientWrapper() {
 
   useEffect(() => {
     const fetchTenantConfig = async () => {
-      const tenantId = getTenantKey();
+      let tenantId = getTenantKey();
+
+if (typeof window !== 'undefined' && window.location.hostname === 'localhost') {
+  tenantId = process.env.NEXT_PUBLIC_TENANT_DEFAULT || 'demo';
+}
       
       try {
-        // 📡 Traemos la configuración visual y legal de Sanity para ESTE tenant
+        // 📡 Consulta corregida con tu esquema REAL de Sanity ('negocio' y 'slug')
         const data = await client.fetch(
-          `*[_type == "configuracionNegocio" && tenant == $tenantId][0]{
+          `*[_type == "negocio" && slug.current == $tenantId][0]{
             nombre,
             nit,
             direccion,
             telefono,
-            colorPrincipal,
-            colorSecundario,
-            logo
+            colordark
           }`,
           { tenantId },
           { useCdn: false } // Siempre fresco para cambios de marca en vivo
         );
 
         if (data) {
-          // 🎨 INYECCIÓN DE ESTILOS DINÁMICOS
-          // Esto reemplaza las variables de entorno (.env) para los colores
-          document.documentElement.style.setProperty('--color-primary', data.colorPrincipal || '#10B981');
-          document.documentElement.style.setProperty('--color-secondary', data.colorSecundario || '#3B82F6');
+          
+          // 🎨 1. Inyección de estilos CSS Dinámicos (Tu color dark personalizado)
+          if (data.colordark) {
+            document.documentElement.style.setProperty('--color-dark', data.colordark);
+            SITE_CONFIG.theme.dark = data.colordark;
+          }
+
+          // 🏢 2. Sincronizamos de inmediato tu SITE_CONFIG global para que tus otros modales lo lean
+          SITE_CONFIG.brand.name = data.nombre || SITE_CONFIG.brand.name;
+          SITE_CONFIG.brand.nit = data.nit || SITE_CONFIG.brand.nit;
+          SITE_CONFIG.brand.address = data.direccion || SITE_CONFIG.brand.address;
+          SITE_CONFIG.brand.phone = data.telefono || SITE_CONFIG.brand.phone;
           
           setConfig(data);
         }
@@ -52,7 +63,7 @@ export default function ClientWrapper() {
     return (
       <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#000A6F' }}>
         <div style={{ textAlign: 'center', color: 'white' }}>
-          <h2 style={{ fontWeight: 'bold', animate: 'pulse' }}>SOCIO POS</h2>
+          <h2 style={{ fontWeight: 'bold' }}>AMPLINUBE</h2>
           <p style={{ fontSize: '0.8rem', opacity: 0.7 }}>Detectando ecosistema...</p>
         </div>
       </div>
@@ -60,6 +71,5 @@ export default function ClientWrapper() {
   }
 
   // 🚀 PASAMOS LA CONFIG AL PANEL
-  // Ahora el MenuPanel no tiene que adivinar quién es; ya recibe su "DNI" por props.
   return <MenuPanel configNegocio={config} />; 
 }

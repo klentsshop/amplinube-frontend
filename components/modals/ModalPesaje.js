@@ -43,41 +43,76 @@ export default function ModalPesaje({ plato, isOpen, onClose, onConfirm }) {
     };
 
     // ⚖️ Función de conexión principal
+    // ⚖️ Función de conexión principal - BLINDADA CONTRA BOMBARDEO DE DATOS Y RE-RENDERS
     const conectarBascula = async () => {
         if (!isOpen || !navigator.serial) return;
         try {
-            const ports = await navigator.serial.getPorts();
-            const port = ports[0];
-            if (!port) return;
+            let ports = await navigator.serial.getPorts();
+            let port = ports[0];
+            
+            if (!port) {
+                try {
+                    port = await navigator.serial.requestPort();
+                } catch (err) {
+                    console.warn("⚠️ El usuario canceló la selección de la báscula.");
+                    return;
+                }
+            }
+
+            // 🛡️ Candado estructural: Si el puerto ya está guardado y abierto, no hacemos nada más
+            if (portRef.current) return;
 
             portRef.current = port;
-            await port.open({ baudRate: 9600 });
+            await port.open({ baudRate: 9600 }); // Asegúrate que 9600 sea el baudRate de tu báscula
             
             const reader = port.readable.getReader();
             readerRef.current = reader;
 
+            // 🧠 LA CLAVE: El acumulador vive en la memoria de la función, NO en un estado de React
             let acumulador = ""; 
+            let ultimoPesoProcesado = "";
 
             while (true) {
                 const { value, done } = await reader.read();
                 if (done) break;
 
+                // 📨 Recibimos los bytes crudos de la ráfaga y los volvemos texto de inmediato
                 const chunk = new TextDecoder().decode(value);
                 acumulador += chunk;
 
+                // 🛑 EL FRENO DE MANO: Cancelamos el temporizador anterior.
+                // Mientras la báscula mande miles de datos por segundo, este temporizador se pospone
+                // y solo se va a ejecutar cuando el acumulador tenga un bloque de datos completo.
                 clearTimeout(timeoutIdRef.current);
 
                 timeoutIdRef.current = setTimeout(() => {
+                    // 🔍 Buscamos números con o sin decimales dentro del paquete acumulado
                     const coincidencia = acumulador.match(/\d+\.\d+|\d+/);
+                    
                     if (coincidencia) {
                         const pesoFinal = coincidencia[0];
-                        setInput(prev => (prev !== pesoFinal ? pesoFinal : prev));
+                        
+                        // 📊 FILTRO ULTRA-SENIOR: Solo si el peso cambió significativamente, tocamos a React
+                        if (pesoFinal !== ultimoPesoProcesado) {
+                            const diff = Math.abs(parseFloat(ultimoPesoProcesado || "0") - parseFloat(pesoFinal));
+                            
+                            // Si la variación es real (mayor a 5 gramos), actualizamos la interfaz de golpe
+                            if (isNaN(diff) || diff >= 0.005) {
+                                ultimoPesoProcesado = pesoFinal; // Guardamos en memoria local
+                                setInput(pesoFinal); // 🚀 Un único render controlado para pintar los KG
+                            }
+                        }
                     }
+                    
+                    // 🧹 Vaciamos el buffer del acumulador para recibir la siguiente tanda limpia
                     acumulador = ""; 
-                }, 50); 
+                }, 100); // ⏱️ 100ms de retraso es el punto dulce: absorbe el impacto de los miles de datos pero responde al instante
             }
         } catch (error) {
-            console.warn("Error en la conexión serial:", error);
+            console.warn("🔥 Error en la conexión serial:", error);
+            // Si el puerto se bloqueó por el error anterior, limpiamos las referencias para poder reintentar
+            portRef.current = null;
+            readerRef.current = null;
         }
     };
 
@@ -87,12 +122,17 @@ export default function ModalPesaje({ plato, isOpen, onClose, onConfirm }) {
         await conectarBascula();
     };
 
-    useEffect(() => {
-        conectarBascula();
+   useEffect(() => {
+        if (isOpen) {
+            conectarBascula();
+        }
 
         return () => {
-            clearTimeout(timeoutIdRef.current);
-            liberarPuerto(); // Limpieza al desmontar o cerrar
+            // 🛡️ Limpieza total e instantánea para evitar fugas de memoria
+            if (timeoutIdRef.current) {
+                clearTimeout(timeoutIdRef.current);
+            }
+            liberarPuerto(); 
         };
     }, [isOpen]);
     

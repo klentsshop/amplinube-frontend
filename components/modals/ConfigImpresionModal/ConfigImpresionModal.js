@@ -234,25 +234,37 @@ export default function ConfigImpresionModal({ isOpen, onClose, categorias, tena
         } finally { setGuardando(false); }
     };
 
-    const handleEliminarCategoria = async (id, nombre) => {
-        if (!confirm(`⚠️ ¿Seguro que deseas eliminar la categoría "${nombre}"?\n\n¡Esto no se puede deshacer y desvinculará los productos asociados!`)) return;
-        setGuardando(true);
-        try {
-            const res = await fetch('/api/admin/categorias', {
-                method: 'DELETE',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ categoriaId: id, tenantId })
-            });
-            const data = await res.json();
-            if (data.ok) {
-                alert('🗑️ Categoría eliminada del sistema.');
-                await cargarCategoriasNegocio();
-                window.dispatchEvent(new Event('inventarioActualizado'));
-            } else { alert(`❌ Error: ${data.error}`); }
-        } catch (e) {
-            alert('❌ Error al intentar eliminar.');
-        } finally { setGuardando(false); }
-    };
+   const handleEliminarCategoria = async (id, nombre) => {
+    if (!confirm(`⚠️ ¿Seguro que deseas eliminar la categoría "${nombre}"?\n\n¡Esto no se puede deshacer y desvinculará los productos asociados!`)) return;
+    setGuardando(true);
+    try {
+        const res = await fetch('/api/admin/categorias', {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ categoriaId: id, tenantId })
+        });
+        
+        const data = await res.json();
+        
+        if (data.ok) {
+            alert('🗑️ Categoría eliminada del sistema.');
+            await cargarCategoriasNegocio();
+            window.dispatchEvent(new Event('inventarioActualizado'));
+        } else { 
+            // 🧠 BISTURÍ: Interceptamos si el error técnico contiene la palabra "reference" o "referred"
+            const errorTexto = String(data.error || '').toLowerCase();
+            
+            if (errorTexto.includes('reference') || errorTexto.includes('referred') || errorTexto.includes('w10n')) {
+                alert(`🚫 No se puede eliminar "${nombre}" porque todavía tiene productos vinculados a esta categoría.\n\nPor favor, cambia esos productos a otra categoría o bórralos antes de intentar eliminarla.`);
+            } else {
+                // Si es otro tipo de error (ej. conexión), dejamos el mensaje genérico estándar
+                alert(`❌ No se pudo eliminar: ${data.error}`);
+            }
+        }
+    } catch (e) {
+        alert('❌ Fallo de comunicación con el servidor al intentar eliminar.');
+    } finally { postElement: setGuardando(false); }
+};
 
     const activarEdicion = (cat) => {
         setNuevaCatTitulo(cat.titulo);
@@ -641,7 +653,7 @@ export default function ConfigImpresionModal({ isOpen, onClose, categorias, tena
 
     return (
         <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10000, padding: '20px', backdropFilter: 'blur(4px)' }}>
-            <div style={{ backgroundColor: 'white', borderRadius: '16px', width: '100%', maxWidth: '650px', maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.2)', overflow: 'hidden', border: '1px solid #e5e7eb', fontFamily: 'sans-serif' }}>
+            <div style={{ backgroundColor: 'white', borderRadius: '16px', width: '100%', maxWidth: '750px', maxHeight: 'auto', maxHeight: 'calc(100vh - 40px)', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.2)', overflow: 'hidden', border: '1px solid #e5e7eb', fontFamily: 'sans-serif' }}>
                 
                 {/* Header Estilo Talanquera Original */}
                 <div style={{ backgroundColor: '#1f2937', color: 'white', padding: '20px', display: 'flex', alignItems: 'center', gap: '12px' }}>

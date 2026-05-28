@@ -82,7 +82,7 @@ function TicketContent() {
             <div style={{ textAlign: 'center', marginBottom: '10px' }}>
     <h2 style={{ margin: '0 0 2px 0', fontSize: esModoCocina ? '24px' : '18px', fontWeight: 'bold', lineHeight: '1' }}>
         {/* Si es cocina, mostramos la mesa. Si es ticket, los datos del cliente que vienen en data.brand */}
-        {esModoCocina ? `MESA: ${data.mesa || '0'}` : (data.brand?.name || "SOCIO POS").toUpperCase()}
+        {esModoCocina ? `MESA: ${data.mesa || '0'}` : (data.brand?.name || "AMPLINUBE").toUpperCase()}
     </h2>
 
                     {!esModoCocina && data.brand && (
@@ -103,13 +103,13 @@ function TicketContent() {
 
                 <hr style={{ border: 'none', borderTop: esModoCocina ? '2px solid #000' : '1px dashed #000' }} />
 
-                <table style={{ width: '100%', fontSize: esModoCocina ? '20px' : '13px', borderCollapse: 'collapse', marginTop: '5px', fontFamily: 'monospace' }}>
+                <table style={{ width: '100%', fontSize: esModoCocina ? '20px' : '13px', borderCollapse: 'collapse', marginTop: '5px', fontFamily: 'monospace', tableLayout: 'fixed' }}>
                     <thead>
-                        <tr style={{ borderBottom: '1px solid #000' }}>
-                            <th style={{ textAlign: 'left', width: '28px' }}>CANT</th>
-                            <th style={{ textAlign: 'left' }}>PRODUCTO</th>
-                            {!esModoCocina && <th style={{ textAlign: 'right', width: '68px' }}>TOTAL</th>}
-                        </tr>
+                    <tr style={{ borderBottom: '1px solid #000' }}>
+                    <th style={{ textAlign: 'left', width: '40px' }}>CANT</th>
+                    <th style={{ textAlign: 'left', width: 'auto' }}>PRODUCTO</th>
+                    {!esModoCocina && <th style={{ textAlign: 'right', width: '75px' }}>TOTAL</th>}
+                    </tr>
                     </thead>
                     <tbody>
                         {(() => {
@@ -133,10 +133,10 @@ function TicketContent() {
 
                                 return (
                                     <tr key={index} style={{ borderBottom: esModoCocina ? '1px solid #000' : '1px solid #eee' }}>
-                                        <td style={{ padding: '4px 0', verticalAlign: 'top', fontWeight: 'bold', fontSize: esModoCocina ? '22px' : '14px', width: '28px' }}>
+                                        <td style={{ padding: '4px 0', verticalAlign: 'top', fontWeight: 'bold', fontSize: esModoCocina ? '22px' : '14px', width: '40px' }}>
                                             {esPeso ? cantNum.toFixed(3) : cantNum}x
                                         </td>
-                                        <td style={{ padding: '4px 0', wordBreak: 'break-word', paddingLeft: '5px' }}>
+                                        <td style={{ padding: '4px 0', paddingLeft: '5px', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>
                                             <div style={{ fontWeight: 'bold', fontSize: esModoCocina ? '22px' : '14px', lineHeight: '1' }}>
                                                 {item.nombre}
                                             </div>
@@ -224,15 +224,14 @@ function TicketContent() {
                         table-layout: fixed !important;
                         border-collapse: collapse !important;
                     }
-
-                    th:nth-child(1), td:nth-child(1) { width: 45px !important; }
-                    th:nth-child(2), td:nth-child(2) { 
+                   th:nth-child(1), td:nth-child(1) { width: 40px !important; }
+                   th:nth-child(2), td:nth-child(2) { 
                    width: auto !important; 
-                   white-space: nowrap !important; /* Evita que pase a la siguiente línea */
+                   white-space: nowrap !important; 
                    overflow: hidden !important; 
-                   text-overflow: ellipsis !important; /* Pone puntos suspensivos si es muy largo */
-                    }
-                    th:nth-child(3), td:nth-child(3) { width: 68px !important; text-align: right !important; padding-right: 2px !important; }
+                   text-overflow: ellipsis !important; 
+                   }
+                   th:nth-child(3), td:nth-child(3) { width: 75px !important; text-align: right !important; padding-right: 0 !important; }
 
                     td {
                         line-height: 1 !important;

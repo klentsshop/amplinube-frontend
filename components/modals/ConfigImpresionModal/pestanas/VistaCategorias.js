@@ -51,7 +51,7 @@ export default function VistaCategorias({
                         <div style={{ display: 'flex', flexDirection: 'column' }}>
                             <span style={{ fontWeight: '600', color: '#1f2937', fontSize: '0.9rem' }}>{cat.titulo}</span>
                             <span style={{ fontSize: '0.7rem', color: cat.seImprime ? '#10b981' : '#ef4444', fontWeight: 'bold' }}>
-                                {cat.seImprime ? '🖨️ ENVÍA A COCINA' : '🚫 NO IMPRIME'}
+                                {cat.seImprime ? '🖨️ SE IMPRIME' : '🚫 NO IMPRIME'}
                             </span>
                         </div>
                         <div style={{ display: 'flex', gap: '6px' }}>

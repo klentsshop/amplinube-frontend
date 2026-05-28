@@ -6,7 +6,7 @@ import ClientWrapper from './ClientWrapper';
 // page.js es un Server Component por defecto
 export async function generateMetadata() {
  return {
-    title: 'Socio POS | Sistema de Ventas',
+    title: 'AMPLINUBE | Sistema de Ventas',
     description: 'Gestión inteligente para tu negocio',
   };
 }
