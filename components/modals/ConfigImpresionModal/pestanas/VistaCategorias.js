@@ -45,7 +45,7 @@ export default function VistaCategorias({
             </div>
 
             <label style={{ display: 'block', fontWeight: 'bold', fontSize: '0.8rem', color: '#374151', marginBottom: '8px', textTransform: 'uppercase' }}>Categorías del Negocio</label>
-            <div style={{ maxHeight: '160px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '6px', paddingRight: '4px' }}>
+            <div style={{ maxHeight: '140px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '6px', paddingRight: '4px' }}>
                 {listaCategoriasCompletas.map(cat => (
                     <div key={cat._id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px', borderRadius: '8px', border: '1px solid #f3f4f6', backgroundColor: '#fff' }}>
                         <div style={{ display: 'flex', flexDirection: 'column' }}>

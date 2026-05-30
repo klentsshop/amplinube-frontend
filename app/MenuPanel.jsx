@@ -14,6 +14,7 @@ import { useOrdenHandlers } from '@/hooks/useOrdenHandlers';
 import { useGastos } from '@/hooks/useGastos';
 import { useWindowsPrint } from '@/hooks/useWindowsPrint';
 import { cleanPrice, getFechaBogota } from '@/lib/utils';
+import { client } from '@/lib/sanity';
 
 import { SITE_CONFIG as RESTAURANTE_CONFIG, CURRENT_TENANT } from '@/lib/config';
 import { PrintTemplates } from '@/components/pos/PrintTemplates';
@@ -42,6 +43,9 @@ export default function MenuPanel({ configNegocio: configInyectada }) {
     const [mostrarCategoriasMobile, setMostrarCategoriasMobile] = useState(false);
     const [mostrarCarritoMobile, setMostrarCarritoMobile] = useState(false);
     const [listaMeseros, setListaMeseros] = useState([]);
+    const [estaActivo, setEstaActivo] = useState(null);
+    const [pinBloqueo, setPinBloqueo] = useState('');
+    const [errorPin, setErrorPin] = useState(false);
     const [busqueda, setBusqueda] = useState(''); // 🔍 Nuevo estado para el buscador
     const [mostrarModalHistorial, setMostrarModalHistorial] = useState(false);
     const [mostrarInventario, setMostrarInventario] = useState(false);
@@ -105,11 +109,36 @@ export default function MenuPanel({ configNegocio: configInyectada }) {
     );
 
     useEffect(() => {
-        // Esto solo se ejecuta en el navegador (Client Side)
-        const vendedorPersistido = localStorage.getItem('ultimoMesero');
-        if (vendedorPersistido) {
+        const verificarSeguridadMesero = async () => {
+            const vendedorPersistido = localStorage.getItem('ultimoMesero');
+            
+            // CASO 1: Si no hay mesero seleccionado aún, el POS entra libre (Modo mostrador/caja inicial)
+            if (!vendedorPersistido) {
+                setEstaActivo(true);
+                return;
+            }
+
             setNombreMesero(vendedorPersistido);
-        }
+
+            // CASO 2: Hay un mesero en disco. Le preguntamos a Sanity si el jefe lo tiene activo
+            try {
+                // Buscamos por el string del nombre exacto que tienes mapeado
+                const query = `*[_type == "mesero" && nombre == $nombre && tenant == $tenantId][0]{ activo }`;
+                const resultado = await client.fetch(query, { nombre: vendedorPersistido, tenantId }, { useCdn: false });
+                
+                // Si el campo 'activo' viene explícitamente en false, se bloquea. Si no viene o está en true, pasa.
+                if (resultado && resultado.activo === false) {
+                    setEstaActivo(false);
+                } else {
+                    setEstaActivo(true);
+                }
+            } catch (e) {
+                console.error("Lag de red: Acceso permitido por caché síncrona.");
+                setEstaActivo(true); // Escudo de redundancia: si no hay internet, no paramos la venta
+            }
+        };
+
+        verificarSeguridadMesero();
     }, []);
 
     const datosAgrupados = React.useMemo(() => {
@@ -282,6 +311,122 @@ useEffect(() => {
 
 const categoriasParaConfig = useMemo(() => [...new Set(platos.map(p => p.categoria))], [platos]);
 if (!tenantId) return <div style={{background: '#111827', height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: '900'}}>IDENTIFICANDO COMERCIO...</div>;   
+
+// 🛡️ CONTROL EXPLÍCITO: Si está en null, congelamos pantalla para evitar parpadeos visuales
+if (estaActivo === null) {
+    return <div style={{background: '#090d16', height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 'bold', fontFamily: 'sans-serif'}}>COMPROBANDO PERMISOS...</div>;
+}
+
+if (!estaActivo) {
+        const manejarDigito = (num) => {
+            if (pinBloqueo.length < 4) {
+                setErrorPin(false);
+                setPinBloqueo(prev => prev + num);
+            }
+        };
+
+        const borrarDigito = () => {
+            setPinBloqueo(prev => prev.slice(0, -1));
+        };
+
+        const verificarPinMaestro = async () => {
+            try {
+                // 📡 GATILLO QUIRÚRGICO: Comparamos contra el rol 'cajero' que sí muta y valida la sesión real
+                const res = await fetch('/api/auth/verify', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ pin: pinBloqueo, tipo: 'cajero', tenantId: tenantId })
+                });
+                
+                const data = await res.json();
+
+                if (res.ok && data.success) {
+                    // 💵 ÉXITO OPERATIVO: El cajero/jefe toma el control de la terminal
+                    localStorage.setItem('ultimoMesero', 'Caja');
+                    setNombreMesero('Caja');
+                    setPinBloqueo('');
+                    setErrorPin(false);
+                    setEstaActivo(true); // Desbloqueo y rendering inmediato del POS
+                } else {
+                    setErrorPin(true);
+                    setPinBloqueo('');
+                }
+            } catch (error) {
+                console.error("Error en pasarela de autenticación:", error);
+                setErrorPin(true);
+                setPinBloqueo('');
+            }
+        };
+
+        return (
+            <div style={{ position: 'fixed', inset: 0, backgroundColor: '#090d16', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', zIndex: 999999, color: 'white', fontFamily: 'sans-serif', padding: '20px' }}>
+                
+                <div style={{ textAlign: 'center', marginBottom: '20px' }}>
+                    <h1 style={{ fontSize: '2.3rem', fontWeight: '900', letterSpacing: '3px', color: '#10b981', margin: 0 }}>AMPLINUBE</h1>
+                    <p style={{ fontSize: '0.75rem', color: '#475569', marginTop: '4px', textTransform: 'uppercase', fontWeight: 'bold' }}>Socio POS • Sistema Bloqueado</p>
+                </div>
+
+                <div style={{ backgroundColor: '#111827', padding: '25px', borderRadius: '24px', width: '100%', maxWidth: '340px', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.8)', border: '1px solid #1f2937', textAlign: 'center' }}>
+                    <span style={{ fontSize: '2.5rem' }}>🔒</span>
+                    <h2 style={{ margin: '8px 0 4px 0', fontSize: '1.1rem', color: '#ef4444', fontWeight: '900' }}>ACCESO RESTRINGIDO</h2>
+                    <p style={{ fontSize: '0.8rem', color: '#94a3b8', margin: '0 0 15px 0', lineHeight: '1.4' }}>
+                        La cuenta de <strong>"{nombreMesero?.toUpperCase()}"</strong> está inactiva. Ingrese PIN de Administrador para liberar la terminal:
+                    </p>
+
+                    {/* Esferas de seguridad estilo iPhone */}
+                    <div style={{ display: 'flex', justifyContent: 'center', gap: '15px', marginBottom: '20px' }}>
+                        {[0, 1, 2, 3].map((index) => (
+                            <div 
+                                key={index}
+                                style={{
+                                    width: '16px', height: '16px', borderRadius: '50%',
+                                    border: '2px solid #475569',
+                                    backgroundColor: pinBloqueo.length > index ? (errorPin ? '#ef4444' : '#10b981') : 'transparent',
+                                    transition: '0.1s'
+                                }}
+                            />
+                        ))}
+                    </div>
+
+                    {errorPin && <p style={{ color: '#f87171', fontSize: '0.8rem', fontWeight: 'bold', margin: '-10px 0 15px 0' }}>⚠️ PIN RECHAZADO</p>}
+
+                    {/* Teclado Físico Táctil Puro */}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', justifyContent: 'center' }}>
+                        {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((num) => (
+                            <button 
+                                key={num} type="button" onClick={() => manejarDigito(String(num))}
+                                style={{ height: '55px', borderRadius: '50%', border: 'none', backgroundColor: '#1f2937', color: 'white', fontSize: '1.3rem', fontWeight: 'bold', cursor: 'pointer' }}
+                            >
+                                {num}
+                            </button>
+                        ))}
+                        
+                        <button 
+                            type="button" onClick={borrarDigito}
+                            style={{ height: '55px', borderRadius: '50%', border: 'none', backgroundColor: '#374151', color: '#94a3b8', fontSize: '1rem', fontWeight: 'bold', cursor: 'pointer' }}
+                        >
+                            ⌫
+                        </button>
+
+                        <button 
+                            type="button" onClick={() => manejarDigito('0')}
+                            style={{ height: '55px', borderRadius: '50%', border: 'none', backgroundColor: '#1f2937', color: 'white', fontSize: '1.3rem', fontWeight: 'bold', cursor: 'pointer' }}
+                        >
+                            0
+                        </button>
+
+                        <button 
+                            type="button" onClick={verificarPinMaestro}
+                            disabled={pinBloqueo.length < 4}
+                            style={{ height: '55px', borderRadius: '50%', border: 'none', backgroundColor: pinBloqueo.length === 4 ? '#10b981' : '#374151', color: 'white', fontSize: '1rem', fontWeight: 'bold', cursor: pinBloqueo.length === 4 ? 'pointer' : 'not-allowed', transition: '0.2s' }}
+                        >
+                            OK ✔
+                        </button>
+                    </div>
+                </div>
+            </div>
+        );
+    }
 return (
         <div className={styles.mainWrapper}>
             <div className={styles.posLayout}>

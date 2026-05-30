@@ -459,16 +459,18 @@ const sincronizarBorradoEnSanity = async (carritoFiltrado) => {
     const pinIngresado = prompt(`🔒 PIN de Administrador para eliminar "${item.nombre}":`);
     if (!pinIngresado) return; 
 
-    try {
-        const res = await fetch('/api/auth/verify', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ pin: pinIngresado, tipo: 'admin', tenant: tenantId })
-        });
+  try {
+  const res = await fetch('/api/auth/verify', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    // 🛡️ Enviamos tenantId mapeado correctamente como exige la nueva API
+    body: JSON.stringify({ pin: pinIngresado, tipo: 'cajero', tenant: tenantId })
+});
 
-        const data = await res.json();
+const data = await res.json();
 
-        if (data.autorizado) {
+// 🛡️ Evaluamos con 'success' que es el parámetro real que devuelve el backend multitenant
+if (res.ok && data.success) {
             if (confirm(`✅ PIN Correcto. ¿Eliminar "${item.nombre}" de la mesa?`)) {
                 const carritoFiltrado = await eliminarLineaConStock(item.lineId);
 

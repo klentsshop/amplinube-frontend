@@ -43,7 +43,7 @@
 
 .productsGrid { 
     display: grid !important; 
-    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)) !important; 
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)) !important; 
     gap: 15px; 
     padding: 15px;
 }

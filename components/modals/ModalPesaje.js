@@ -13,6 +13,7 @@ export default function ModalPesaje({ plato, isOpen, onClose, onConfirm }) {
     const portRef = useRef(null);
     const readerRef = useRef(null);
     const timeoutIdRef = useRef(null);
+    const autoCleanIntervalRef = useRef(null);
 
     // 🎯 Foco y limpieza al abrir
     useEffect(() => {
@@ -25,20 +26,24 @@ export default function ModalPesaje({ plato, isOpen, onClose, onConfirm }) {
     }, [isOpen]);
 
     // 🔌 Función para liberar puerto (Evita bloqueos de "Puerto Ocupado")
-    const liberarPuerto = async () => {
+   const liberarPuerto = async () => {
         try {
+            clearTimeout(timeoutIdRef.current);
             if (readerRef.current) {
-                await readerRef.current.cancel();
+                // Forzamos la cancelación inmediata del hilo de lectura atrapado
+                await readerRef.current.cancel().catch(() => {});
                 readerRef.current.releaseLock();
                 readerRef.current = null;
             }
             if (portRef.current) {
-                await portRef.current.close();
+                await portRef.current.close().catch(() => {});
                 portRef.current = null;
             }
-            console.log("✅ Puerto liberado con éxito.");
+            console.log("✅ Puerto COM liberado físicamente de la RAM.");
         } catch (e) {
-            console.warn("Error liberando puerto:", e);
+            console.warn("Error liberando puerto serial:", e);
+            portRef.current = null;
+            readerRef.current = null;
         }
     };
 
@@ -116,26 +121,35 @@ export default function ModalPesaje({ plato, isOpen, onClose, onConfirm }) {
         }
     };
 
-    // 🔄 Botón de pánico/reconexión
     const handleForzarReconexion = async () => {
+        console.log("⚡ Ejecutando interrupción forzada de hardware...");
         await liberarPuerto();
-        await conectarBascula();
+        // Le damos un retraso físico de 400ms para que Windows limpie el buffer del puerto COM
+        setTimeout(() => {
+            conectarBascula();
+        }, 400);
     };
 
    useEffect(() => {
         if (isOpen) {
             conectarBascula();
+
+            // ⏱️ RADAR DE RESCATE AUTOMÁTICO (Cada 30 Segundos):
+            // Si el búfer se congela por un Ctrl+Shift+R o lag de la interfaz,
+            // este ciclo limpia el rastro congelado en background y fuerza el flujo limpio de nuevo.
+            autoCleanIntervalRef.current = setInterval(async () => {
+                console.log("🧹 Mantenimiento cíclico: Refrescando canal serial virtual...");
+                await liberarPuerto();
+                setTimeout(() => conectarBascula(), 300);
+            }, 30000); // 30 segundos exactos
         }
 
         return () => {
-            // 🛡️ Limpieza total e instantánea para evitar fugas de memoria
-            if (timeoutIdRef.current) {
-                clearTimeout(timeoutIdRef.current);
-            }
+            if (autoCleanIntervalRef.current) clearInterval(autoCleanIntervalRef.current);
+            if (timeoutIdRef.current) clearTimeout(timeoutIdRef.current);
             liberarPuerto(); 
         };
     }, [isOpen]);
-    
     // 🧮 Lógica de cálculo en tiempo real
     useEffect(() => {
         if (!plato || !input) {

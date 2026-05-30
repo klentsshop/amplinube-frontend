@@ -148,7 +148,7 @@ body {
   padding: 20px;
   overflow-y: auto;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); /* Tarjetas responsivas */
+  grid-template-columns: repeat(auto-fill, minmax(140pxpx, 1fr)); /* Tarjetas responsivas */
   gap: 15px;
   align-content: start;
 }
