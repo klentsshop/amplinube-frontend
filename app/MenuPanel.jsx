@@ -495,7 +495,8 @@ return (
             </div>
 
             <ListaOrdenesModal isOpen={mostrarListaOrdenes} onClose={() => setMostrarListaOrdenes(false)} ordenes={ordenesActivas} onCargar={(id) => { ord.cargarOrden(id).then(s => s && setMostrarListaOrdenes(false)) }} />
-            <ReporteModal isOpen={rep.mostrarReporte} onClose={() => rep.setMostrarReporte(false)} cargando={rep.cargandoReporte} datos={rep.datosReporte} fechaInicio={rep.fechaInicioReporte} setFechaInicio={rep.setFechaInicioReporte} fechaFin={rep.fechaFinReporte} setFechaFin={rep.setFechaFinReporte} onGenerar={rep.generarCierreDia} listaGastos={rep.listaGastosDetallada} />
+            <ReporteModal isOpen={rep.mostrarReporte} onClose={() => rep.setMostrarReporte(false)} cargando={rep.cargandoReporte} datos={rep.datosReporte} fechaInicio={rep.fechaInicioReporte} setFechaInicio={rep.setFechaInicioReporte} fechaFin={rep.fechaFinReporte} setFechaFin={rep.setFechaFinReporte}
+             onGenerar={rep.generarCierreDia} listaGastos={rep.listaGastosDetallada} config={configNegocio}/>
             
             <AdminModal 
                 isOpen={rep.mostrarAdmin} 
@@ -506,7 +507,8 @@ return (
                 setFechaFin={rep.setFechaFinFiltro} 
                 onGenerar={() => rep.cargarReporteAdmin()} 
                 cargando={rep.cargandoAdmin} 
-                reporte={rep.reporteAdmin} 
+                reporte={rep.reporteAdmin}
+                tenantId={tenantId}
             />
             <HistorialVentasModal 
              isOpen={mostrarModalHistorial} 

@@ -6,7 +6,7 @@ export default function ReporteModal({
     isOpen, onClose, cargando, datos, 
     fechaInicio, setFechaInicio, 
     fechaFin, setFechaFin, 
-    onGenerar, listaGastos 
+    onGenerar, listaGastos, config
 }) {
 
     const exportarExcelProfesional = () => {
@@ -43,8 +43,8 @@ export default function ReporteModal({
         const libro = XLSX.utils.book_new();
         // C. Resumen Contable
         const hojaResumen = XLSX.utils.json_to_sheet([
-            { "CONCEPTO": "NEGOCIO", "VALOR": config?.nombre?.toUpperCase() || "SOCIO POS" }, // 👈 Sello de identidad
-            { "CONCEPTO": "NIT", "VALOR": config?.nit || "N/A" }, // 👈 Sello legal
+            { "CONCEPTO": "NEGOCIO", "VALOR": config?.nombre ? config.nombre.toUpperCase() : "Amplinube" },
+            { "CONCEPTO": "NIT", "VALOR": config?.nit || "N/A" },
             { "CONCEPTO": "PERIODO", "VALOR": `${fechaInicio} al ${fechaFin}` },
             { "CONCEPTO": "---", "VALOR": "---" },
             { "CONCEPTO": "VENTAS TOTALES (BASE)", "VALOR": datos.ventas },
