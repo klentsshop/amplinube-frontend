@@ -86,6 +86,7 @@ export default function TicketPanel({
     setMostrarInventario,
     config,
     tenantId,
+    setMostrarModalClientes,
 }) {
     // 🔍 Mejora: Función para limpiar el emoji del título y evitar el doble icono
     const limpiarIconoDeTexto = (texto) => {
@@ -100,7 +101,7 @@ export default function TicketPanel({
      const [pagaCon, setPagaCon] = useState('');
      const [verModalMixto, setVerModalMixto] = useState(false);
      const [montosMixtos, setMontosMixtos] = useState({ efectivo: 0, tarjeta: 0, digital: 0 });
-     const { actualizarComentario, tipoOrden, setTipoOrden } = useCart();
+     const { actualizarComentario, tipoOrden, setTipoOrden, clienteActivo } = useCart();
     
      // ✨ LOGICA PRO: Salto automático del radio button según el nombre
      useEffect(() => {
@@ -163,7 +164,6 @@ export default function TicketPanel({
     onClick={() => {
         if (typeof clearCart === 'function') {
             clearCart(); 
-            if (typeof setNombreMesero === 'function') setNombreMesero(null);
         }
     }}
     title="Nueva Orden (Limpiar pantalla)"
@@ -243,11 +243,28 @@ export default function TicketPanel({
     >
         ÓRDENES ({numOrdenesActivas})
     </button>
-
-    {/* 2. REPORTE */}
-    {esModoCajero && (
-        <>
+    {/* 5. + GASTO */}
     <button 
+        onClick={registrarGasto} 
+        style={{
+            flex: '0 0 31%',
+            padding: 'clamp(14px, 3.5vw, 10px) 2px',
+            fontSize: 'clamp(0.85rem, 2.5vw, 0.75rem)',
+            backgroundColor: SITE_CONFIG.theme.accent,
+            color: 'white',
+            border: 'none',
+            borderRadius: '6px',
+            fontWeight: '900',
+            cursor: 'pointer'
+        }}
+    >
+        + GASTO
+    </button>
+   {/* 🛡️ RESTRICCIÓN DE AUDITORÍA: Los siguientes botones críticos solo abren si es Modo Cajero AND (Es Caja central o es Mesero Autorizado con '*') */}
+    {esModoCajero && (nombreMesero === 'Caja' || nombreMesero === '' || nombreMesero === null || nombreMesero?.includes('*')) && (
+        <>
+            {/* 3. REPORTE */}
+            <button
         onClick={() => esModoCajero ? generarCierreDia() : alert("🔒 Solo el cajero puede ver reportes")} 
         style={{ 
             flex: '0 0 31%',
@@ -300,24 +317,6 @@ export default function TicketPanel({
 >
     INVENTARIO
 </button>
-
-    {/* 5. + GASTO */}
-    <button 
-        onClick={registrarGasto} 
-        style={{
-            flex: '0 0 31%',
-            padding: 'clamp(14px, 3.5vw, 10px) 2px',
-            fontSize: 'clamp(0.85rem, 2.5vw, 0.75rem)',
-            backgroundColor: SITE_CONFIG.theme.accent,
-            color: 'white',
-            border: 'none',
-            borderRadius: '6px',
-            fontWeight: '900',
-            cursor: 'pointer'
-        }}
-    >
-        + GASTO
-    </button>
 
     {/* 6. VENTAS */}
     <button 
@@ -627,6 +626,44 @@ export default function TicketPanel({
                    <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
         <span style={{ fontSize: '0.75rem', fontWeight: '800', color: SITE_CONFIG.theme.textDark, lineHeight: '1' }}>TOTAL</span>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '2px' }}>
+            {esModoCajero && (
+                <button
+                    type="button"
+                    onClick={() => typeof setMostrarModalClientes === 'function' && setMostrarModalClientes(true)}
+                    title={clienteActivo ? `Cliente: ${clienteActivo.nombre}` : "Asignar Cliente"}
+                    style={{
+                        background: 'none',
+                        border: 'none',
+                        padding: '4px',
+                        cursor: 'pointer',
+                        fontSize: '1.4rem', // Tamaño ideal para que se vea nítido
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        transition: 'transform 0.1s ease',
+                        position: 'relative'
+                    }}
+                    onMouseDown={(e) => e.currentTarget.style.transform = 'scale(0.9)'}
+                    onMouseUp={(e) => e.currentTarget.style.transform = 'scale(1)'}
+                >
+                    {clienteActivo ? '👤' : '👤'}
+                    {/* 🟢 Indicador minimalista flotante: si hay cliente activo, pone un punto verde esmeralda */}
+                    {clienteActivo && (
+                        <span style={{
+                            position: 'absolute',
+                            right: '-2px',
+                            top: '-2px',
+                            width: '8px',
+                            height: '8px',
+                            backgroundColor: '#10B981',
+                            borderRadius: '50%',
+                            border: '1px solid white',
+                            boxShadow: '0 0 4px #10B981'
+                        }} />
+                    )}
+                </button>
+            )}
+
             {esModoCajero && (
                 <button 
                     type="button"

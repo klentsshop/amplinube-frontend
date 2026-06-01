@@ -408,6 +408,30 @@ export default function ConfigImpresionModal({ isOpen, onClose, categorias, tena
             imagen: null
         });
     };
+
+    const handleBorrarProducto = async (productoId) => {
+        setGuardando(true);
+        try {
+            const res = await fetch('/api/admin/productos', {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ productoId, tenantId })
+            });
+            const data = await res.json();
+            if (data.ok) {
+                if (editandoProductoId === productoId) cancelarEdicionProducto();
+                await cargarProductosNegocio();
+                window.dispatchEvent(new Event('inventarioActualizado'));
+            } else {
+                alert(`❌ No se pudo eliminar: ${data.error}`);
+            }
+        } catch (error) {
+            console.error("🔥 Error eliminando producto:", error);
+            alert('❌ Error de comunicación con el servidor.');
+        } finally {
+            setGuardando(false);
+        }
+    };
     const cargarGastosNegocio = async () => {
         if (!tenantId) return;
         try {
@@ -731,6 +755,7 @@ export default function ConfigImpresionModal({ isOpen, onClose, categorias, tena
         activarEdicionProducto={activarEdicionProducto}
         editandoProductoId={editandoProductoId} cancelarEdicionProducto={cancelarEdicionProducto}
         subirImagenASanity={subirImagenASanity}
+        handleBorrarProducto={handleBorrarProducto}
     />
 )}
                     {/* 💸 PESTAÑA 5: MÓDULO DE GASTOS (AGREGA ESTE BLOQUE EXACTAMENTE AQUÍ) */}

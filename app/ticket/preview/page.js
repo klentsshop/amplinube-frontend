@@ -101,75 +101,65 @@ function TicketContent() {
                     </div>
                 </div>
 
-                <hr style={{ border: 'none', borderTop: esModoCocina ? '2px solid #000' : '1px dashed #000' }} />
+                <div style={{ textAlign: 'center', margin: '10px 0', fontSize: '18px', fontWeight: 'bold', fontFamily: 'monospace' }}>
+                {esModoCocina ? '**** COMANDA ****' : '**** CUENTA ****'}
+                </div>
 
-                <table style={{ width: '100%', fontSize: esModoCocina ? '20px' : '13px', borderCollapse: 'collapse', marginTop: '5px', fontFamily: 'monospace', tableLayout: 'fixed' }}>
-                    <thead>
-                    <tr style={{ borderBottom: '1px solid #000' }}>
-                    <th style={{ textAlign: 'left', width: '40px' }}>CANT</th>
-                    <th style={{ textAlign: 'left', width: 'auto' }}>PRODUCTO</th>
-                    {!esModoCocina && <th style={{ textAlign: 'right', width: '75px' }}>TOTAL</th>}
-                    </tr>
-                    </thead>
-                    <tbody>
-                        {(() => {
-                            const productosAgrupados = (data.productos || []).reduce((acc, current) => {
-                                const nombreSeguro = String(current.nombre || current.nombrePlato || "PRODUCTO").trim().toUpperCase();
-                                const precioSeguro = Number(current.precioNum) || 0;
-                                const llave = esModoCocina ? nombreSeguro : `${nombreSeguro}-${precioSeguro}`;
-                                
-                                if (acc[llave]) { 
-                                    acc[llave].cantidad += (Number(current.cantidad) || 0); 
-                                } else { 
-                                    acc[llave] = { ...current, nombre: nombreSeguro }; 
-                                }
-                                return acc;
-                            }, {});
+                <div style={{ width: '100%', marginTop: '5px', fontFamily: 'monospace' }}>
+    {(() => {
+        const productosAgrupados = (data.productos || []).reduce((acc, current) => {
+            const nombreSeguro = String(current.nombre || current.nombrePlato || "PRODUCTO").trim().toUpperCase();
+            const precioSeguro = Number(current.precioNum) || 0;
+            const llave = esModoCocina ? nombreSeguro : `${nombreSeguro}-${precioSeguro}`;
+            
+            if (acc[llave]) { 
+                acc[llave].cantidad += (Number(current.cantidad) || 0); 
+            } else { 
+                acc[llave] = { ...current, nombre: nombreSeguro }; 
+            }
+            return acc;
+        }, {});
 
-                            return Object.values(productosAgrupados).map((item, index) => {
-                                const cantNum = Number(item.cantidad) || 0;
-                                const esPeso = cantNum % 1 !== 0;
-                                const mostrarDetallePrecio = !esModoCocina && (cantNum > 1 || esPeso);
+        return Object.values(productosAgrupados).map((item, index) => {
+            const cantNum = Number(item.cantidad) || 0;
+            const esPeso = cantNum % 1 !== 0;
+            const cantidadTexto = esPeso ? cantNum.toFixed(3) : cantNum;
+            const precioLinea = Number(item.precioNum || 0) * cantNum;
 
-                                return (
-                                    <tr key={index} style={{ borderBottom: esModoCocina ? '1px solid #000' : '1px solid #eee' }}>
-                                        <td style={{ padding: '4px 0', verticalAlign: 'top', fontWeight: 'bold', fontSize: esModoCocina ? '22px' : '14px', width: '40px' }}>
-                                            {esPeso ? cantNum.toFixed(3) : cantNum}x
-                                        </td>
-                                        <td style={{ padding: '4px 0', paddingLeft: '5px', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>
-                                            <div style={{ fontWeight: 'bold', fontSize: esModoCocina ? '22px' : '14px', lineHeight: '1' }}>
-                                                {item.nombre}
-                                            </div>
-                                            
-                                           {esModoCocina && item.comentario && (
-                                           <div style={{ 
-                                           fontSize: '20px', 
-                                           fontWeight: '900', 
-                                           marginTop: '2px', 
-                                           lineHeight: '1',
-                                           paddingLeft: '2px'
-                                           }}>
-                                           {`>> ${item.comentario.toUpperCase()}`} 
-                                           </div>
-                                            )}
+           return (
+    <div key={index} style={{ 
+        width: '100%',
+        fontSize: esModoCocina ? '16px' : '13px', 
+        padding: '2px 0',
+        fontFamily: 'monospace',
+        fontWeight: 'bold',
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'flex-start',
+        lineHeight: '1.2'
+    }}>
+        {/* LADO IZQUIERDO: Nombre del plato + Espacio + X1 de corrido en la misma línea */}
+        <div style={{ textAlign: 'left', paddingRight: '4px' }}>
+            <span>{item.nombre}</span>
+            <span style={{ marginLeft: '6px', color: '#000' }}>X{cantidadTexto}</span>
+            
+            {esModoCocina && item.comentario && (
+                <div style={{ fontSize: '15px', fontWeight: '900', marginTop: '1px', color: '#000' }}>
+                    {`>> ${item.comentario.toUpperCase()}`}
+                </div>
+            )}
+        </div>
 
-                                            {mostrarDetallePrecio && (
-    <div style={{ fontSize: '10px', color: '#000', lineHeight: '1', marginTop: '1px' }}>
-        {cantNum % 1 !== 0 ? `PRECIO KG: $${Number(item.precioNum || 0).toLocaleString('es-CO')}` : `P. UND: $${Number(item.precioNum || 0).toLocaleString('es-CO')}`}
+        {/* LADO DERECHO: Precio alineado al extremo derecho (Solo en ticket de cliente) */}
+        {!esModoCocina && (
+            <div style={{ textAlign: 'right', whiteSpace: 'nowrap', minWidth: '65px' }}>
+                ${precioLinea.toLocaleString('es-CO')}
+            </div>
+        )}
     </div>
-)}
-                                        </td>
-                                        {!esModoCocina && (
-                                            <td style={{ textAlign: 'right', verticalAlign: 'top', fontWeight: 'bold', padding: '4px 0', fontSize: '13px', whiteSpace: 'nowrap' }}>
-                                                ${(Number(item.precioNum || 0) * cantNum).toLocaleString('es-CO')}
-                                            </td>
-                                        )}
-                                    </tr>
-                                );
-                            });
-                        })()}
-                    </tbody>
-                </table>
+);      });
+    })()}
+</div>
 
                 {!esModoCocina && (
                     <>
@@ -211,11 +201,10 @@ function TicketContent() {
                     }
 
                     #ticket-root { 
-                        width: 44mm !important; 
-                        max-width: 44mm !important; 
-                        margin-left: 1mm !important;
-                        margin-right: auto !important;
-                        padding: 0 !important; 
+                        width: 52mm !important; 
+                        max-width: 52mm !important; 
+                        margin: 0 auto !important;
+                        padding:0 2mm !important; 
                         display: block !important;
                     }
 
@@ -223,22 +212,6 @@ function TicketContent() {
                         width: 100% !important;
                         table-layout: fixed !important;
                         border-collapse: collapse !important;
-                    }
-                   th:nth-child(1), td:nth-child(1) { width: 40px !important; }
-                   th:nth-child(2), td:nth-child(2) { 
-                   width: auto !important; 
-                   white-space: nowrap !important; 
-                   overflow: hidden !important; 
-                   text-overflow: ellipsis !important; 
-                   }
-                   th:nth-child(3), td:nth-child(3) { width: 75px !important; text-align: right !important; padding-right: 0 !important; }
-
-                    td {
-                        line-height: 1 !important;
-                        padding: 2px 0 !important;
-                        vertical-align: top !important;
-                        word-wrap: break-word !important;
-                        overflow-wrap: break-word !important;
                     }
 
                     .comentario-cocina {

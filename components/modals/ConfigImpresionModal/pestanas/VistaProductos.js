@@ -5,7 +5,8 @@ import { PlusCircle } from 'lucide-react';
 export default function VistaProductos({
     nuevoPlato, setNuevoPlato, categorias, handleCrearProducto, guardando, 
     setPestanaActiva, listaProductosCompletas, busquedaProd, setBusquedaProd,
-    listaInventario, activarEdicionProducto, editandoProductoId, cancelarEdicionProducto, subirImagenASanity
+    listaInventario, activarEdicionProducto, editandoProductoId, cancelarEdicionProducto, subirImagenASanity,
+    handleBorrarProducto
 }) {
     const [imagen, setImagen] = useState(null);
     const fileInputRef = useRef(null);
@@ -163,16 +164,31 @@ export default function VistaProductos({
                         <tr style={{ backgroundColor: '#f3f4f6', position: 'sticky', top: 0, borderBottom: '2px solid #e5e7eb', zIndex: 1 }}>
                             <th style={{ padding: '10px', textAlign: 'left', color: '#4b5563', fontWeight: 'bold' }}>PRODUCTO</th>
                             <th style={{ padding: '10px', textAlign: 'right', color: '#4b5563', fontWeight: 'bold' }}>PRECIO</th>
+                            <th style={{ padding: '10px', width: '50px', textAlign: 'center' }}></th>
                         </tr>
                     </thead>
                     <tbody>
-                        {productosFiltrados.map(p => (
-                            <tr key={p._id} onClick={() => activarEdicionProducto(p)} style={{ borderBottom: '1px solid #e5e7eb', cursor: 'pointer' }}>
-                                <td style={{ padding: '10px', fontWeight: '500', color: '#111827', textTransform: 'uppercase' }}>{p.nombre}</td>
-                                <td style={{ padding: '10px', textAlign: 'right', fontWeight: 'bold', color: '#059669' }}>${p.precio}</td>
-                            </tr>
-                        ))}
-                    </tbody>
+    {productosFiltrados.map(p => (
+        <tr key={p._id} onClick={() => activarEdicionProducto(p)} style={{ borderBottom: '1px solid #e5e7eb', cursor: 'pointer' }}>
+            <td style={{ padding: '10px', fontWeight: '500', color: '#111827', textTransform: 'uppercase' }}>{p.nombre}</td>
+            <td style={{ padding: '10px', textAlign: 'right', fontWeight: 'bold', color: '#059669' }}>${p.precio}</td>
+            {/* 🗑️ BOTÓN DE DESTRUCCIÓN DIRECTA */}
+            <td style={{ padding: '10px', textAlign: 'center' }}>
+                <button 
+                    onClick={(e) => { 
+                        e.stopPropagation(); // 🛡️ Evita que se abra el formulario de edición al borrar
+                        if (confirm(`¿Seguro que deseas eliminar el producto "${p.nombre}"?`)) {
+                            handleBorrarProducto(p._id); 
+                        }
+                    }} 
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', fontSize: '1rem' }}
+                >
+                    🗑️
+                </button>
+            </td>
+        </tr>
+    ))}
+</tbody>
                 </table>
             </div>
         </div>

@@ -80,3 +80,21 @@ export async function PUT(req) {
         return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
     }
 }
+// 🗑️ DELETE: Eliminar producto de forma segura en Sanity
+export async function DELETE(req) {
+    try {
+        const data = await req.json();
+        
+        if (!data.productoId) {
+            return NextResponse.json({ ok: false, error: "Falta el parámetro productoId" }, { status: 400 });
+        }
+
+        // 🛡️ Conexión directa a Sanity usando el token con permisos plenos de escritura
+        await sanityClientServer.delete(data.productoId);
+
+        return NextResponse.json({ ok: true });
+    } catch (error) {
+        console.error("🔥 Error en DELETE de productos:", error);
+        return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+    }
+}

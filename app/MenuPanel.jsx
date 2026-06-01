@@ -26,6 +26,7 @@ import ProductGrid from '@/components/pos/ProductGrid';
 import styles from './MenuPanel.module.css';
 import HistorialVentasModal from '@/components/modals/HistorialVentasModal';
 import InventarioModal from '@/components/modals/InventarioModal';
+import ModalClientesDomicilios from '@/components/modals/ModalClientesDomicilios';
 import ConfigImpresionModal from '@/components/modals/ConfigImpresionModal/ConfigImpresionModal';
 import ModalPesaje from '@/components/modals/ModalPesaje'; // Asegúrate de que la ruta sea correcta
 import { useInventario } from '@/hooks/useInventario';
@@ -49,6 +50,14 @@ export default function MenuPanel({ configNegocio: configInyectada }) {
     const [busqueda, setBusqueda] = useState(''); // 🔍 Nuevo estado para el buscador
     const [mostrarModalHistorial, setMostrarModalHistorial] = useState(false);
     const [mostrarInventario, setMostrarInventario] = useState(false);
+    const [idClienteEditando, setIdClienteEditando] = useState(null);
+    const [cliNombre, setCliNombre] = useState('');
+    const [cliTelefono, setCliTelefono] = useState('');
+    const [cliDireccion, setCliDireccion] = useState('');
+    const [guardandoCliente, setGuardandoCliente] = useState(false);
+    const [busquedaCli, setBusquedaCli] = useState('');
+    const [clientesLista, setClientesLista] = useState([]);
+    const [mostrarModalClientes, setMostrarModalClientes] = useState(false);
     const [mostrarConfigImpresion, setMostrarConfigImpresion] = useState(false);
     const [platosParaImprimir, setPlatosParaImprimir] = useState(null);
     const [modalPesajeOpen, setModalPesajeOpen] = useState(false);
@@ -89,6 +98,29 @@ export default function MenuPanel({ configNegocio: configInyectada }) {
         setOrdenActivaId, ordenesActivas, esModoCajero: acc.esModoCajero, 
         setMostrarCarritoMobile, nombreMesero, setNombreMesero, tipoOrden, validarPinAdmin: acc.validarPinAdmin, tenantId, config: configNegocio
     });
+    // Carga inicial del directorio al abrir el modal
+    useEffect(() => {
+        if (mostrarModalClientes && tenantId) {
+            fetch(`/api/clientes?tenant=${tenantId}`)
+                .then(res => res.json())
+                .then(data => setClientesLista(data || []))
+                .catch(err => console.error("Error en directorio:", err));
+        }
+    }, [mostrarModalClientes, tenantId]);
+
+    const seleccionarParaEditar = (c) => {
+        setIdClienteEditando(c._id); setCliNombre(c.nombre); setCliTelefono(c.telefono); setCliDireccion(c.direccion);
+    };
+
+    const cancelarEdicion = () => {
+        setIdClienteEditando(null); setCliNombre(''); setCliTelefono(''); setCliDireccion('');
+    };
+
+    const clientesFiltrados = useMemo(() => {
+        const query = busquedaCli.toLowerCase().trim();
+        if (!query) return clientesLista;
+        return clientesLista.filter(c => (c.nombre || "").toLowerCase().includes(query) || (c.telefono || "").includes(query));
+    }, [busquedaCli, clientesLista]);
 
 // --- 4. EFECTOS Y WATCHERS ---
     // 🚀 SINCRO MULTITENANT: Escucha los cambios vivos que vienen de Sanity a través del Wrapper
@@ -191,47 +223,14 @@ export default function MenuPanel({ configNegocio: configInyectada }) {
    // --- 6. EFECTOS DE SINCRONIZACIÓN (BLOQUE UNIFICADO SENIOR) ---
 
 useEffect(() => {
-    // 🛡️ Solo ejecutamos si tenemos identidad del comercio
+    // 🛡️ Solo ejecutamos si tenemos identidad del comercio (Cierre perimetral seguro)
     if (!tenantId) return;
 
     // A. Carga inicial del Menú y Meseros al detectar el Tenant
-    console.log("🚀 Identidad confirmada:", tenantId, "Cargando menú...");
+    console.log("🚀 Identidad confirmada:", tenantId, "Cargando menú optimizado...");
     cargarMenuYMeseros();
 
-    // B. Definición del listener para cambios en tiempo real
-    const manejarCambioInventario = async () => {
-        console.log("🔄 Verificando stock e integridad de mesa...");
-        
-        // Usamos ordenActivaId directamente del Contexto (que es más estable)
-        if (ordenActivaId) {
-            try {
-                const res = await fetch('/api/ordenes/get', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ ordenId: ordenActivaId, tenantId: tenantId })
-                });
-                const data = await res.json();
-                
-                if (!data.exists) {
-                    console.warn("🚫 Mesa cobrada por otro usuario. Limpiando pantalla...");
-                    localStorage.removeItem('talanquera_cart');
-                    clearCart(); 
-                    ord.setOrdenActivaId(null);
-                    ord.setOrdenMesa(null);
-                }
-            } catch (e) { 
-                console.error("Error validando mesa:", e); 
-            }
-        }
-        // Recargamos el menú para actualizar los stocks visuales
-        cargarMenuYMeseros();
-    };
-
-    // C. Registro y Limpieza del Evento
-    window.addEventListener('inventarioActualizado', manejarCambioInventario);
-    return () => window.removeEventListener('inventarioActualizado', manejarCambioInventario);
-
-}, [tenantId, ordenActivaId]); // 👈 Dependencias clave
+}, [tenantId]); // 🎯 BISTURÍ: Quitamos ordenActivaId para romper el bucle de re-renderizado 
 
     // --- 7. LÓGICA DE ESCÁNER Y BÚSQUEDA ---
     useEffect(() => {
@@ -306,7 +305,6 @@ useEffect(() => {
         else clearCart(); 
         ord.setOrdenActivaId(null);
         ord.setOrdenMesa(null);
-        window.dispatchEvent(new Event('inventarioActualizado'));
     };
 
 const categoriasParaConfig = useMemo(() => [...new Set(platos.map(p => p.categoria))], [platos]);
@@ -316,7 +314,51 @@ if (!tenantId) return <div style={{background: '#111827', height: '100vh', displ
 if (estaActivo === null) {
     return <div style={{background: '#090d16', height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 'bold', fontFamily: 'sans-serif'}}>COMPROBANDO PERMISOS...</div>;
 }
+const handleBorrarCliente = async (id) => {
+    if (!confirm("¿Eliminar del directorio?")) return;
+    try {
+        const res = await fetch('/api/clientes/delete', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                id,
+                tenant: tenantId
+            })
+        });
+        const data = await res.json();
+        if (res.ok) {
+            setClientesLista(prev =>
+                prev.filter(c => c._id !== id)
+            );
+            return;
+        }
+        alert(data.error || 'No fue posible eliminar el cliente.');
+    } catch (error) {
+        console.error('🔥 Error eliminando cliente:', error);
+        alert('❌ Error de conexión con el servidor.');
+    }
+};
 
+    const ejecutarGuardarCliente = async (e) => {
+        e.preventDefault(); 
+        const tenantSeguro = tenantId || CURRENT_TENANT;
+        if (!cliNombre.trim() || !cliTelefono.trim() || !cliDireccion.trim() || !tenantSeguro) {
+            alert("⚠️ Todos los campos son obligatorios.");
+            return;
+        }
+        setGuardandoCliente(true);
+        try {
+            const payload = { nombre: cliNombre.toUpperCase().trim(), telefono: cliTelefono.trim(), direccion: cliDireccion.toUpperCase().trim(), tenant: tenantSeguro };
+            if (idClienteEditando) payload.id = idClienteEditando;
+            const res = await fetch('/api/clientes/save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+            if (!res.ok) throw new Error("Error en servidor");
+            const data = await res.json();
+            setClientesLista(prev => idClienteEditando ? prev.map(c => c._id === data._id ? data : c) : [data, ...prev]);
+            cancelarEdicion();
+        } catch (error) { console.error(error); alert("🚫 Error al guardar."); } finally { setGuardandoCliente(false); }
+    };
 if (!estaActivo) {
         const manejarDigito = (num) => {
             if (pinBloqueo.length < 4) {
@@ -357,7 +399,7 @@ if (!estaActivo) {
                 setPinBloqueo('');
             }
         };
-
+        
         return (
             <div style={{ position: 'fixed', inset: 0, backgroundColor: '#090d16', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', zIndex: 999999, color: 'white', fontFamily: 'sans-serif', padding: '20px' }}>
                 
@@ -450,7 +492,7 @@ return (
                     propina={propina} setPropina={setPropina} montoManual={montoManual} setMontoManual={setMontoManual}
                     setMostrarModalHistorial={setMostrarModalHistorial} setMostrarInventario={setMostrarInventario}
                     solicitarEliminacionAdmin={ord.solicitarEliminacionAdmin} eliminarLineaConStock={ord.eliminarLineaConStock} config={configNegocio}
-                    tenantId={tenantId}
+                    tenantId={tenantId} setMostrarModalClientes={setMostrarModalClientes}
                 />
 
                 <ProductGrid 
@@ -565,6 +607,33 @@ return (
         setPlatoAPesar(null);
     }}
 />
+
+{/* 🛵 DIRECTO AL DIRECTORIO MULTITENANT */}
+            <ModalClientesDomicilios 
+                isOpen={mostrarModalClientes}
+                onClose={() => setMostrarModalClientes(false)}
+                tenantId={tenantId}
+                handleCargarALaOrden={(item) => {
+                    if (typeof ord?.setClienteActivo === 'function') {
+                        ord.setClienteActivo(item);
+                    }
+                }}
+                idClienteEditando={idClienteEditando}
+                cancelarEdicion={cancelarEdicion}
+                cliNombre={cliNombre}
+                setCliNombre={setCliNombre}
+                cliTelefono={cliTelefono}
+                setCliTelefono={setCliTelefono}
+                cliDireccion={cliDireccion}
+                setCliDireccion={setCliDireccion}
+                guardando={guardandoCliente}
+                busquedaCli={busquedaCli}
+                setBusquedaCli={setBusquedaCli}
+                clientesFiltrados={clientesFiltrados}
+                seleccionarParaEditar={seleccionarParaEditar}
+                handleBorrarCliente={handleBorrarCliente}
+                handleGuardarCliente={ejecutarGuardarCliente}
+            />
         </div>
     );
 }

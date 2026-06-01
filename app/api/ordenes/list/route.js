@@ -16,7 +16,14 @@ if (!tenantId || tenantId === 'undefined') {
 }
 
         const query = `*[_type == "ordenActiva" && tenant == $tenantId] | order(fechaCreacion asc) {
-            _id, mesa, mesero, tipoOrden, fechaCreacion, platosOrdenados, imprimirSolicitada, tenant
+            _id, mesa, mesero, tipoOrden, fechaCreacion, platosOrdenados, imprimirSolicitada, tenant,
+    clienteRef->{
+        _id,
+        nombre,
+        telefono,
+        direccion
+    },
+    datosEntrega
         }`;
 
         const data = await sanityClientServer.fetch(query, { tenantId }, { useCdn: false });
@@ -32,14 +39,18 @@ export async function POST(request) {
     try {
         const body = await request.json();
         // 🛡️ Extraemos tenantId de forma flexible para que no de error 400
-        const { mesa, mesero, platosOrdenados, ordenId, tipoOrden } = body;
+        const { mesa, mesero, platosOrdenados, ordenId, tipoOrden, clienteRef, datosEntrega } = body;
         const tenantId = body.tenantId || body.tenant;
 if (!tenantId || tenantId === 'undefined') {
     return NextResponse.json({ error: 'Identificador de comercio inválido para registrar pedidos.' }, { status: 400 });
 }
 
         // 1. VALIDACIÓN DE SEGURIDAD
-        if (!mesa || !Array.isArray(platosOrdenados)) {
+        if (
+    !mesa ||
+    !Array.isArray(platosOrdenados) ||
+    platosOrdenados.length === 0
+) {
             return NextResponse.json({ error: 'Datos incompletos.' }, { status: 400 });
         }
 
@@ -78,13 +89,15 @@ if (!tenantId || tenantId === 'undefined') {
                 { useCdn: false }
             );
         }
-
+        
         let transaction = sanityClientServer.transaction();
 
         if (idDestino) {
             // ACTUALIZAR MESA EXISTENTE
             transaction = transaction.patch(idDestino, {
-                setIfMissing: { estacionesPendientes: [] },
+                setIfMissing: { estacionesPendientes: [],
+                                mesero
+                 },
                 insert: {
                     after: 'estacionesPendientes[-1]',
                     items: estacionesPendientes
@@ -92,13 +105,20 @@ if (!tenantId || tenantId === 'undefined') {
                 set: {
                     mesa,
                     tenant: tenantId, 
-                    mesero,
                     tipoOrden: tipoOrden || 'mesa',
                     platosOrdenados: platosNormalizados,
                     ultimaActualizacion: fechaActual,
-                    imprimirSolicitada: valorSolicitada
-                },
-                unset: ['impreso', 'imprime']
+                    imprimirSolicitada: valorSolicitada,                
+                   ...(clienteRef ? { clienteRef } : {}),
+                   ...(datosEntrega ? { datosEntrega } : {})
+                    
+                   },
+                unset:  [
+                         'impreso',
+                         'imprime',
+                          ...(clienteRef ? [] : ['clienteRef']),
+                         ...(datosEntrega ? [] : ['datosEntrega'])
+                        ]
             });
         } else {
             // CREAR MESA NUEVA
@@ -113,7 +133,9 @@ if (!tenantId || tenantId === 'undefined') {
                 ultimaActualizacion: fechaActual,
                 platosOrdenados: platosNormalizados,
                 imprimirSolicitada: valorSolicitada,
-                estacionesPendientes: estacionesPendientes
+                estacionesPendientes: estacionesPendientes,
+                ...(clienteRef ? { clienteRef } : {}),
+                ...(datosEntrega ? { datosEntrega } : {})
             });
         }
 

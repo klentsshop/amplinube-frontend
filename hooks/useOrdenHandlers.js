@@ -1,5 +1,6 @@
 'use client';
 import React, { useState, useEffect, useMemo } from 'react';
+import { useCart } from '@/app/context/CartContext';
 
 const normalizarParaImpresora = (texto) => {
     // 1. Forzamos que sea String y manejamos nulos/undefined (Tu lógica original + robustez)
@@ -24,8 +25,9 @@ export function useOrdenHandlers({
     nombreMesero, setNombreMesero,tipoOrden, ordenMesa, setOrdenMesa,
     rep, validarPinAdmin, ordenActivaId, setOrdenActivaId,
     tenantId
+    
 }) {
-  
+    const { clienteActivo, setClienteActivo } = useCart();
     const [mensajeExito, setMensajeExito] = useState(false);
     const [errorMesaOcupada, setErrorMesaOcupada] = useState(null);
     // 🧬 DNA de Cobro: Mantiene el ID idéntico en reintentos por lag
@@ -64,10 +66,18 @@ export function useOrdenHandlers({
                 const vendedorLocal = localStorage.getItem('ultimoMesero');
                 const meseroFinal = vendedorLocal || o.mesero || o.nombreMesero || (esModoCajero ? "Caja" : null);
                 setNombreMesero(meseroFinal);
-
-                // 2. ⏳ PEQUEÑO DELAY (50ms): Esto es el secreto anti-titileo.
-                // Le damos tiempo a la UI para que asiente el nombre de la mesa 
-                // antes de inyectar todos los platos al carrito.
+                // 🛵 Sincronización del cliente guardado en la orden activa
+                if (o.clienteRef) {
+                    setClienteActivo(o.clienteRef);
+                } else if (o.datosEntrega) {
+                    setClienteActivo({
+                        nombre: o.datosEntrega.nombreCliente || o.datosEntrega.nombre || "N/A",
+                        direccion: o.datosEntrega.direccion || "N/A",
+                        telefono: o.datosEntrega.telefono || "N/A"
+                    });
+                } else {
+                    setClienteActivo(null);
+                }
                 setTimeout(() => {
                     const platosParaCarrito = o.platosOrdenados.map(p => ({
                         ...p,
@@ -182,10 +192,18 @@ export function useOrdenHandlers({
             cantidadADescontar: i.cantidadADescontar || 0
         }));
 
+        let datosEntrega = null;
+        if (clienteActivo) {
+            datosEntrega = datosEntrega = {
+                nombreCliente: normalizarParaImpresora(clienteActivo.nombre),
+                direccion: normalizarParaImpresora(clienteActivo.direccion),
+                telefono: clienteActivo.telefono.trim()
+            };
+        }
         try {
             setMensajeExito(true);
             setMostrarCarritoMobile(false);
-
+          
             // ✅ ENVÍO A API (INTACTO)
             await apiGuardar({ 
                 tenant: tenantId,
@@ -196,7 +214,14 @@ export function useOrdenHandlers({
                 _unset: ['impreso', 'imprime'],
                 imprimirSolicitada: true,
                 tipoOrden: tipoParaSanity,
-                ultimaActualizacion: new Date().toISOString()
+                ultimaActualizacion: new Date().toISOString(),
+                datosEntrega, 
+                clienteRef: clienteActivo?._id
+               ? {
+               _type: 'reference',
+               _ref: clienteActivo._id
+               }
+               : null
             });
             
             await refreshOrdenes();
@@ -228,17 +253,20 @@ export function useOrdenHandlers({
         const idParaCerrar = ordenActivaId; 
         const mesaParaVenta = ordenMesa || "0"; 
 
-        // 🛵 1. CAPTURA DE DATOS DE DOMICILIO
+        // 🛵 1. CAPTURA DE DATOS DESDE CONTEXTO (BISTURÍ ELIMINA PROMPTS FRENADORES)
         let datosEntrega = null;
-        if (tipoOrden === 'domicilio') {
-            const nombre = prompt("Nombre del Cliente (Domicilio):", "");
-            const direccion = prompt("Dirección de Entrega:", "");
-            const telefono = prompt("Teléfono de Contacto:", "");
-            if (nombre || direccion || telefono) {
+        if (tipoOrden === 'domicilio' || !!clienteActivo) {
+            if (clienteActivo) {
                 datosEntrega = {
-                    nombreCliente: nombre || "N/A",
-                    direccion: direccion || "N/A",
-                    telefono: telefono || "N/A"
+                    nombreCliente: normalizarParaImpresora(clienteActivo.nombre),
+                    direccion: normalizarParaImpresora(clienteActivo.direccion),
+                    telefono: clienteActivo.telefono.trim()
+                };
+            } else {
+                datosEntrega = {
+                    nombreCliente: "CLIENTE GENERAL",
+                    direccion: "MOSTRADOR / RETIRA",
+                    telefono: "N/A"
                 };
             }
         }
@@ -422,7 +450,15 @@ const sincronizarBorradoEnSanity = async (carritoFiltrado) => {
             insumoVinculado: i.insumoVinculado || null,
             cantidadADescontar: Number(i.cantidadADescontar || 0)
         }));
+        let datosEntrega = null;
 
+        if (clienteActivo) {
+         datosEntrega = {
+         nombreCliente: normalizarParaImpresora(clienteActivo.nombre),
+         direccion: normalizarParaImpresora(clienteActivo.direccion),
+         telefono: clienteActivo.telefono?.trim() || ""
+        };
+       }
         await apiGuardar({ 
             tenant: tenantId,
             mesa: String(mesaReal), 
@@ -431,6 +467,13 @@ const sincronizarBorradoEnSanity = async (carritoFiltrado) => {
             platosOrdenados: platosParaSanity, // Coincide con línea 45 de la API
             imprimirSolicitada: true, 
             tipoOrden: tipoOrden || "mesa",
+            clienteRef: clienteActivo?._id
+        ? {
+            _type: 'reference',
+            _ref: clienteActivo._id
+          }
+        : null,
+        datosEntrega,
             ultimaActualizacion: new Date().toISOString()
         });
         
@@ -492,9 +535,11 @@ if (res.ok && data.success) {
         cargarOrden, errorMesaOcupada, setErrorMesaOcupada,
         guardarOrden, cobrarOrden, cancelarOrden, solicitarEliminacionAdmin,
         mensajeExito, textoBotonPrincipal, eliminarLineaConStock, setMensajeExito,
-        setOrdenActivaId, setOrdenMesa
+        setOrdenActivaId, setOrdenMesa,
+        clienteActivo, setClienteActivo
     }), [
         ordenActivaId, ordenMesa, nombreMesero, errorMesaOcupada, dnaCobro,
-        mensajeExito, textoBotonPrincipal, cart, esModoCajero, cart.length, total, tipoOrden, validarPinAdmin, eliminarLineaConStock, tenantId
+        mensajeExito, textoBotonPrincipal, cart, esModoCajero, cart.length, total, tipoOrden, validarPinAdmin, eliminarLineaConStock,
+        tenantId, clienteActivo
     ]);
 }

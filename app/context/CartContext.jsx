@@ -25,6 +25,7 @@ export function CartProvider({ children, tenantId }) {
   const [tipoOrden, setTipoOrden] = useState('mesa');
   const [ordenActivaId, setOrdenActivaId] = useState(null);
   const [ordenMesa, setOrdenMesa] = useState(null);
+  const [clienteActivo, setClienteActivo] = useState(null);
    // 💾 1. Al iniciar: Recuperar Carrito y Tipo de Orden del navegador
   useEffect(() => {
     // Definimos las constantes extrayendo los datos del almacenamiento
@@ -164,27 +165,10 @@ export function CartProvider({ children, tenantId }) {
                 }
             }
 
-            // 🛰️ PASO B: VALIDACIÓN DE FONDO (Sincronización con Sanity)
-           fetch(`/api/inventario/list?tenantId=${activeTenantId}`, { cache: 'no-store' })
-                .then(res => res.json())
-                .then(insumosServer => {
-                    for (const req of receta) {
-                        const serverMatch = insumosServer.find(s => s._id === req.insumoId);
-                        if (serverMatch) {
-                            const stockReal = Number(serverMatch.stockActual) || 0;
-                            stockLocalCache.set(serverMatch._id, stockReal);
-
-                            const necesidadReal = req.cantidad * cantAAgregar;
-                            if (stockReal < necesidadReal) {
-                                alert(`🚨 ¡ATENCIÓN! \n\nEl producto "${product.nombre}" no tiene stock suficiente en el servidor para esta cantidad.`);
-                            }
-                        }
-                    }
-                })
-                .catch(err => console.warn("Lag de red: Validación de fondo pendiente."));
+           
         }
     }
-}, []);
+}, [activeTenantId, items]);
   const setCartFromOrden = (platosOrdenados = [], tipoDeSanity = 'mesa') => {
     // 🧹 Limpiamos el rastro del localStorage antes de cargar lo nuevo
    localStorage.removeItem(`${activeTenantId}_cart`);
@@ -253,6 +237,7 @@ const clear = React.useCallback(() => {
     setPropina(0);
     setMontoManual(0);
     setTipoOrden('mesa');
+    setClienteActivo(null);
     avisosDados.clear(); // 🛡️ Limpia alertas de la mesa anterior
     stockLocalCache.clear();
     localStorage.removeItem(`${tenantId}_cart`);
@@ -306,6 +291,8 @@ const eliminarLineaConStock = React.useCallback((lineId) => {
   const contextValue = useMemo(() => ({
       items,
       tenantId: activeTenantId,
+      clienteActivo,      
+      setClienteActivo,
       addProduct,
       setCartFromOrden,
       tipoOrden,     
@@ -329,7 +316,7 @@ const eliminarLineaConStock = React.useCallback((lineId) => {
       cleanPrice: cleanPrice,
      refreshStockLocal 
       }), [
-      items, activeTenantId, tipoOrden, ordenActivaId, total, metodoPago, propina, montoManual, eliminarLineaConStock, refreshStockLocal, addProduct, decrease, clear, clearWithStockReturn]);
+      items, activeTenantId, clienteActivo,tipoOrden, ordenActivaId, total, metodoPago, propina, montoManual, eliminarLineaConStock, refreshStockLocal, addProduct, decrease, clear, clearWithStockReturn]);
       
 return (
     <CartContext.Provider value={contextValue}>

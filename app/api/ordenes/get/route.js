@@ -23,6 +23,13 @@ export async function POST(request) {
                 tipoOrden,
                 fechaCreacion,
                 imprimirSolicitada,
+                clienteRef->{
+                _id,
+                nombre,
+                telefono,
+                direccion
+                },
+                datosEntrega,
                 platosOrdenados[] {
                     _key,
                     _id,
@@ -42,7 +49,7 @@ export async function POST(request) {
         `;
 
         // 🔥 Agregamos { useCdn: false } para que el dato sea 100% fresco al cargar
-        const orden = await sanityClientServer.fetch(query, { ordenId, tenantId }, { useCdn: false, cache: 'no-store' });
+        const orden = await sanityClientServer.fetch(query, { ordenId, tenantId }, { useCdn: true });
         if (!orden) {
             return NextResponse.json(
                 { message: 'Orden no encontrada', exists: false },
