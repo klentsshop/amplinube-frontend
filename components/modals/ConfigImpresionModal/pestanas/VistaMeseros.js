@@ -7,6 +7,8 @@ export default function VistaMeseros({
     cancelarEdicionMesero,
     meseroNombre,
     setMeseroNombre,
+    meseroActivo,     
+    setMeseroActivo,
     guardando,
     busquedaMesero,
     setBusquedaMesero,
@@ -42,37 +44,51 @@ export default function VistaMeseros({
                     )}
                 </div>
                 
-                <div style={{ display: 'grid', gridTemplateColumns: '3fr 1fr', gap: '8px', alignItems: 'end' }}>
-                    <div>
-                        <label style={{ fontSize: '0.7rem', fontWeight: 'bold', color: '#6b7280', display: 'block', marginBottom: '4px' }}>Nombre del Vendedor(a)</label>
-                        <input 
-                            type="text" 
-                            placeholder="Ej: MARÍA ANTONIA o CARLOS PINZÓN" 
-                            value={meseroNombre} 
-                            onChange={e => setMeseroNombre(e.target.value)} 
-                            required 
-                            style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #d1d5db', outline: 'none', textTransform: 'uppercase' }} 
-                        />
-                    </div>
-                    
-                    <button 
-                        type="submit" 
-                        disabled={guardando} 
-                        style={{ 
-                            padding: '9px', 
-                            backgroundColor: editandoMeseroId ? '#2563eb' : '#10b981', 
-                            color: 'white', 
-                            border: 'none', 
-                            borderRadius: '6px', 
-                            fontWeight: 'bold', 
-                            cursor: 'pointer', 
-                            fontSize: '0.8rem', 
-                            textTransform: 'uppercase' 
-                        }}
-                    >
-                        {editandoMeseroId ? '💾 GUARDAR' : '🚀 AGREGAR'}
-                    </button>
-                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '2fr 1.2fr 0.8fr', gap: '8px', alignItems: 'end' }}>
+    <div>
+        <label style={{ fontSize: '0.7rem', fontWeight: 'bold', color: '#6b7280', display: 'block', marginBottom: '4px' }}>Nombre del Vendedor(a)</label>
+        <input 
+            type="text" 
+            placeholder="Ej: MARÍA ANTONIA o CARLOS PINZÓN" 
+            value={meseroNombre} 
+            onChange={e => setMeseroNombre(e.target.value)} 
+            required 
+            style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #d1d5db', outline: 'none', textTransform: 'uppercase' }} 
+        />
+    </div>
+
+    {/* 🚀 NUEVO CONTROL CHECKBOX PARA ESTADO ACTIVO */}
+    <div style={{ display: 'flex', alignItems: 'center', backgroundColor: '#fff', border: '1px solid #d1d5db', borderRadius: '6px', padding: '9px 8px', height: '37px' }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.75rem', fontWeight: 'bold', color: '#374151', cursor: 'pointer', width: '100%' }}>
+            <input 
+                type="checkbox" 
+                checked={meseroActivo} 
+                onChange={e => setMeseroActivo(e.target.checked)} 
+                style={{ cursor: 'pointer', width: '15px', height: '15px' }} 
+            />
+            ¿Usuario Activo?
+        </label>
+    </div>
+    
+    <button 
+        type="submit" 
+        disabled={guardando} 
+        style={{ 
+            padding: '9px', 
+            backgroundColor: editandoMeseroId ? '#2563eb' : '#10b981', 
+            color: 'white', 
+            border: 'none', 
+            borderRadius: '6px', 
+            fontWeight: 'bold', 
+            cursor: 'pointer', 
+            fontSize: '0.8rem', 
+            textTransform: 'uppercase',
+            height: '37px'
+        }}
+    >
+        {editandoMeseroId ? '💾 GUARDAR' : '🚀 AGREGAR'}
+    </button>
+</div>
             </form>
 
             {/* TABLA DE PERSONAL ACTIVO */}
@@ -112,9 +128,12 @@ export default function VistaMeseros({
                                     onMouseEnter={(e) => !siendoEditado && (e.currentTarget.style.backgroundColor = '#f9fafb')}
                                     onMouseLeave={(e) => !siendoEditado && (e.currentTarget.style.backgroundColor = 'transparent')}
                                 >
-                                    <td style={{ padding: '10px', fontWeight: 'bold', color: '#374151', textTransform: 'uppercase' }}>
-                                        👤 {item.nombre} {siendoEditado && <span style={{ color: '#2563eb', fontSize: '0.75rem', fontWeight: 'normal' }}>(en formulario)</span>}
-                                    </td>
+                                    <td style={{ padding: '10px', fontWeight: 'bold', color: item.activo !== false ? '#374151' : '#9ca3af', textTransform: 'uppercase' }}>
+    👤 {item.nombre} 
+    {siendoEditado && <span style={{ color: '#2563eb', fontSize: '0.75rem', fontWeight: 'normal' }}> (en formulario)</span>}
+    {/* 🚀 INDICADOR DE ESTADO EN LA LISTA */}
+    {item.activo === false && <span style={{ color: '#ef4444', fontSize: '0.7rem', marginLeft: '6px', fontWeight: 'normal', background: '#fee2e2', padding: '2px 6px', borderRadius: '4px' }}>🚫 INACTIVO EN POS</span>}
+</td>
                                     <td style={{ padding: '10px', textAlign: 'center' }}>
                                         <button 
                                             onClick={(e) => { 

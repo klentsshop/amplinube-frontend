@@ -11,7 +11,7 @@ function TicketContent() {
     const [data, setData] = useState(null);
     const [listoParaImprimir, setListoParaImprimir] = useState(false);
 
-   useEffect(() => {
+    useEffect(() => {
         // 1️⃣ Intento A: Leer la inyección directa en memoria global (Escritorio - Instantáneo)
         let datosTicket = window.ticketPrintData || window.cocinaPrintData;
 
@@ -21,7 +21,7 @@ function TicketContent() {
                 ? `${tenantIdParam}_cocina_print_data` 
                 : `${tenantIdParam}_ticket_preview_data`;
             
-            const savedData = localStorage.getItem(storageKey); // 👈 Cambiado a localStorage compartido
+            const savedData = localStorage.getItem(storageKey);
             if (savedData) {
                 datosTicket = JSON.parse(savedData);
             }
@@ -41,18 +41,19 @@ function TicketContent() {
         if (listoParaImprimir && typeof window !== 'undefined' && data?.autoPrint) {
             window.print();
             const closeTimer = setTimeout(() => {
-            window.close();
-        }, 2000);
-        return () => clearTimeout(closeTimer);
+                window.close();
+            }, 2000);
+            return () => clearTimeout(closeTimer);
         }
-    }, [listoParaImprimir, data?.autoPrint, data?.abrirCajon]);
+    }, [listoParaImprimir, data?.autoPrint]);
 
     if (!data) return <p style={{ textAlign: 'center', marginTop: '50px' }}>Cargando ticket...</p>;
 
     const esModoCocina = typeParam === 'cocina';
+    const esDomicilio = String(data.tipoOrden || "").toLowerCase() === 'domicilio';
 
     const totalProductos = (data.productos || []).reduce((acc, item) => {
-        const precio = Number(item.precioNum) || 0;
+        const precio = Number(item.precioNum || item.precioUnitario) || 0;
         const cantidad = Number(item.cantidad) || 0;
         return acc + (precio * cantidad);
     }, 0);
@@ -65,130 +66,193 @@ function TicketContent() {
 
     return (
         <div id="ticket-root" style={{ 
-            width: '100%', maxWidth: '280px', margin: '0 auto', padding: '5px', 
+            width: '100%', maxWidth: '280px', margin: '0 auto', padding: '0 2px', 
             backgroundColor: 'white', fontFamily: 'monospace', color: '#000' 
         }}>
-            {/* PANEL DE CONTROL */}
+            {/* PANEL DE CONTROL INTERACTIVO (NO IMPRIMIBLE) */}
             <div className="no-print" style={{ 
                 display: 'flex', gap: '10px', marginBottom: '20px',
                 position: 'sticky', top: '0', backgroundColor: 'white',
                 padding: '10px 0', zIndex: 10
             }}>
-                <button onClick={() => window.close()} style={{ flex: 1, padding: '15px', backgroundColor: '#666', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>⬅️ VOLVER</button>
-                <button onClick={() => window.print()} style={{ flex: 1.5, padding: '15px', backgroundColor: '#000', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>🖨️ IMPRIMIR</button>
+                <button onClick={() => window.close()} style={{ flex: 1, padding: '12px', backgroundColor: '#666', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>⬅️ VOLVER</button>
+                <button onClick={() => window.print()} style={{ flex: 1.5, padding: '12px', backgroundColor: '#000', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>🖨️ IMPRIMIR</button>
             </div>
             
             <div className="ticket-printable-area">
-            <div style={{ textAlign: 'center', marginBottom: '10px' }}>
-    <h2 style={{ margin: '0 0 2px 0', fontSize: esModoCocina ? '24px' : '18px', fontWeight: 'bold', lineHeight: '1' }}>
-        {/* Si es cocina, mostramos la mesa. Si es ticket, los datos del cliente que vienen en data.brand */}
-        {esModoCocina ? `MESA: ${data.mesa || '0'}` : (data.brand?.name || "AMPLINUBE").toUpperCase()}
-    </h2>
-
-                    {!esModoCocina && data.brand && (
-        <div style={{ fontSize: '11px', lineHeight: '1.2', marginBottom: '8px' }}>
-            {data.brand.nit && <p style={{ margin: 0 }}>NIT: {data.brand.nit}</p>}
-            <p style={{ margin: 0 }}>{data.brand.address}</p>
-            <p style={{ margin: 0 }}>Tel: {data.brand.phone}</p>
-        </div>
-                    )}
-
-                    <div style={{ fontSize: esModoCocina ? '16px' : '12px', marginTop: '5px' }}>
-                        <p style={{ margin: '2px 0' }}>
-                            <b>{esModoCocina ? 'ATIENDE:' : 'Vendedor:'}</b> {data.mesero || 'Caja'}
+                
+                {/* 1️⃣ RENDERIZADO SI ES COMANDA DE COCINA (IMAGEN 2 - image_b884c0.png) */}
+                {esModoCocina ? (
+                    <div style={{ textAlign: 'center', width: '100%' }}>
+                        <h1 style={{ margin: '0 0 4px 0', fontSize: '32px', fontWeight: 'bold', lineHeight: '1' }}>
+                            MESA: {data.mesa || '0'}
+                        </h1>
+                        
+                        {/* Si cuentas con número de orden interno o prefijo, se renderiza aquí de forma gigante */}
+                        <h2 style={{ margin: '4px 0', fontSize: '24px', fontWeight: 'bold', lineHeight: '1' }}>
+                            ORDEN #{String(data.ordenId || '').slice(-2) || '01'}
+                        </h2>
+                        
+                        <p style={{ margin: '6px 0', fontSize: '18px', fontWeight: 'bold' }}>
+                            MESERO: {String(data.mesero || 'SISTEMA').toUpperCase()}
                         </p>
-                        <p style={{ fontSize: '11px' }}>{new Date(data.fecha).toLocaleString('es-CO')}</p>
+                        
+                        <div style={{ borderTop: '2px dashed #000', margin: '10px 0' }}></div>
+                        
+                        {/* CUERPO DE LA COMANDA CON FUENTE INYECTADA GRANDE */}
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: 'monospace' }}>
+                            <tbody>
+                                {(data.productos || []).map((item, index) => {
+                                    const cantNum = Number(item.cantidad) || 0;
+                                    const esPeso = cantNum % 1 !== 0;
+                                    const cantidadTexto = esPeso ? cantNum.toFixed(3) : cantNum;
+                                    
+                                    return (
+                                        <tr key={index} style={{ verticalAlign: 'top' }}>
+                                            <td style={{ padding: '6px 0', fontSize: '22px', fontWeight: 'bold', textAlign: 'left', lineHeight: '1.1', wordBreak: 'break-word' }}>
+                                                {cantidadTexto} {String(item.nombre || item.nombrePlato || 'PRODUCTO').toUpperCase()}
+                                                
+                                                {item.comentario && (
+                                                    <div className="comentario-cocina" style={{ fontSize: '18px', fontWeight: 'bold', marginTop: '4px', paddingLeft: '10px', lineHeight: '1.1' }}>
+                                                        {`>${String(item.comentario).toUpperCase()}<`}
+                                                    </div>
+                                                )}
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                        
+                        <div style={{ borderTop: '2px dashed #000', margin: '10px 0' }}></div>
+                        <p style={{ fontSize: '14px', fontWeight: 'bold', margin: '5px 0', textAlign: 'center' }}>
+                            HORA: {new Date(data.fecha).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', hour12: true })}
+                        </p>
                     </div>
-                </div>
-
-                <div style={{ textAlign: 'center', margin: '10px 0', fontSize: '18px', fontWeight: 'bold', fontFamily: 'monospace' }}>
-                {esModoCocina ? '**** COMANDA ****' : '**** CUENTA ****'}
-                </div>
-
-                <div style={{ width: '100%', marginTop: '5px', fontFamily: 'monospace' }}>
-    {(() => {
-        const productosAgrupados = (data.productos || []).reduce((acc, current) => {
-            const nombreSeguro = String(current.nombre || current.nombrePlato || "PRODUCTO").trim().toUpperCase();
-            const precioSeguro = Number(current.precioNum) || 0;
-            const llave = esModoCocina ? nombreSeguro : `${nombreSeguro}-${precioSeguro}`;
-            
-            if (acc[llave]) { 
-                acc[llave].cantidad += (Number(current.cantidad) || 0); 
-            } else { 
-                acc[llave] = { ...current, nombre: nombreSeguro }; 
-            }
-            return acc;
-        }, {});
-
-        return Object.values(productosAgrupados).map((item, index) => {
-            const cantNum = Number(item.cantidad) || 0;
-            const esPeso = cantNum % 1 !== 0;
-            const cantidadTexto = esPeso ? cantNum.toFixed(3) : cantNum;
-            const precioLinea = Number(item.precioNum || 0) * cantNum;
-
-           return (
-    <div key={index} style={{ 
-        width: '100%',
-        fontSize: esModoCocina ? '16px' : '13px', 
-        padding: '2px 0',
-        fontFamily: 'monospace',
-        fontWeight: 'bold',
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'flex-start',
-        lineHeight: '1.2'
-    }}>
-        {/* LADO IZQUIERDO: Nombre del plato + Espacio + X1 de corrido en la misma línea */}
-        <div style={{ textAlign: 'left', paddingRight: '4px' }}>
-            <span>{item.nombre}</span>
-            <span style={{ marginLeft: '6px', color: '#000' }}>X{cantidadTexto}</span>
-            
-            {esModoCocina && item.comentario && (
-                <div style={{ fontSize: '15px', fontWeight: '900', marginTop: '1px', color: '#000' }}>
-                    {`>> ${item.comentario.toUpperCase()}`}
-                </div>
-            )}
-        </div>
-
-        {/* LADO DERECHO: Precio alineado al extremo derecho (Solo en ticket de cliente) */}
-        {!esModoCocina && (
-            <div style={{ textAlign: 'right', whiteSpace: 'nowrap', minWidth: '65px' }}>
-                ${precioLinea.toLocaleString('es-CO')}
-            </div>
-        )}
-    </div>
-);      });
-    })()}
-</div>
-
-                {!esModoCocina && (
-                    <>
-                        <hr style={{ border: 'none', borderTop: '1px dashed #000', marginTop: '10px' }} />
-                        <div style={{ marginTop: '8px', fontSize: '13px' }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>SUBTOTAL:</span><span>${totalProductos.toLocaleString('es-CO')}</span></div>
-                            {valorPropina > 0 && <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>PROPINA:</span><span>${valorPropina.toLocaleString('es-CO')}</span></div>}
-                            <div style={{ borderTop: '2px solid #000', marginTop: '6px', paddingTop: '6px', display: 'flex', justifyContent: 'space-between' }}>
-                                <span style={{ fontWeight: 'bold' }}>TOTAL:</span>
-                                <span style={{ fontWeight: 'bold', fontSize: '18px' }}>{SITE_CONFIG.brand.symbol}{totalFinal.toLocaleString('es-CO')}</span>
+                ) : (
+                    
+                    // 2️⃣ RENDERIZADO SI ES CUENTA DE CLIENTE (IMAGEN 1 - image_b8853c.png)
+                    <div>
+                        {/* ENCABEZADO FISCAL COMERCIAL */}
+                        <div style={{ textAlign: 'center', marginBottom: '8px' }}>
+                            <h2 style={{ margin: '0 0 2px 0', fontSize: '22px', fontWeight: 'bold', lineHeight: '1', letterSpacing: '-0.5px' }}>
+                                {(data.brand?.name || "AMPLINUBE").toUpperCase()}
+                            </h2>
+                            <div style={{ fontSize: '12px', lineHeight: '1.2', fontWeight: 'bold' }}>
+                                {data.brand?.nit && <p style={{ margin: 0 }}>NIT: {data.brand.nit}</p>}
+                                {data.brand?.address && <p style={{ margin: 0 }}>{String(data.brand.address).toUpperCase()}</p>}
+                                {data.brand?.phone && <p style={{ margin: 0 }}>TEL: {data.brand.phone}</p>}
                             </div>
+                            
+                            <div style={{ borderTop: '1px dashed #000', margin: '8px 0' }}></div>
+                            
+                            <h2 style={{ margin: '4px 0', fontSize: '20px', fontWeight: 'bold' }}>**** CUENTA ****</h2>
+                            
+                            <div style={{ borderTop: '1px dashed #000', margin: '8px 0' }}></div>
                         </div>
-                        <p style={{ textAlign: 'center', marginTop: '15px', fontSize: '11px' }}>¡Gracias por su visita!</p>
-                    </>
+
+                        {/* TABLA ULTRA COMPACTA DE PRODUCTOS EVITA DESFASE EN WINDOWS */}
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: 'monospace', fontSize: '12px', fontWeight: 'bold', tableLayout: 'fixed' }}>
+                            <tbody>
+                                {(() => {
+                                    // Agrupación limpia antes de pintar en el papel
+                                    const productosAgrupados = (data.productos || []).reduce((acc, current) => {
+                                        const nombreSeguro = String(current.nombre || current.nombrePlato || "PRODUCTO").trim().toUpperCase();
+                                        const precioSeguro = Number(current.precioNum || current.precioUnitario) || 0;
+                                        const llave = `${nombreSeguro}-${precioSeguro}`;
+                                        
+                                        if (acc[llave]) { 
+                                            acc[llave].amount += (Number(current.cantidad) || 0); 
+                                        } else { 
+                                            acc[llave] = { ...current, nombre: nombreSeguro, amount: (Number(current.cantidad) || 0) }; 
+                                        }
+                                        return acc;
+                                    }, {});
+
+                                    return Object.values(productosAgrupados).map((item, index) => {
+                                        const cantNum = Number(item.amount) || 0;
+                                        const esPeso = cantNum % 1 !== 0;
+                                        const cantidadTexto = esPeso ? cantNum.toFixed(3) : cantNum;
+                                        const precioLinea = Number(item.precioNum || item.precioUnitario || 0) * cantNum;
+
+                                        return (
+                                            <tr key={index} style={{ verticalAlign: 'top' }}>
+                                                {/* Celda de detalle con palabra acoplada de corrido */}
+                                                <td style={{ padding: '2px 0', textAlign: 'left', wordBreak: 'break-word', lineHeight: '1.2' }}>
+                                                    {item.nombre} <span style={{ paddingLeft: '4px' }}>X{cantidadTexto}</span>
+                                                </td>
+                                                {/* Alineación forzada extrema derecha mediante pixeles */}
+                                                <td style={{ padding: '2px 0', textAlign: 'right', whiteSpace: 'nowrap', width: '85px', lineHeight: '1.2' }}>
+                                                    $ {precioLinea.toLocaleString('es-CO')}
+                                                </td>
+                                            </tr>
+                                        );
+                                    });
+                                })()}
+                            </tbody>
+                        </table>
+
+                        <hr style={{ border: 'none', borderTop: '1px dashed #000', marginTop: '10px', marginBottom: '5px' }} />
+                        
+                        {/* DESGLOSE DE TOTALES */}
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: 'monospace', fontSize: '13px', fontWeight: 'bold' }}>
+                            <tbody>
+                                <tr>
+                                    <td style={{ padding: '2px 0', textAlign: 'left' }}>SUBTOTAL:</td>
+                                    <td style={{ padding: '2px 0', textAlign: 'right' }}>$ {totalProductos.toLocaleString('es-CO')}</td>
+                                </tr>
+                                {valorPropina > 0 && (
+                                    <tr>
+                                        <td style={{ padding: '2px 0', textAlign: 'left' }}>PROPINA:</td>
+                                        <td style={{ padding: '2px 0', textAlign: 'right' }}>$ {valorPropina.toLocaleString('es-CO')}</td>
+                                    </tr>
+                                )}
+                                {data.metodoPago && (
+                                    <tr>
+                                        <td style={{ padding: '2px 0', textAlign: 'left' }}>PAGO CON:</td>
+                                        <td style={{ padding: '2px 0', textAlign: 'right' }}>{String(data.metodoPago).toUpperCase()}</td>
+                                    </tr>
+                                )}
+                                <tr style={{ fontSize: '18px' }}>
+                                    <td style={{ padding: '6px 0 2px 0', textAlign: 'left', fontWeight: 'bold' }}>TOTAL:</td>
+                                    <td style={{ padding: '6px 0 2px 0', textAlign: 'right', fontWeight: 'bold' }}>$ {totalFinal.toLocaleString('es-CO')}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+
+                        {/* 🛡️ CONDICIONAL EXCLUSIVO PARA DOMICILIOS (IMAGEN 1 - image_b8853c.png) */}
+                        {esDomicilio && data.datosEntrega && (
+                            <div style={{ width: '100%' }}>
+                                <hr style={{ border: 'none', borderTop: '1px dashed #000', marginTop: '10px', marginBottom: '4px' }} />
+                                <h3 style={{ textAlign: 'center', margin: '4px 0', fontSize: '18px', fontWeight: 'bold' }}>DATOS DE ENTREGA</h3>
+                                
+                                <div style={{ fontSize: '14px', fontWeight: 'bold', lineHeight: '1.3', textAlign: 'left' }}>
+                                    <div style={{ borderTop: '1px dashed #000', margin: '4px 0' }}></div>
+                                    <p style={{ margin: '4px 0' }}>CLIENTE: {String(data.datosEntrega.nombreCliente || data.datosEntrega.nombre || 'GENERAL').toUpperCase()}</p>
+                                    <div style={{ borderTop: '1px dashed #000', margin: '4px 0' }}></div>
+                                    <p style={{ margin: '4px 0' }}>DIR: {String(data.datosEntrega.direccion || 'N/A').toUpperCase()}</p>
+                                    <div style={{ borderTop: '1px dashed #000', margin: '4px 0' }}></div>
+                                    <p style={{ margin: '4px 0' }}>TEL: {data.datosEntrega.telefono || 'N/A'}</p>
+                                    <div style={{ borderTop: '1px dashed #000', margin: '4px 0' }}></div>
+                                </div>
+                            </div>
+                        )}
+
+                        <p style={{ textAlign: 'center', marginTop: '15px', fontSize: '11px', fontWeight: 'bold' }}>GRACIAS POR SU VISITA</p>
+                    </div>
                 )}
 
-                {esModoCocina && (
-                     <p style={{ textAlign: 'center', marginTop: '20px', fontSize: '14px', fontWeight: 'bold' }}>--- FIN DE COMANDA ---</p>
-                )}
-
-                <div className="extra-space" style={{ height: '80px', display: 'block', pageBreakAfter: 'always' }}>&nbsp;</div>
+                {/* ESPACIADO MARGINAL TÉRMICO PREVIENE CORTES PREMATUROS */}
+                <div className="extra-space" style={{ height: '60px', display: 'block', pageBreakAfter: 'always' }}>&nbsp;</div>
             </div>
 
+            {/* PARCHE DE ESTILOS CSS INYECTADOS DIRECTOS AL MOTOR DE WINDOWS */}
             <style jsx>{`
                 @media print {
                     .no-print { display: none !important; }
                     
                     @page { 
-                        margin: 0; 
+                        margin: 0 !important; 
                         size: 58mm auto; 
                     }
 
@@ -201,29 +265,18 @@ function TicketContent() {
                     }
 
                     #ticket-root { 
-                        width: 52mm !important; 
-                        max-width: 52mm !important; 
+                        width: 54mm !important; 
+                        max-width: 54mm !important; 
                         margin: 0 auto !important;
-                        padding:0 2mm !important; 
+                        padding: 0 1mm !important; 
                         display: block !important;
                     }
 
-                    table {
-                        width: 100% !important;
-                        table-layout: fixed !important;
-                        border-collapse: collapse !important;
+                    * { 
+                        line-height: 1 !important; 
+                        color-adjust: exact !important;
+                        -webkit-print-color-adjust: exact !important;
                     }
-
-                    .comentario-cocina {
-                        font-size: ${esModoCocina ? '20px' : '12px'} !important;
-                        font-weight: bold !important;
-                        display: block !important;
-                        margin-top: 2px !important;
-                        line-height: 1 !important;
-                        padding-left: 2px !important;
-                    }
-                    
-                    * { line-height: 1 !important; }
                 }
             `}</style>
         </div>

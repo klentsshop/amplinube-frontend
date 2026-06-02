@@ -22,12 +22,17 @@ export async function POST(req) {
             // Si es null o vacío, evitamos enviarlo para que Sanity no arroje error de esquema.
             ...(data.imagen ? { imagen: data.imagen } : {}),
 
-            recetaInsumos: data.controlaInventario && data.insumoId ? [{
-                _key: Math.random().toString(36).substring(2, 9),
-                _type: 'itemReceta',
-                insumo: { _type: 'reference', _ref: data.insumoId },
-                amount: 1 // Asegúrate si tu esquema usa 'cantidad' o 'amount' en Sanity
-            }] : []
+           recetaInsumos: data.controlaInventario && Array.isArray(data.insumosReceta)
+           ? data.insumosReceta.map((ins, index) => ({
+           // 🚀 AGREGAMOS UN STRING ALEATORIO AL KEY
+          _key: `receta_${Date.now()}_${index}_${Math.random().toString(36).substring(2, 7)}`,
+           _type: 'itemReceta',
+          insumo: { _type: 'reference', _ref: ins.insumoId },
+        // Mapeamos 'cantidad' (del front) al nombre de propiedad del esquema ('amount' o 'cantidad')
+         amount: Number(ins.cantidad) || 1, 
+        cantidad: Number(ins.cantidad) || 1 
+      }))
+    : []
         };
 
         // USAMOS EL CLIENTE CON PERMISOS
@@ -54,12 +59,16 @@ export async function PUT(req) {
             controlaInventario: data.controlaInventario,
             barcode: data.barcode,
             codigoBalanza: data.codigoBalanza,
-            recetaInsumos: data.controlaInventario && data.insumoId ? [{
-                _key: 'insumo-base',
-                _type: 'itemReceta',
-                insumo: { _type: 'reference', _ref: data.insumoId },
-                cantidad: 1
-            }] : []
+            recetaInsumos: data.controlaInventario && Array.isArray(data.insumosReceta)
+            ? data.insumosReceta.map((ins, index) => ({
+           // 🚀 LLAVE ULTRA ÚNICA TAMBIÉN AL ACTUALIZAR
+           _key: `receta_${Date.now()}_${index}_${Math.random().toString(36).substring(2, 7)}`,
+           _type: 'itemReceta',
+            insumo: { _type: 'reference', _ref: ins.insumoId },
+            amount: Number(ins.cantidad) || 1,
+            cantidad: Number(ins.cantidad) || 1
+            }))
+          : []
         };
 
         // 🚀 LÍNEA CORREGIDA MINUCIOSAMENTE:

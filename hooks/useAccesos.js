@@ -21,7 +21,7 @@ export function useAccesos(config, setNombreMesero, { onAdminSuccess } = {}, ten
     // Lógica para habilitar/deshabilitar modo Cobro (CAJERO)
     const solicitarAccesoCajero = async () => {
         if (esModoCajero) {
-            if (confirm("¿Cerrar sesión de Cajero y volver a modo Mesero?")) {
+            if (confirm("¿Cerrar/activar sesión?")) {
                 setEsModoCajero(false);
                 localStorage.removeItem(`${tenantId}_cajero_activa`);
                 setNombreMesero(null);

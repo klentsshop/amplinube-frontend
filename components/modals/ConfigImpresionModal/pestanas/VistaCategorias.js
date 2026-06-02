@@ -27,12 +27,12 @@ export default function VistaCategorias({
                         value={nuevaCatTitulo} 
                         onChange={(e) => setNuevaCatTitulo(e.target.value)} 
                         style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '2px solid #e5e7eb', outline: 'none', textTransform: 'uppercase' }} 
-                        placeholder="Ej: BEBIDAS, CARNES, COMBOS" 
+                        placeholder="Ej: BEBIDAS, CARNES, ABARROTES" 
                     />
                 </div>
                 <label style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '12px', backgroundColor: '#fff', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.85rem', color: '#374151', border: '1px solid #e5e7eb' }}>
                     <input type="checkbox" checked={nuevaCatSeImprime} onChange={(e) => setNuevaCatSeImprime(e.target.checked)} style={{ width: '18px', height: '18px', accentColor: '#10b981' }} />
-                    ¿Enviar platos de esta categoría a la cocina?
+                    ¿Enviar productos de esta categoría a impresión?
                 </label>
                 <div style={{ display: 'flex', gap: '10px', marginTop: '5px' }}>
                     {editandoCatId && (

@@ -41,7 +41,8 @@ export default function ConfigImpresionModal({ isOpen, onClose, categorias, tena
         disponible: true,
         barcode: '',
         codigoBalanza: '',
-        imagen: null
+        imagen: null,
+        insumosReceta: []
     });
 
     // --- 5. ESTADOS PESTAÑA 4: INVENTARIO / STOCK ---
@@ -64,6 +65,7 @@ export default function ConfigImpresionModal({ isOpen, onClose, categorias, tena
     const [busquedaMesero, setBusquedaMesero] = useState('');
     const [editandoMeseroId, setEditandoMeseroId] = useState(null);
     const [meseroNombre, setMeseroNombre] = useState('');
+    const [meseroActivo, setMeseroActivo] = useState(true);
 
     const [itemIdSeguridad, setItemIdSeguridad] = useState(null);
     const [pinCajero, setPinCajero] = useState('');
@@ -103,7 +105,8 @@ export default function ConfigImpresionModal({ isOpen, onClose, categorias, tena
                 disponible, 
                 barcode, 
                 codigoBalanza,
-                controlaInventario
+                controlaInventario,
+                recetaInsumos
             }`;
             const data = await client.fetch(query, { tenantId }, { useCdn: false });
             setListaProductosCompletas(data || []);
@@ -355,14 +358,13 @@ export default function ConfigImpresionModal({ isOpen, onClose, categorias, tena
                 controlaInventario: nuevoPlato.controlaInventario,
                 barcode: nuevoPlato.barcode ? nuevoPlato.barcode.trim() : null,
                 codigoBalanza: nuevoPlato.codigoBalanza ? nuevoPlato.codigoBalanza.trim() : null,
-                categoria: nuevoPlato.categoria, // ID plano, la API hace el reference
+                categoria: nuevoPlato.categoria, 
                 tenantId,
                 imagen: nuevoPlato.imagen,
-                // Si controla inventario, enviamos el ID del insumo vinculado
-                insumoId: nuevoPlato.controlaInventario ? nuevoPlato.insumoVinculado : null,
-                ...(editandoProductoId && { productoId: editandoProductoId })
-            };
-
+                // Enviamos directamente el array plano de la receta unificada
+               insumosReceta: nuevoPlato.controlaInventario ? (nuevoPlato.insumosReceta || []) : [],
+               ...(editandoProductoId && { productoId: editandoProductoId })
+               };
             const res = await fetch('/api/admin/productos', {
                 method: metodo,
                 headers: { 'Content-Type': 'application/json' },
@@ -381,19 +383,26 @@ export default function ConfigImpresionModal({ isOpen, onClose, categorias, tena
         } finally { setGuardando(false); }
     };
     const activarEdicionProducto = (prod) => {
-        setEditandoProductoId(prod._id);
-        setNuevoPlato({
-            nombre: prod.nombre,
-            precio: prod.precio,
-            // Si viene el objeto de Sanity sacamos el _ref, de lo contrario el valor directo
-            categoria: prod.categoria?._ref || prod.categoria || '',
-            controlaInventario: prod.controlaInventario || false,
-            disponible: prod.disponible !== false,
-            barcode: prod.barcode || '',
-            codigoBalanza: prod.codigoBalanza || '',
-            imagen: prod.imagen || null
-        });
-    };
+    setEditandoProductoId(prod._id);
+    
+    // Normalizamos el esquema complejo del backend al array simple esperado por los inputs hijos
+    const recetaNormalizada = (prod.recetaInsumos || prod.insumosReceta || []).map(item => ({
+        insumoId: item.insumo?._ref || item.insumoId || '',
+        cantidad: Number(item.cantidad || item.amount || item.unidades || item.descuenta || 1)
+    }));
+
+    setNuevoPlato({
+        nombre: prod.nombre,
+        precio: prod.precio,
+        categoria: prod.categoria?._ref || prod.categoria || '',
+        controlaInventario: prod.controlaInventario || false,
+        disponible: prod.disponible !== false,
+        barcode: prod.barcode || '',
+        codigoBalanza: prod.codigoBalanza || '',
+        imagen: prod.imagen || null,
+        insumosReceta: recetaNormalizada // 👈 PASAMOS LA RECETA PERFECTAMENTE TRADUCIDA
+    });
+};
 
     const cancelarEdicionProducto = () => {
         setEditandoProductoId(null);
@@ -405,7 +414,8 @@ export default function ConfigImpresionModal({ isOpen, onClose, categorias, tena
             disponible: true,
             barcode: '',
             codigoBalanza: '',
-            imagen: null
+            imagen: null,
+            insumosReceta: [] // 🧹 Limpiamos la receta al crear uno nuevo o cancelar
         });
     };
 
@@ -534,7 +544,7 @@ export default function ConfigImpresionModal({ isOpen, onClose, categorias, tena
     const cargarMeserosNegocio = async () => {
         if (!tenantId) return;
         try {
-            const query = `*[_type == "mesero" && tenant == $tenantId] | order(nombre asc) { _id, nombre }`;
+            const query = `*[_type == "mesero" && tenant == $tenantId] | order(nombre asc) { _id, nombre, activo }`; 
             const data = await client.fetch(query, { tenantId }, { useCdn: false });
             setListaMeserosCompletas(data || []);
         } catch (e) { console.error("🔥 Error cargando vendedores:", e); }
@@ -588,6 +598,7 @@ export default function ConfigImpresionModal({ isOpen, onClose, categorias, tena
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ 
                     nombre: meseroNombre.trim(), 
+                    activo: meseroActivo,
                     tenantId, 
                     ...(editandoMeseroId && { itemId: editandoMeseroId }) 
                 })
@@ -619,11 +630,13 @@ export default function ConfigImpresionModal({ isOpen, onClose, categorias, tena
     const seleccionarMeseroParaEditar = (item) => {
         setEditandoMeseroId(item._id);
         setMeseroNombre(item.nombre);
+        setMeseroActivo(item.activo !== false);
     };
 
     const cancelarEdicionMesero = () => {
         setEditandoMeseroId(null);
         setMeseroNombre('');
+        setMeseroActivo(true);
     };
 
     const handleBorrarMesero = async (itemId) => {
@@ -701,7 +714,7 @@ export default function ConfigImpresionModal({ isOpen, onClose, categorias, tena
                     {/* FILA 2: ADMINISTRACIÓN Y CONTROL */}
                     <div style={{ display: 'flex', gap: '4px' }}>
                         <button onClick={() => setPestanaActiva('gastos')} style={{ flex: 1, padding: '8px 4px', border: 'none', fontSize: '0.7rem', fontWeight: 'bold', borderRadius: '6px', cursor: 'pointer', backgroundColor: pestanaActiva === 'gastos' ? 'white' : 'transparent', color: pestanaActiva === 'gastos' ? '#111827' : '#6b7280', boxShadow: pestanaActiva === 'gastos' ? '0 1px 2px rgba(0,0,0,0.05)' : 'none' }}>💸 GASTOS</button>
-                        <button onClick={() => setPestanaActiva('meseros')} style={{ flex: 1, padding: '8px 4px', border: 'none', fontSize: '0.7rem', fontWeight: 'bold', borderRadius: '6px', cursor: 'pointer', backgroundColor: pestanaActiva === 'meseros' ? 'white' : 'transparent', color: pestanaActiva === 'meseros' ? '#111827' : '#6b7280', boxShadow: pestanaActiva === 'meseros' ? '0 1px 2px rgba(0,0,0,0.05)' : 'none' }}>👥 MESEROS</button>
+                        <button onClick={() => setPestanaActiva('meseros')} style={{ flex: 1, padding: '8px 4px', border: 'none', fontSize: '0.7rem', fontWeight: 'bold', borderRadius: '6px', cursor: 'pointer', backgroundColor: pestanaActiva === 'meseros' ? 'white' : 'transparent', color: pestanaActiva === 'meseros' ? '#111827' : '#6b7280', boxShadow: pestanaActiva === 'meseros' ? '0 1px 2px rgba(0,0,0,0.05)' : 'none' }}>👥 VENDEDORES</button>
                         <button onClick={() => setPestanaActiva('seguridad')} style={{ flex: 1, padding: '8px 4px', border: 'none', fontSize: '0.7rem', fontWeight: 'bold', borderRadius: '6px', cursor: 'pointer', backgroundColor: pestanaActiva === 'seguridad' ? 'white' : 'transparent', color: pestanaActiva === 'seguridad' ? '#111827' : '#6b7280', boxShadow: pestanaActiva === 'seguridad' ? '0 1px 2px rgba(0,0,0,0.05)' : 'none' }}>🔒 PINES</button>
                     </div>
                 </div>
@@ -781,7 +794,8 @@ export default function ConfigImpresionModal({ isOpen, onClose, categorias, tena
                         <VistaMeseros 
                             handleGuardarMesero={handleGuardarMesero} editandoMeseroId={editandoMeseroId}
                             cancelarEdicionMesero={cancelarEdicionMesero} meseroNombre={meseroNombre}
-                            setMeseroNombre={setMeseroNombre} guardando={guardando}
+                            setMeseroNombre={setMeseroNombre} meseroActivo={meseroActivo}     // 🚀 PASAMOS EL ESTADO
+                            setMeseroActivo={setMeseroActivo} guardando={guardando}
                             busquedaMesero={busquedaMesero} setBusquedaMesero={setBusquedaMesero}
                             meserosFiltrados={meserosFiltrados} seleccionarMeseroParaEditar={seleccionarMeseroParaEditar}
                             handleBorrarMesero={handleBorrarMesero}

@@ -5,7 +5,7 @@ import { sanityClientServer } from '@/lib/sanity';
 export async function POST(request) {
     try {
         const body = await request.json();
-        const { nombre, tenantId } = body;
+        const { nombre, activo, tenantId } = body;
 
         if (!tenantId) {
             return NextResponse.json({ error: 'Identificador de negocio ausente.' }, { status: 400 });
@@ -14,7 +14,8 @@ export async function POST(request) {
         const nuevoMeseroDoc = {
             _type: 'mesero',
             nombre: nombre.trim().toUpperCase(), // Lo guardamos limpio y en mayúsculas
-            tenant: tenantId
+            tenant: tenantId,
+            activo: activo !== false
         };
 
         const result = await sanityClientServer.create(nuevoMeseroDoc);
@@ -29,7 +30,7 @@ export async function POST(request) {
 export async function PUT(request) {
     try {
         const body = await request.json();
-        const { itemId, nombre, tenantId } = body;
+        const { itemId, nombre, activo, tenantId } = body;
 
         if (!tenantId || !itemId) {
             return NextResponse.json({ error: 'Faltan parámetros críticos (tenantId o itemId).' }, { status: 400 });
@@ -37,6 +38,7 @@ export async function PUT(request) {
 
         const camposAActualizar = {};
         if (nombre !== undefined) camposAActualizar.nombre = nombre.trim().toUpperCase();
+        if (activo !== undefined) camposAActualizar.activo = Boolean(activo);
 
         const result = await sanityClientServer
             .patch(itemId)

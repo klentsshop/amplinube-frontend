@@ -32,7 +32,11 @@ export default function VistaProductos({
                     {editandoProductoId && (
                         <button 
                             type="button" 
-                            onClick={cancelarEdicionProducto} 
+                            onClick={() => {
+                            cancelarEdicionProducto();
+                            const inputReceta = document.getElementById('buscador-insumo-receta');
+                            if (inputReceta) inputReceta.value = "";
+                            }}
                             style={{ border: 'none', background: '#ef4444', color: 'white', padding: '3px 8px', borderRadius: '4px', fontSize: '0.7rem', fontWeight: 'bold', cursor: 'pointer' }}
                         >
                             CREAR NUEVO X
@@ -118,30 +122,106 @@ export default function VistaProductos({
                         ¿Producto Disponible en POS?
                     </label>
                 </div>
-
-                {/* DESPLEGABLE DE INSUMO VINCULADO */}
-                {nuevoPlato.controlaInventario && (
-                    <div style={{ backgroundColor: '#fff', padding: '10px', borderRadius: '8px', border: '1px solid #d1d5db' }}>
-                        <select
-                            value={nuevoPlato.insumoVinculado || ''}
-                            onChange={(e) => setNuevoPlato({...nuevoPlato, insumoVinculado: e.target.value})}
-                            style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '2px solid #3b82f6', fontSize: '0.9rem', outline: 'none' }}
+{/* ========================================== */}
+{/* MÓDULO ÚNICO DE INVENTARIO (RECETA MÚLTIPLE) */}
+{/* ========================================== */}
+{nuevoPlato.controlaInventario && (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+        <div style={{ backgroundColor: '#fff', padding: '12px', borderRadius: '8px', border: '1px solid #d1d5db', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <span style={{ fontSize: '0.7rem', fontWeight: 'bold', color: '#3b82f6' }}>📋 PRODUCTOS / INSUMOS A DESCONTAR AL VENDERSE:</span>
+            
+            {/* Mapeo de insumos ya agregados */}
+            {Array.isArray(nuevoPlato.insumosReceta) && nuevoPlato.insumosReceta.map((insumo, index) => {
+                const insumoInfo = listaInventario.find(i => i._id === insumo.insumoId);
+                return (
+                    <div key={index} style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                        <span style={{ fontSize: '0.85rem', flex: 1, color: '#111827', fontWeight: '500' }}>
+                            • {insumoInfo ? `${insumoInfo.nombre} (Stock: ${insumoInfo.stockActual})` : 'Insumo seleccionado'}
+                        </span>
+                        <input 
+                            type="number" 
+                            placeholder="Cant." 
+                            value={insumo.cantidad || ''} 
+                            onChange={(e) => {
+                                const copiaInsumos = [...nuevoPlato.insumosReceta];
+                                copiaInsumos[index].cantidad = Number(e.target.value);
+                                setNuevoPlato({ ...nuevoPlato, insumosReceta: copiaInsumos });
+                            }} 
+                            style={{ width: '70px', padding: '6px', borderRadius: '4px', border: '1px solid #ccc', textAlign: 'center', fontSize: '0.85rem' }} 
+                        />
+                        <button 
+                            type="button" 
+                            onClick={() => {
+                                const copiaInsumos = nuevoPlato.insumosReceta.filter((_, i) => i !== index);
+                                setNuevoPlato({ ...nuevoPlato, insumosReceta: copiaInsumos });
+                            }} 
+                            style={{ border: 'none', background: 'none', color: '#ef4444', cursor: 'pointer', fontSize: '1rem' }}
                         >
-                            <option value="">Seleccione insumo a descontar...</option>
-                            {listaInventario.map(item => (
-                                <option key={item._id} value={item._id}>{item.nombre} (Stock: {item.stockActual})</option>
-                            ))}
-                        </select>
+                            ❌
+                        </button>
                     </div>
-                )}
+                );
+            })}
 
+            {/* Buscador predictivo limpio por Nombres */}
+            <div style={{ display: 'flex', gap: '6px', marginTop: '4px' }}>
+                <div style={{ flex: 1, position: 'relative' }}>
+                    <input
+                        id="buscador-insumo-receta"
+                        type="text"
+                        list="recetas-inventario-list"
+                        placeholder="🔍 Escribe el nombre del insumo y oprime el botón [+]..."
+                        style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '2px solid #3b82f6', fontSize: '0.9rem', outline: 'none' }}
+                    />
+                    <datalist id="recetas-inventario-list">
+                        {listaInventario
+                            .filter(item => !Array.isArray(nuevoPlato.insumosReceta) || !nuevoPlato.insumosReceta.some(r => r.insumoId === item._id))
+                            .map(item => (
+                                <option key={item._id} value={item.nombre}>
+                                    Stock: {item.stockActual}
+                                </option>
+                            ))
+                        }
+                    </datalist>
+                </div>
+                <button
+                    type="button"
+                    onClick={() => {
+                        const selectEl = document.getElementById('buscador-insumo-receta');
+                        const val = selectEl?.value;
+                        if (!val) return;
+
+                        // Búsqueda robusta por concordancia exacta de nombre para obtener el ID real
+                        const encontrado = listaInventario.find(item => item.nombre === val.trim());
+                        if (!encontrado) {
+                            alert("⚠️ Selecciona un insumo válido de la lista predictiva.");
+                            return;
+                        }
+                        
+                        const actuales = Array.isArray(nuevoPlato.insumosReceta) ? nuevoPlato.insumosReceta : [];
+                        setNuevoPlato({
+                            ...nuevoPlato,
+                            insumosReceta: [...actuales, { insumoId: encontrado._id, cantidad: 1 }]
+                        });
+                        if (selectEl) selectEl.value = "";
+                    }}
+                    style={{ padding: '0 12px', backgroundColor: '#3b82f6', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                >
+                    <PlusCircle size={18} />
+                </button>
+            </div>
+        </div>
+    </div>
+)}
                 {/* ACCIÓN DE GUARDADO */}
                 <button 
-                    onClick={async () => {
-                        await handleCrearProducto();
-                        if (fileInputRef.current) fileInputRef.current.value = "";
-                        setEstadoImagen('');
-                    }} 
+                       onClick={async () => {
+                       await handleCrearProducto();
+                       if (fileInputRef.current) fileInputRef.current.value = "";
+                       const inputReceta = document.getElementById('buscador-insumo-receta');
+                       if (inputReceta) inputReceta.value = "";
+                       setEstadoImagen('');
+                       }}
                     style={{ padding: '9px', backgroundColor: editandoProductoId ? '#2563eb' : '#10b981', color: 'white', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.8rem', textTransform: 'uppercase', marginTop: '4px' }}
                 >
                     {guardando ? 'PROCESANDO...' : editandoProductoId ? '💾 GUARDAR PRODUCTO' : '🚀 REGISTRAR PRODUCTO'}
@@ -169,7 +249,19 @@ export default function VistaProductos({
                     </thead>
                     <tbody>
     {productosFiltrados.map(p => (
-        <tr key={p._id} onClick={() => activarEdicionProducto(p)} style={{ borderBottom: '1px solid #e5e7eb', cursor: 'pointer' }}>
+     <tr key={p._id} onClick={() => {
+    // 1. Cargamos el producto en edición con el array de recetas blindado del backend
+    const recetaNormalizada = (p.recetaInsumos || []).map(item => ({
+    insumoId: item.insumo?._ref || item.insumoId,
+    cantidad: item.cantidad || item.amount || 1
+}));
+
+activarEdicionProducto({ ...p, insumosReceta: recetaNormalizada });
+    
+    // 2. Limpiamos la caja de texto predictiva para dejarla lista para nuevos ingresos
+    const inputReceta = document.getElementById('buscador-insumo-receta');
+    if (inputReceta) inputReceta.value = "";
+}} style={{ borderBottom: '1px solid #e5e7eb', cursor: 'pointer' }}>
             <td style={{ padding: '10px', fontWeight: '500', color: '#111827', textTransform: 'uppercase' }}>{p.nombre}</td>
             <td style={{ padding: '10px', textAlign: 'right', fontWeight: 'bold', color: '#059669' }}>${p.precio}</td>
             {/* 🗑️ BOTÓN DE DESTRUCCIÓN DIRECTA */}

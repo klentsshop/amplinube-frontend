@@ -53,30 +53,46 @@ if (!tenantId || tenantId === 'undefined') {
 ) {
             return NextResponse.json({ error: 'Datos incompletos.' }, { status: 400 });
         }
+// 2. NORMALIZACIÓN DE PLATOS (Cirugía anti-impresión de categorías excluidas)
+// Traemos las categorías del negocio que explícitamente tienen desactivada la impresión
+const categoriasNoImprimibles = await sanityClientServer.fetch(
+    `*[_type == "categoria" && tenant == $tenantId && seImprime == false].titulo`,
+    { tenantId },
+    { useCdn: false }
+);
 
-        // 2. NORMALIZACIÓN DE PLATOS (Tu lógica intacta)
-        const estacionesSet = new Set();
-        const platosNormalizados = platosOrdenados.map(p => {
-            const categoriaPlato = (p.categoria || "").trim().toUpperCase();
-            if (p.seImprime === true) estacionesSet.add(categoriaPlato);
+// Pasamos los títulos a mayúsculas y limpios para comparar de forma segura
+const listaExcluidas = (categoriasNoImprimibles || []).map(c => c.trim().toUpperCase());
 
-            return {
-                _key: p._key || p.lineId || Math.random().toString(36).substring(2, 9),
-                _id: p._id,
-                nombrePlato: p.nombrePlato || p.nombre,
-                cantidad: Number(p.cantidad) || 1,
-                precioUnitario: Number(p.precioUnitario || p.precioNum) || 0,
-                subtotal: (Number(p.precioUnitario || p.precioNum) || 0) * (Number(p.cantidad) || 1),
-                comentario: p.comentario || "",
-                categoria: categoriaPlato,
-                seImprime: p.seImprime === true,
-                controlaInventario: p.controlaInventario || false,
-                cantidadADescontar: p.cantidadADescontar || 0,
-                insumoVinculado: p.insumoVinculado || null
-            };
-        });
+const estacionesSet = new Set();
+const platosNormalizados = platosOrdenados.map(p => {
+    const categoriaPlato = (p.categoria || "").trim().toUpperCase();
+    
+    // El plato se imprime si su bandera es true Y si su categoría NO está en la lista negra
+    const debeImprimirPlato = p.seImprime === true && !listaExcluidas.includes(categoriaPlato);
+    
+    if (debeImprimirPlato) {
+        estacionesSet.add(categoriaPlato);
+    }
 
-        const estacionesPendientes = Array.from(estacionesSet);
+    return {
+        _key: p._key || p.lineId || Math.random().toString(36).substring(2, 9),
+        _id: p._id,
+        nombrePlato: p.nombrePlato || p.nombre,
+        cantidad: Number(p.cantidad) || 1,
+        precioUnitario: Number(p.precioUnitario || p.precioNum) || 0,
+        subtotal: (Number(p.precioUnitario || p.precioNum) || 0) * (Number(p.cantidad) || 1),
+        comentario: p.comentario || "",
+        categoria: categoriaPlato,
+        seImprime: debeImprimirPlato, // Guardamos el estado real filtrado
+        controlaInventario: p.controlaInventario || false,
+        amount: Number(p.cantidad) || 1,
+        cantidadADescontar: p.cantidadADescontar || 0,
+        insumoVinculado: p.insumoVinculado || null
+    };
+});
+
+const estacionesPendientes = Array.from(estacionesSet);
         const fechaActual = new Date().toISOString();
         const valorSolicitada = body.hasOwnProperty('imprimirSolicitada') ? body.imprimirSolicitada : true;
 
