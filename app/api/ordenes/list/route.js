@@ -17,20 +17,26 @@ if (!tenantId || tenantId === 'undefined') {
 
         const query = `*[_type == "ordenActiva" && tenant == $tenantId] | order(fechaCreacion asc) {
             _id, mesa, mesero, tipoOrden, fechaCreacion, platosOrdenados, imprimirSolicitada, tenant,
-    clienteRef->{
-        _id,
-        nombre,
-        telefono,
-        direccion
-    },
-    datosEntrega
+    clienteRef, datosEntrega
         }`;
 
-        const data = await sanityClientServer.fetch(query, { tenantId }, { useCdn: false });
-        return NextResponse.json(data || []);
+      const data = await sanityClientServer.fetch(query, { tenantId }, { useCdn: false });
+        
+        // 🛡️ MITIGACIÓN DE API REQUESTS: Cabeceras de control estricto para frenar el desangre de consultas fantasmas
+        return new NextResponse(JSON.stringify(data || []), {
+            status: 200,
+            headers: {
+                'Content-Type': 'application/json',
+                'Cache-Control': 'public, s-maxage=1, stale-while-revalidate=2', // Evita que llamadas repetidas idénticas tumben el servidor
+                'CDN-Cache-Control': 'no-store'
+            }
+        });
     } catch (error) {
         console.error('[API_LIST_GET_ERROR]:', error);
-        return NextResponse.json([], { status: 200 });
+        return new NextResponse(JSON.stringify([]), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' }
+        });
     }
 }
 
@@ -125,7 +131,12 @@ const estacionesPendientes = Array.from(estacionesSet);
                     platosOrdenados: platosNormalizados,
                     ultimaActualizacion: fechaActual,
                     imprimirSolicitada: valorSolicitada,                
-                   ...(clienteRef ? { clienteRef } : {}),
+                   clienteRef: body.cliente ? {
+                   _id: body.cliente.id || body.cliente._id, 
+                   nombre: body.cliente.nombre,
+                   telefono: body.cliente.telefono,
+                   direccion: body.cliente.direccion
+                   } : null,
                    ...(datosEntrega ? { datosEntrega } : {})
                     
                    },

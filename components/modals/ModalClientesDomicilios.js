@@ -135,11 +135,13 @@ export default function ModalClientesDomicilios({
                             </thead>
                             <tbody>
                                 {clientesFiltrados.map((item) => {
-                                    const siendoEditado = idClienteEditando === item._id;
-                                    return (
-                                        <tr 
-                                            key={item._id} 
-                                            onClick={() => seleccionarParaEditar(item)}
+                               // 🛡️ Cirugía: Normalizamos la identidad del cliente para Supabase (id) o Sanity (_id)
+                               const cliIdReal = item.id || item._id;
+                               const siendoEditado = idClienteEditando === cliIdReal;
+                               return (
+                                   <tr 
+                                           key={cliIdReal} 
+                                           onClick={() => seleccionarParaEditar(item)}
                                             style={{ borderBottom: '1px solid #f1f5f9', cursor: 'pointer', backgroundColor: siendoEditado ? '#eff6ff' : 'transparent', transition: 'background 0.15s' }}
                                             onMouseEnter={(e) => !siendoEditado && (e.currentTarget.style.backgroundColor = '#f8fafc')}
                                             onMouseLeave={(e) => !siendoEditado && (e.currentTarget.style.backgroundColor = 'transparent')}
@@ -164,7 +166,7 @@ export default function ModalClientesDomicilios({
                                                     </button>
                                                     <button 
                                                         type="button"
-                                                        onClick={() => handleBorrarCliente(item._id)} 
+                                                        onClick={() => handleBorrarCliente(item.id || item._id)}
                                                         title="Eliminar del directorio"
                                                         style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', padding: '2px' }}
                                                     >

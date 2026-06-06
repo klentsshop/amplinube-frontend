@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { sanityClientServer } from '@/lib/sanity';
+import { supabaseServer } from '@/lib/supabase';
 
 export const dynamic = 'force-dynamic';
 
@@ -7,16 +8,17 @@ export async function POST(request) {
     try {
         const body = await request.json();
         const { fechaInicio, fechaFin, pinAdmin, tenantId } = body;
+        
         if (!tenantId) {
-        return NextResponse.json({ error: 'Tenant ID no identificado' }, { status: 400 });
+            return NextResponse.json({ error: 'Tenant ID no identificado' }, { status: 400 });
         }
 
-        // 🛡️ 1. VALIDACIÓN DE PRIVACIDAD
-       const seguridad = await sanityClientServer.fetch(
-    `*[_type == "seguridad" && tenant == $tenantId][0]{ pinAdmin }`,
-    { tenantId }, 
-    { useCdn: false }
-);
+        // 🛡️ 1. VALIDACIÓN DE PRIVACIDAD DESDE SANITY (Echematype estático)
+        const seguridad = await sanityClientServer.fetch(
+            `*[_type == "seguridad" && tenant == $tenantId][0]{ pinAdmin }`,
+            { tenantId }, 
+            { useCdn: false }
+        );
 
         const PIN_ADMIN_REAL = seguridad?.pinAdmin || process.env.PIN_ADMIN;
 
@@ -34,40 +36,55 @@ export async function POST(request) {
             );
         }
 
-        const inicio = fechaInicio; 
-        const fin = fechaFin; 
-        
-        // 2. QUERY AMPLIADA
-        const queryVentas = `*[_type == "venta" && tenant == $tenantId && fechaLocal >= $inicio && fechaLocal <= $fin]{
-            "totalPagado": coalesce(totalPagado, 0),
-            "propinaRecaudada": coalesce(propinaRecaudada, 0),
-            mesero,
-            metodoPago,
-            detallePagos, 
-            platosVendidosV2,
-            fechaLocal,
-            tipoOrden
-        }`;
-
-        const queryGastos = `*[_type == "gasto" && tenant == $tenantId && fecha >= $inicio && fecha <= $fin]{
-            "monto": coalesce(monto, 0),
-            descripcion,
-            fecha
-        }`;
-
-        const [ventas, gastos] = await Promise.all([
-            sanityClientServer.fetch(queryVentas, { inicio, fin, tenantId }, { useCdn: false }),
-            sanityClientServer.fetch(queryGastos, { inicio, fin, tenantId }, { useCdn: false })
+        // 2. 📡 CONSULTA PARALELA DE ALTA VELOCIDAD EN SUPABASE
+        const [resVentas, resGastos] = await Promise.all([
+            supabaseServer
+                .from('ventas')
+                .select('*')
+                .eq('tenant_id', tenantId)
+                .gte('fecha_local', fechaInicio)
+                .lte('fecha_local', fechaFin),
+            supabaseServer
+                .from('gastos')
+                .select('*')
+                .eq('tenant_id', tenantId)
+                .gte('created_at', new Date(fechaInicio).toISOString())
+                .lte('created_at', new Date(fechaFin).toISOString())
         ]);
 
-        // 📊 3. PROCESAMIENTO ESTRATÉGICO PARA FAMA
+        if (resVentas.error) throw new Error(`Ventas db error: ${resVentas.error.message}`);
+        if (resGastos.error) throw new Error(`Gastos db error: ${resGastos.error.message}`);
+
+        const ventasRaw = resVentas.data || [];
+        const gastosRaw = resGastos.data || [];
+
+        // Mapeamos las ventas de Supabase al formato exacto que espera tu algoritmo de procesamiento
+        const ventas = ventasRaw.map(v => ({
+            totalPagado: Number(v.total_pagado || 0),
+            propinaRecaudada: Number(v.propina_recaudada || 0),
+            mesero: v.mesero,
+            metodoPago: v.metodo_pago,
+            detallePagos: v.detalle_pago || v.detalle_pagos, 
+            platosVendidosV2: v.platos_vendidos,
+            fechaLocal: v.fecha_local,
+            tipoOrden: v.tipo_orden
+        }));
+
+        // Mapeamos los gastos de Supabase
+        const gastos = gastosRaw.map(g => ({
+            monto: Number(g.monto || 0),
+            descripcion: g.descripcion,
+            fecha: g.created_at
+        }));
+
+        // 📊 3. PROCESAMIENTO ESTRATÉGICO TOTALMENTE PRESERVADO
         const metodosPago = { efectivo: 0, tarjeta: 0, digital: 0 };
-        const rankingPlatos = {}; // 🥩 Aquí sumaremos Kilos y Unidades
+        const rankingPlatos = {}; 
         const porMesero = {}; 
         const porTipoOrden = { mesa: 0, domicilio: 0, llevar: 0 };
         let totalPropinas = 0;
 
-        ventas?.forEach(v => {
+        ventas.forEach(v => {
             const ventaNeta = Number(v.totalPagado || 0);
             const propina = Number(v.propinaRecaudada || 0);
             const tipo = (v.tipoOrden || 'mesa').toLowerCase().trim();
@@ -76,16 +93,16 @@ export async function POST(request) {
 
             // Tipo de Orden
             if (tipo === 'mesa') porTipoOrden.mesa += ventaNeta;
-            else if (tipo === 'domicilio' || tipo === 'domi') porTipoOrden.domicilio += ventaNeta;
+            else if (tipo === 'domicilio' || tipo === 'domi' || tipo === 'domicilios') porTipoOrden.domicilio += ventaNeta;
             else if (tipo === 'llevar') porTipoOrden.llevar += ventaNeta;
             else porTipoOrden.mesa += ventaNeta;
         
             // Meseros
             const nombreM = v.mesero || "General";
-            porMesero[nombreM] = (porMesero[nombreM] || 0) + ventaNeta;
+             porMesero[nombreM] = (porMesero[nombreM] || 0) + ventaNeta;
 
             // 🛡️ MÉTODOS DE PAGO
-            if (v.detallePagos && v.detallePagos.length > 0) {
+            if (v.detallePagos && Array.isArray(v.detallePagos) && v.detallePagos.length > 0) {
                 v.detallePagos.forEach(p => {
                     const m = (p.metodo || 'efectivo').toLowerCase();
                     const montoP = Number(p.monto || 0);
@@ -101,21 +118,20 @@ export async function POST(request) {
                 else metodosPago.efectivo += montoTotal;
             }
 
-            // 🥩 RANKING DE VENTAS (Blindado para decimales)
+            // 🥩 RANKING DE VENTAS (Kilos y Unidades)
             v.platosVendidosV2?.forEach(p => {
                 const nombre = p.nombrePlato || "Desconocido";
-                // Usamos Number() para que 1.500 kg se sume correctamente y no como texto
                 const cantidadReal = Number(p.cantidad || 0);
                 rankingPlatos[nombre] = (rankingPlatos[nombre] || 0) + cantidadReal;
             });
         });
 
-        const totalVentasSumadas = ventas?.reduce((acc, v) => acc + Number(v.totalPagado || 0), 0) || 0;
-        const totalGastosSumados = gastos?.reduce((acc, g) => acc + Number(g.monto || 0), 0) || 0;
+        const totalVentasSumadas = ventas.reduce((acc, v) => acc + Number(v.totalPagado || 0), 0);
+        const totalGastosSumados = gastos.reduce((acc, g) => acc + Number(g.monto || 0), 0);
 
         return NextResponse.json({ 
-            ventas: ventas || [], 
-            gastos: gastos || [],
+            ventas, 
+            gastos,
             ventasTotales: totalVentasSumadas,
             gastosTotales: totalGastosSumados,
             porMesero,
@@ -123,13 +139,11 @@ export async function POST(request) {
             estadisticas: {
                 metodosPago,
                 totalPropinas,
-                // El Top 5 ahora es real: muestra lo más vendido por volumen (kilos o unidades)
                 topPlatos: Object.entries(rankingPlatos)
-                .filter(([nombre]) => {
-            const n = nombre.toUpperCase();
-            // Si el nombre contiene "MERMA" o "Z_MERMA", no entra al Top 5
-            return !n.includes('MERMA') && !n.includes('DESPERDICIO');
-        })
+                    .filter(([nombre]) => {
+                        const n = nombre.toUpperCase();
+                        return !n.includes('MERMA') && !n.includes('DESPERDICIO');
+                    })
                     .sort((a, b) => b[1] - a[1])
                     .slice(0, 5)
                     .map(([nombre, cant]) => ({

@@ -36,7 +36,7 @@ export function useAccesos(config, setNombreMesero, { onAdminSuccess } = {}, ten
             const res = await fetch('/api/auth/verify', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ pin, tipo: 'cajero', tenantId })
+                body: JSON.stringify({ pin, tipo: 'cajero', tenantId, tenant: tenantId })
             });
             const data = await res.json();
 
@@ -61,7 +61,7 @@ export function useAccesos(config, setNombreMesero, { onAdminSuccess } = {}, ten
             const res = await fetch('/api/auth/verify', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ pin, tipo: 'admin', tenantId })
+                body: JSON.stringify({ pin, tipo: 'admin', tenantId, tenant: tenantId })
             });
             const data = await res.json();
 
@@ -82,7 +82,7 @@ export function useAccesos(config, setNombreMesero, { onAdminSuccess } = {}, ten
             const res = await fetch('/api/auth/verify', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ pin, tipo: 'admin', tenantId })
+                body: JSON.stringify({ pin, tipo: 'admin', tenantId, tenant: tenantId })
             });
             const data = await res.json();
             return data.autorizado === true; 

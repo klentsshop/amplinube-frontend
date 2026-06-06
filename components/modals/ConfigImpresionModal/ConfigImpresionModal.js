@@ -275,43 +275,69 @@ export default function ConfigImpresionModal({ isOpen, onClose, categorias, tena
         setEditandoCatId(cat._id);
     };
 
-    const handleGuardarInventario = async (e) => {
+   const handleGuardarInventario = async (e) => {
         e.preventDefault();
-        if (!invNombre.trim()) return alert("⚠️ El nombre del insumo es obligatorio.");
+        if (!invNombre || !invNombre.trim()) return alert("⚠️ El nombre del insumo es obligatorio.");
         setGuardando(true);
+        
         try {
             const metodo = idItemEditando ? 'PUT' : 'POST';
+            
+            // 🛡️ BISTURÍ: Estructuramos el body exacto que espera recibir tu API híbrida
             const body = {
                 nombre: invNombre.trim(),
-                stockActual: Number(invStockActual) || 0,
-                stockMinimo: Number(invStockMinimo) || 0,
-                barcode: invBarcode.trim() || null,
-                codigoBalanza: invCodigoBalanza.trim() || null,
-                tenantId,
-                ...(idItemEditando && { itemId: idItemEditando })
+                stockActual: Number(invStockActual) || 0, // 🎯 Reemplazo absoluto para la columna stock_actual de Supabase
+                stockMinimo: Number(invStockMinimo) || 5,  // Sincroniza stockMinimo (Sanity) y stock_minimo (Supabase)
+                barcode: invBarcode && invBarcode.trim() ? invBarcode.trim() : null,
+                codigoBalanza: invCodigoBalanza && invCodigoBalanza.trim() ? invCodigoBalanza.trim() : null,
+                tenantId: tenantId // 🔒 Candado maestro multi-tenant
             };
+
+            // Si hay un ID en edición, lo inyectamos como itemId (el _id alfanumérico de Sanity)
+            if (idItemEditando) {
+                body.itemId = idItemEditando;
+            }
 
             const res = await fetch('/api/admin/inventario', {
                 method: metodo,
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(body)
             });
+            
             const data = await res.json();
-            if (data.ok) {
-                alert(idItemEditando ? '🔄 ¡Insumo actualizado en Sanity!' : '🚀 ¡Materia prima creada con éxito!');
-                cancelarEdicion();
-                await cargarInventarioAdmin();
-            } else { alert(`❌ Error: ${data.error}`); }
+            
+            if (res.ok && (data.ok || data.id || data.item)) {
+                alert(idItemEditando ? '🔄 ¡Insumo en Sanity y Stock en Supabase actualizados al unísono!' : '🚀 ¡Materia prima inicializada correctamente!');
+                cancelarEdicion(); // Limpia los inputs del formulario
+                if (typeof cargarInventarioAdmin === 'function') {
+                    await cargarInventarioAdmin(); // Refresca la tabla con los datos frescos
+                }
+            } else { 
+                alert(`❌ Error del servidor: ${data.error || 'No se pudo procesar la solicitud.'}`); 
+            }
         } catch (error) {
-            alert('❌ Error al procesar inventario.');
-        } finally { setGuardando(false); }
+            console.error("🔥 Error en handleGuardarInventario:", error);
+            alert('❌ Error de comunicación al procesar inventario.');
+        } finally { 
+            setGuardando(false); 
+        }
     };
 
-    const seleccionarParaEditar = (item) => {
-        setIdItemEditando(item._id);
-        setInvNombre(item.nombre);
-        setInvStockActual(item.stockActual);
-        setInvStockMinimo(item.stockMinimo || 5);
+   const seleccionarParaEditar = (item) => {
+        // 🎯 LUPA SÉNIOR: Capturamos el insumo_id (alfanumérico de Sanity) para amarrar la edición híbrida
+        const idCorrecto = item.insumo_id || item.id || item._id;
+        setIdItemEditando(idCorrecto);
+        
+        setInvNombre(item.nombre || '');
+        
+        // 🥩 Rescatamos el stock vivo real priorizando Supabase, con fallback a Sanity
+        const stockFisico = item.stock_actual !== undefined ? item.stock_actual : (item.stockActual || 0);
+        setInvStockActual(Number(stockFisico));
+        
+        // Lo mismo para el stock mínimo de alertas
+        const minimoFisico = item.stock_minimo !== undefined ? item.stock_minimo : (item.stockMinimo || 5);
+        setInvStockMinimo(Number(minimoFisico));
+        
         setInvBarcode(item.barcode || '');
         setInvCodigoBalanza(item.codigoBalanza || '');
     };
@@ -325,7 +351,7 @@ export default function ConfigImpresionModal({ isOpen, onClose, categorias, tena
         setInvCodigoBalanza('');
     };
 
-    const handleBorrarInventario = async (itemId) => {
+   const handleBorrarInventario = async (itemId) => {
         if (!confirm("⚠️ ¿Seguro que deseas eliminar este ítem del inventario? Esto romperá el stock de los productos que dependan de él.")) return;
         setGuardando(true);
         try {
@@ -334,12 +360,24 @@ export default function ConfigImpresionModal({ isOpen, onClose, categorias, tena
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ itemId, tenantId })
             });
-            if (res.ok) {
+            
+            const data = await res.json(); // 🛡️ BISTURÍ: Desempaquetamos la respuesta real del backend
+            
+            if (res.ok && data.ok) {
+                alert('🗑️ Insumo eliminado correctamente de todo el sistema.');
                 if (idItemEditando === itemId) cancelarEdicion();
                 await cargarInventarioAdmin();
-            } else { alert("❌ No se pudo eliminar."); }
-        } catch (error) { console.error(error); }
-        finally { setGuardando(false); }
+                window.dispatchEvent(new Event('inventarioActualizado'));
+            } else { 
+                // 🎯 Si la base de datos se queja por llaves foráneas o recetas, te lo dirá aquí en la pantalla
+                alert(`❌ Error al eliminar: ${data.error || 'Restricción de integridad en base de datos'}`); 
+            }
+        } catch (error) { 
+            console.error("🔥 Error al borrar insumo:", error);
+            alert("❌ Fallo de comunicación con el servidor al intentar eliminar.");
+        } finally { 
+            setGuardando(false); 
+        }
     };
 
  const handleCrearProducto = async () => {
@@ -442,20 +480,17 @@ export default function ConfigImpresionModal({ isOpen, onClose, categorias, tena
             setGuardando(false);
         }
     };
-    const cargarGastosNegocio = async () => {
+   const cargarGastosNegocio = async () => {
         if (!tenantId) return;
         try {
-            const query = `*[_type == "gasto" && tenant == $tenantId] | order(fecha desc) { 
-                _id, 
-                descripcion, 
-                monto, 
-                fecha
-            }`;
-            const data = await client.fetch(query, { tenantId }, { useCdn: false });
-            setListaGastosCompletas(data || []);
-        } catch (e) {
-            console.error("🔥 Error descargando gastos de Sanity:", e);
-        }
+        // 🛡️ BISTURÍ ANTI-CACHÉ: Agregamos Date.now() para que la URL sea única en cada llamada
+        // Esto destruye la caché del navegador y obliga a traer la hora exacta procesada por el servidor.
+        const res = await fetch(`/api/admin/gastos?tenantId=${tenantId}&_t=${Date.now()}`);
+        const data = await res.json();
+        setListaGastosCompletas(Array.isArray(data) ? data : data.data || []);
+    } catch (e) {
+        console.error("🔥 Error descargando gastos de Supabase:", e);
+    }
     };
     // 🚀 CONTROLES Y OPERACIONES PARA EL MÓDULO DE GASTOS
     const handleGuardarGasto = async (e) => {
@@ -488,7 +523,7 @@ export default function ConfigImpresionModal({ isOpen, onClose, categorias, tena
     };
 
     const seleccionarGastoParaEditar = (item) => {
-        setEditandoGastoId(item._id);
+        setEditandoGastoId(item.id || item._id);
         setGastoDescripcion(item.descripcion);
         setGastoMonto(item.monto);
     };

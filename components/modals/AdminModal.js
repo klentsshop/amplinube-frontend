@@ -57,9 +57,9 @@ const balanceNeto = (reporte?.ventasTotales || 0) - (reporte?.gastosTotales || r
                         {/* --- DISTRIBUCIÓN DE CAJA --- */}
                         <h4 style={{ margin: '15px 0 8px 0', fontSize: '0.9em', color: '#4B5563', textTransform: 'uppercase' }}>💰 Distribución de Caja (Ventas Netas)</h4>
                         <div style={{ display: 'flex', justifyContent: 'space-between', padding: '12px', background: '#F3F4F6', borderRadius: '8px', fontSize: '0.85em' }}>
-                            <div>💵 Efec: <strong>${(reporte?.estadisticas?.metodosPago?.efectivo || 0).toLocaleString('es-CO')}</strong></div>
-                            <div>💳 Tarj: <strong>${(reporte?.estadisticas?.metodosPago?.tarjeta || 0).toLocaleString('es-CO')}</strong></div>
-                            <div>📱 Dig: <strong>${(reporte?.estadisticas?.metodosPago?.digital || 0).toLocaleString('es-CO')}</strong></div>
+                           <div>💵 Efec: <strong>${(reporte?.estadisticas?.metodosPago?.efectivo || reporte?.estadisticas?.metodos?.efectivo || 0).toLocaleString('es-CO')}</strong></div>
+                           <div>💳 Tarj: <strong>${(reporte?.estadisticas?.metodosPago?.tarjeta || reporte?.estadisticas?.metodos?.tarjeta || 0).toLocaleString('es-CO')}</strong></div>
+                           <div>📱 Dig: <strong>${(reporte?.estadisticas?.metodosPago?.digital || reporte?.estadisticas?.metodos?.digital || 0).toLocaleString('es-CO')}</strong></div>
                         </div>
                         
                         {/* --- CANALES DE VENTA --- */}

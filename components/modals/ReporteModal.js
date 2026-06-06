@@ -52,16 +52,23 @@ export default function ReporteModal({
             { "CONCEPTO": "GASTOS", "VALOR": datos.gastos },
             { "CONCEPTO": "TOTAL NETO EN CAJA", "VALOR": (datos.ventas + (datos.totalPropinas || 0) - datos.gastos) },
             { "CONCEPTO": "--- DESGLOSE DE VENTAS POR MEDIO ---", "VALOR": "" },
-            { "CONCEPTO": "Efectivo", "VALOR": datos.metodosPago?.efectivo || 0 },
-            { "CONCEPTO": "Tarjeta", "VALOR": datos.metodosPago?.tarjeta || 0 },
-            { "CONCEPTO": "Digital (Nequi/Davi/Transf)", "VALOR": datos.metodosPago?.digital || 0 }
-        ]);
+            { "CONCEPTO": "Efectivo", "VALOR": datos.metodosPago?.efectivo || datos.metodos?.efectivo || 0 },
+            { "CONCEPTO": "Tarjeta", "VALOR": datos.metodosPago?.tarjeta || datos.metodos?.tarjeta || 0 },
+            { "CONCEPTO": "Digital (Nequi/Davi/Transf)", "VALOR": datos.metodosPago?.digital || datos.metodos?.digital || 0 }
+           ]);
         const hojaVentas = XLSX.utils.json_to_sheet(datosVentas);
-        const hojaGastos = XLSX.utils.json_to_sheet(gastosParaExcel.map(g => ({
-            "FECHA REGISTRO": g.fecha || "Sin fecha",
-            "PROVEEDOR / CONCEPTO": String(g.descripcion || "Gasto sin nombre").toUpperCase(),
-            "MONTO PAGADO ($)": Number(g.monto) || 0
-        })));
+        const hojaGastos = XLSX.utils.json_to_sheet(gastosParaExcel.map(g => {
+        const descReal = g.descripcion || g.descripcionGasto || "Gasto sin nombre";
+        const fechaReal = g.fecha || g.fechaRegistro || "Sin fecha";
+         // 🛡️ Limpieza de fechas ISO completas de Supabase para que el Excel sea legible (AAAA-MM-DD)
+        const fechaCorta = String(fechaReal).substring(0, 10);
+
+        return {
+        "FECHA REGISTRO": fechaCorta,
+        "PROVEEDOR / CONCEPTO": String(descReal).toUpperCase().trim(),
+        "MONTO PAGADO ($)": Number(g.monto || g.montoGasto || 0)
+         };
+        }));
         
         // Configuración de anchos de columna
         hojaResumen['!cols'] = [{ wch: 45 }, { wch: 20 }];
@@ -110,9 +117,9 @@ export default function ReporteModal({
 
                         <div style={{ marginTop: '15px', padding: '10px', backgroundColor: '#F3F4F6', borderRadius: '8px', fontSize: '0.85rem' }}>
                             <p style={{ margin: '0 0 5px 0', fontWeight: 'bold', color: '#4B5563', borderBottom: '1px solid #D1D5DB' }}>💰 DESGLOSE POR MEDIO</p>
-                            <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>💵 Efectivo:</span><strong>${(datos.metodosPago?.efectivo || 0).toLocaleString('es-CO')}</strong></div>
-                            <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>💳 Tarjeta:</span><strong>${(datos.metodosPago?.tarjeta || 0).toLocaleString('es-CO')}</strong></div>
-                            <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>📱 Digital:</span><strong>${(datos.metodosPago?.digital || 0).toLocaleString('es-CO')}</strong></div>
+                           <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>💵 Efectivo:</span><strong>${(datos.metodosPago?.efectivo || datos.metodos?.efectivo || 0).toLocaleString('es-CO')}</strong></div>
+                           <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>💳 Tarjeta:</span><strong>${(datos.metodosPago?.tarjeta || datos.metodos?.tarjeta || 0).toLocaleString('es-CO')}</strong></div>
+                           <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>📱 Digital:</span><strong>${(datos.metodosPago?.digital || datos.metodos?.digital || 0).toLocaleString('es-CO')}</strong></div>
                         </div>
 
                         <button 
@@ -161,11 +168,11 @@ export default function ReporteModal({
                                 .sort((a, b) => new Date(a.fecha) - new Date(b.fecha))
                                 .map((g, idx) => (
                                     <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #FFF5F5', padding: '5px 0' }}>
-                                        <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                            <span>{g.descripcion.toUpperCase()}</span>
-                                            <small style={{ fontSize: '0.7rem', color: '#666' }}>{g.fecha}</small>
-                                        </div>
-                                        <strong style={{ color: '#DC2626' }}>${Number(g.monto).toLocaleString('es-CO')}</strong>
+                                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                    <span>{String(g.descripcion || "GASTO").toUpperCase()}</span>
+                                    <small style={{ fontSize: '0.7rem', color: '#666' }}>{String(g.fecha || "").substring(0, 10)}</small>
+                                    </div>
+                                    <strong style={{ color: '#DC2626' }}>${Number(g.monto || 0).toLocaleString('es-CO')}</strong>
                                     </div>
                                 ))}
                         </div>

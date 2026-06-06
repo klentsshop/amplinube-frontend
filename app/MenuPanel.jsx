@@ -330,8 +330,8 @@ const handleBorrarCliente = async (id) => {
         const data = await res.json();
         if (res.ok) {
             setClientesLista(prev =>
-                prev.filter(c => c._id !== id)
-            );
+    prev.filter(c => c._id !== id && c.id !== id) // 🛡️ Soporta el ID de Supabase y Sanity sin romper la lista visual
+);
             return;
         }
         alert(data.error || 'No fue posible eliminar el cliente.');
@@ -355,7 +355,8 @@ const handleBorrarCliente = async (id) => {
             const res = await fetch('/api/clientes/save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
             if (!res.ok) throw new Error("Error en servidor");
             const data = await res.json();
-            setClientesLista(prev => idClienteEditando ? prev.map(c => c._id === data._id ? data : c) : [data, ...prev]);
+           const clienteID = data._id || data.id; // Captura el identificador devuelto de forma segura
+            setClientesLista(prev => idClienteEditando ? prev.map(c => (c._id === idClienteEditando || c.id === idClienteEditando) ? data : c) : [data, ...prev]);
             cancelarEdicion();
         } catch (error) { console.error(error); alert("🚫 Error al guardar."); } finally { setGuardandoCliente(false); }
     };

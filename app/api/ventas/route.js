@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { sanityClientServer } from '@/lib/sanity';
 import crypto from 'crypto';
+import { supabaseServer } from '@/lib/supabase';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -31,7 +32,7 @@ export async function POST(req) {
 
         const datePart = fechaUTC.slice(2, 10).replace(/-/g, '');
         const seed = transaccionId ? transaccionId.slice(-4).toUpperCase() : (crypto.randomBytes(2).toString('hex')).toUpperCase();
-        const prefix = tenantId.slice(0, 3).toUpperCase(); // 👈 'tal' se vuelve 'TAL', 'ike' se vuelve 'IKE'
+        const prefix = tenantId.slice(0, 3).toUpperCase(); 
         const folioGenerado = `${prefix}-${datePart}-${seed}`;
         const ventaId = transaccionId ? `venta-${transaccionId}` : `venta-${Date.now()}`;
         
@@ -61,14 +62,14 @@ export async function POST(req) {
             }
         }
 
-        // --- 4. 🚀 BÚSQUEDA DE IDS Y RECETAS EN SANITY ---
+        // --- 4. 🚀 BÚSQUEDA DE IDS Y RECETAS EN SANITY (CORREGIDA SIN ERRORES DE SINTAXIS) ---
         const nombresPlatos = (payload.platosVendidosV2 || []).map(item => item.nombrePlato || item.nombre);
         const mapeoSanity = await sanityClientServer.fetch(
            `*[_type == "plato" && tenant == $tenantId && nombre in $nombres]{
                 nombre, 
                 _id, 
                 controlaInventario,
-                insumoVinculado,
+                "insumoVinculadoRef": insumoVinculado._ref,
                 cantidadADescontar,
                 recetaInsumos[]{
                     "insumoId": insumo._ref,
@@ -80,21 +81,20 @@ export async function POST(req) {
         );
 
         // --- 5. MAPEO DE PLATOS PARA LA VENTA ---
-        // ✅ CÓDIGO BLINDADO:
-const platosVenta = (payload.platosVendidosV2 || []).map(item => {
-    const precioFinal = Number(item.precioUnitario || item.precioNum || item.precio) || 0;
-    const cantidadFinal = Number(item.cantidad) || 1;
-    
-    return {
-        _key: crypto.randomUUID(),
-        _type: 'platoVendidoV2',
-        nombrePlato: item.nombrePlato || item.nombre,
-        cantidad: cantidadFinal,
-        precioUnitario: precioFinal,
-        subtotal: Number(item.subtotal) || (precioFinal * cantidadFinal),
-        comentario: item.comentario || ""
-    };
-});
+        const platosVenta = (payload.platosVendidosV2 || []).map(item => {
+            const precioFinal = Number(item.precioUnitario || item.precioNum || item.precio) || 0;
+            const cantidadFinal = Number(item.cantidad) || 1;
+            
+            return {
+                _key: crypto.randomUUID(),
+                _type: 'platoVendidoV2',
+                nombrePlato: item.nombrePlato || item.nombre,
+                cantidad: cantidadFinal,
+                precioUnitario: precioFinal,
+                subtotal: Number(item.subtotal) || (precioFinal * cantidadFinal),
+                comentario: item.comentario || ""
+            };
+        });
 
         const detallePagosValido = (Array.isArray(payload.detallePagos) && payload.detallePagos.length > 0) 
             ? payload.detallePagos 
@@ -102,62 +102,30 @@ const platosVenta = (payload.platosVendidosV2 || []).map(item => {
 
         const abrirCajon = metodoPago === 'efectivo' || (metodoPago === 'mixto_v2' && detallePagosValido.some(p => p.metodo === 'efectivo'));
         
+        let columnaEfectivo = 0;
+        let columnaTarjeta = 0;
+        let columnaDigital = 0;
+
+        detallePagosValido.forEach(p => {
+            const m = p.metodo?.toLowerCase() || 'efectivo';
+            const monto = Number(p.monto || 0);
+            
+            if (m === 'efectivo') columnaEfectivo += monto;
+            else if (m === 'tarjeta') columnaTarjeta += monto;
+            else if (m === 'digital' || m === 'nequi' || m === 'daviplata') columnaDigital += monto;
+        });
+
         // ==========================================
         // 🏗️ INICIO DE TRANSACCIÓN ATÓMICA ÚNICA
         // ==========================================
         let transaction = sanityClientServer.transaction();
 
-        // A. CREAR VENTA
-        transaction = transaction.createIfNotExists({
-            _id: ventaId,
+        // B. CREAR TICKET VENTA PARA APK
+        transaction = transaction.create({
+            _id: `venta-pulso-${Date.now()}`, 
             _type: 'venta',
             tenant: tenantId,
-            folio: folioGenerado,
-            mesa,
-            mesero,
-            tipoOrden,
-            ...(datosEntrega && typeof datosEntrega === 'object' ? { datosEntrega } : {}),
-            metodoPago: (metodoPago === 'mixto_v2' || detallePagosValido.length > 1) ? 'mixto_v2' : metodoPago,
-            detallePagos: detallePagosValido.map(p => ({
-                _key: crypto.randomUUID(),
-                metodo: String(p.metodo || 'efectivo').toLowerCase().trim(),
-                monto: Number(p.monto || 0)
-            })),
-            totalPagado,
-            propinaRecaudada,
-            fecha: fechaUTC,
-            fechaLocal: fechaLocal,
-            platosVendidosV2: platosVenta,
-        });
-
-        // B. CREAR TICKET PARA APK
-        transaction = transaction.create({
-            _type: 'ticketCobro',
-            tenant: tenantId,
-            mesa,
-            mesero,
-            tipoOrden,
-            ...(datosEntrega && typeof datosEntrega === 'object' ? { datosEntrega } : {}),
-            metodoPago: detallePagosValido.length > 1 ? 'múltiple' : metodoPago,
-            detallePagos: detallePagosValido.map(p => ({
-                _key: crypto.randomUUID(),
-                metodo: String(p.metodo || 'efectivo').toLowerCase().trim(),
-                monto: Number(p.monto || 0)
-            })),
-            items: platosVenta.map(p => ({
-                _key: crypto.randomUUID(),
-                nombrePlato: p.nombrePlato,
-                cantidad: p.cantidad,
-                precio: p.precioUnitario,
-                subtotal: p.subtotal
-            })),
-            subtotal: totalPagado,
-            propina: propinaRecaudada,
-            total: totalPagado + propinaRecaudada,
-            abrirCajon,
-            impreso: false,
-            imprimirSolicitada: false,
-            fecha: fechaUTC
+            metodoPago: abrirCajon ? 'EFECTIVO_MIXTO' : metodoPago 
         });
 
         // C. BORRAR MESA ACTIVA
@@ -165,48 +133,119 @@ const platosVenta = (payload.platosVendidosV2 || []).map(item => {
             transaction = transaction.delete(ordenId);
         }
 
-        // D. 🔥 POPULARIDAD E INVENTARIO (Lógica Blindada de Fama)
+        // ====================================================================
+        // --- D. 🔥 POPULARIDAD (Sanity) e INVENTARIO HÍBRIDO (Supabase) ---
+        // ====================================================================
+        const descuentosSupabase = [];
+
         (payload.platosVendidosV2 || []).forEach(p => {
             const nombrePlato = p.nombrePlato || p.nombre;
-            const match = mapeoSanity.find(m => m.nombre === nombrePlato);
+            const match = (mapeoSanity || []).find(m => m.nombre === nombrePlato);
             
             if (match && match._id) {
-                // Actualizar Popularidad
+                // 📈 La popularidad cambia poco, se queda como patch ligero en Sanity
                 transaction = transaction.patch(match._id, {
                     setIfMissing: { totalVentas: 0 },
                     inc: { totalVentas: Number(p.cantidad) || 1 }
                 });
 
-                // Descuento de Inventario
+                // 🥩 LÓGICA DE EXTRACCIÓN: Preparamos los descuentos para Supabase
                 if (match.controlaInventario) {
                     const cantVenta = Number(p.cantidad) || 0;
-                    const esPesaje = cantVenta % 1 !== 0; // Detecta kilos/gramos por decimales
+                    const esPesaje = cantVenta % 1 !== 0; 
 
-                    // Caso 1: Recetas
+                    // Caso 1: Recetas multi-insumo
                     if (Array.isArray(match.recetaInsumos) && match.recetaInsumos.length > 0) {
                         match.recetaInsumos.forEach(insumoItem => {
                             if (insumoItem.insumoId) {
                                 const montoFinal = esPesaje ? cantVenta : (Number(insumoItem.cantidad) || 1) * cantVenta;
-                                transaction = transaction.patch(insumoItem.insumoId, {
-                                    inc: { stockActual: -montoFinal }
+                                descuentosSupabase.push({
+                                    insumo_id: insumoItem.insumoId,
+                                    cantidad: montoFinal
                                 });
                             }
                         });
                     } 
                     // Caso 2: Insumo Vinculado Directo
-                    else if (match.insumoVinculado && match.insumoVinculado._ref) {
+                    else if (match.insumoVinculadoRef) {
                         const montoFinal = esPesaje ? cantVenta : (Number(match.cantidadADescontar) || 1) * cantVenta;
-                        transaction = transaction.patch(match.insumoVinculado._ref, {
-                            inc: { stockActual: -montoFinal }
+                        descuentosSupabase.push({
+                            insumo_id: match.insumoVinculadoRef,
+                            cantidad: montoFinal
                         });
                     }
                 }
             }
         });
+        
+        // ==========================================================
+        // 🚀 INYECCIÓN SENIOR EN POSTGRESQL CON TIMEOUT DE 3 SEGUNDOS
+        // ==========================================================
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 3000); 
+
+        let supabaseError = null;
+        try {
+            const { error } = await supabaseServer
+                .from('ventas')
+                .insert([{
+                    transaccion_id: ventaId,
+                    folio: folioGenerado,
+                    tenant_id: tenantId,
+                    mesa: String(mesa),
+                    tipo_orden: tipoOrden,
+                    mesero: mesero,
+                    metodo_pago: (metodoPago === 'mixto_v2' || detallePagosValido.length > 1) ? 'mixto_v2' : metodoPago,
+                    total_pagado: totalPagado,
+                    propina_recaudada: propinaRecaudada,
+                    fecha_iso: fechaUTC,
+                    fecha_local: fechaLocal,
+                    datos_entrega: datosEntrega || null,
+                    detalle_pagos: detallePagosValido,
+                    platos_vendidos: platosVenta,
+                    pago_efectivo: columnaEfectivo,
+                    pago_tarjeta: columnaTarjeta,
+                    pago_digital: columnaDigital
+                }])
+                .abortSignal(controller.signal); 
+            
+            supabaseError = error;
+        } catch (fetchErr) {
+            if (fetchErr.name === 'AbortError') {
+                throw new Error("SUPABASE_TIMEOUT: La base de datos tardó más de 3 segundos en responder por lag de red.");
+            }
+            throw fetchErr;
+        } finally {
+            clearTimeout(timeoutId); 
+        }
+
+        if (supabaseError) {
+            console.error('❌ Error inyectando venta en Supabase:', supabaseError.message);
+            throw new Error(`SUPABASE_WRITE_FAILED: ${supabaseError.message}`);
+        }
 
         // --- 🚀 EJECUCIÓN FINAL ---
+        // 🛡️ PASO A: Aseguramos Sanity primero para liberar la mesa física.
         await transaction.commit();
 
+        // ⚡ PASO B: Con Sanity asegurado, impactamos masivamente el Inventario en Supabase en paralelo
+        if (descuentosSupabase.length > 0) {
+            await Promise.all(
+                descuentosSupabase.map(async (descuento) => {
+                    const { error: errStock } = await supabaseServer.rpc('descontar_stock_pos', {
+                        p_tenant_id: tenantId,
+                        p_insumo_id: descuento.insumo_id,
+                        p_cantidad: descuento.cantidad
+                    });
+                    
+                    if (errStock) {
+                        console.error(`⚠️ Error descontando stock para insumo ${descuento.insumo_id}:`, errStock.message);
+                    }
+                })
+            );
+        }
+          
+        // 🎉 PASO C: Éxito absoluto y retorno limpio al frontend
         return NextResponse.json({ 
             ok: true, 
             message: 'Venta registrada e Inventario actualizado',

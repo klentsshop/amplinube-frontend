@@ -13,7 +13,8 @@ export function useOrdenes(providedTenantId) {
         refreshInterval: 7000, 
         revalidateOnFocus: true,
         revalidateOnReconnect: true,
-        dedupingInterval: 2000 
+        dedupingInterval: 0,         // ⚡ Cirugía: Cambios instantáneos sin lag de reuso
+        revalidateIfStale: false     // ⚡ Cirugía: Bloquea renderizado de datos viejos al mutar
     });
 
     const [cargandoAccion, setCargandoAccion] = useState(false);
@@ -42,11 +43,14 @@ export function useOrdenes(providedTenantId) {
             const data = await res.json();
             
             // Sincronizamos mesas
-            await mutate(); 
+           await mutate(); 
 
-            // 🛡️ Solo notificamos al inventario para refrescar la VISTA (Modo Sensor)
-            // pero ya no hay esperas de 800ms porque no hubo cambios en DB de stock
-            mutateGlobal(`/api/inventario/list?tenantId=${tenantId}`); 
+            // 🛡️ Cirugía: Acople exacto con useInventario y aviso a módulos de Supabase
+            if (tenantId) {
+                mutateGlobal(`/api/inventario/list?tenantId=${tenantId}`);
+                mutateGlobal(`/api/ventas?tenantId=${tenantId}`);
+                mutateGlobal(`/api/clientes/list?tenantId=${tenantId}`);
+            } 
             
             return data;
         } catch (err) {
@@ -71,7 +75,13 @@ export function useOrdenes(providedTenantId) {
             if (!res.ok) throw new Error("Error al eliminar la orden");
             
             await mutate(); 
-            mutateGlobal(`/api/inventario/list?tenantId=${tenantId}`);
+            
+            // 🛡️ Cirugía: Sincronización del ecosistema al liberar la mesa
+            if (tenantId) {
+                mutateGlobal(`/api/inventario/list?tenantId=${tenantId}`);
+                mutateGlobal(`/api/ventas?tenantId=${tenantId}`);
+                mutateGlobal(`/api/clientes/list?tenantId=${tenantId}`);
+            }
 
         } catch (error) {
             console.error("❌ Error eliminarOrden:", error);

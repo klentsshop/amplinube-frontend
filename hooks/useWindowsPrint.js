@@ -7,7 +7,7 @@ export function useWindowsPrint(ordenesActivas, imprimirCocina, tenantId) {
     const [miConfig, setMiConfig] = useState(null);
     // 🛡️ ESCUDO SENIOR: Evita procesar el mismo pulso de Sanity dos veces
     const procesandoId = useRef(new Set()); 
-
+    const yaAvisoFaltaConfig = useRef(false);
     // 1️⃣ IDENTIFICACIÓN PERSISTENTE DE LA ESTACIÓN
     useEffect(() => {
         console.log("🔌 Iniciando Watcher de Impresión...");
@@ -42,10 +42,13 @@ export function useWindowsPrint(ordenesActivas, imprimirCocina, tenantId) {
     useEffect(() => {
         // Si no hay configuración o no tiene categorías, el listener no tiene sentido
         if (!miConfig || !miConfig.categoriasVinculadas?.length) {
+            if (!yaAvisoFaltaConfig.current) {
             console.log("💤 Esperando configuración válida para activar Listener...");
+            yaAvisoFaltaConfig.current = true; // Bloquea futuros avisos en consola
+            }
             return;
         }
-
+        yaAvisoFaltaConfig.current = false;
         const misCats = miConfig.categoriasVinculadas.map(c => c.trim().toUpperCase());
         // Limpiamos el nombre para crear el campo dinámico (ej: "CajaPrincipal")
         const miIDLimpio = miConfig.nombre.replace(/\s+/g, ''); 

@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useInventario } from '@/hooks/useInventario';
+import { sanityClientServer } from '@/lib/sanity'; // 🛡️ Importamos para el Plan B de rescate del escáner
 
 export default function InventarioModal({ isOpen, onClose, tenantId }) {
     const { insumos, cargarStock, cargando } = useInventario(tenantId);
@@ -11,28 +12,56 @@ export default function InventarioModal({ isOpen, onClose, tenantId }) {
     
     const inputBusquedaRef = useRef(null);
 
-    // Mantener foco para la pistola
+    // Mantener foco automático para capturar ráfagas de la pistola láser
     useEffect(() => {
         if (isOpen && inputBusquedaRef.current) {
             inputBusquedaRef.current.focus();
         }
     }, [isOpen]);
 
-    // LÓGICA DE ESCANEO AUTOMÁTICO (IDENTIFICACIÓN POR CÓDIGO)
+    // 🔫 LÓGICA DE ESCANEO COMPUESTA (Supabase + Rescate Sanity)
     useEffect(() => {
-        const insumoEscaner = insumos?.find(i => 
-            (i.barcode && i.barcode === busqueda) || 
-            (i.codigoBalanza && i.codigoBalanza === busqueda)
-        );
+        if (!busqueda) return;
 
-        if (insumoEscaner) {
-            handleCargar(insumoEscaner._id, 1);
-            setBusqueda('');
-        }
-    }, [busqueda, insumos]);
+        const procesarEscaneoGuns = async () => {
+            // Paso A: Buscamos en la memoria rápida local (Supabase)
+            const insumoEscaner = insumos?.find(i => 
+                (i.barcode && i.barcode === busqueda) || 
+                (i.codigoBalanza && i.codigoBalanza === busqueda)
+            );
+
+            if (insumoEscaner) {
+                const idReal = insumoEscaner.id || insumoEscaner._id;
+                handleCargar(idReal, 1);
+                setBusqueda('');
+                return;
+            }
+
+            // 🔥 PLAN B DE RESCATE (Nivel Senior): Si el producto es nuevo en Supabase,
+            // lo buscamos en el catálogo de Sanity para recuperar su ID y crearlo al vuelo.
+            if (busqueda.length >= 4) { // Evita consultas en falso mientras escriben
+                try {
+                    const rescateSanity = await sanityClientServer.fetch(
+                        `*[_type == "inventario" && tenant == $tenantId && (barcode == $busqueda || codigoBalanza == $busqueda)][0]{ _id }`,
+                        { tenantId, busqueda }
+                    );
+
+                    if (rescateSanity?._id) {
+                        handleCargar(rescateSanity._id, 1);
+                        setBusqueda('');
+                    }
+                } catch (err) {
+                    console.error("⚠️ Error en ráfaga de rescate de código:", err);
+                }
+            }
+        };
+
+        procesarEscaneoGuns();
+    }, [busqueda, insumos, tenantId]);
 
     if (!isOpen) return null;
 
+    // Filtro y ordenamiento de la tabla visual
     const insumosProcesados = insumos?.filter(i => 
         (i.nombre || "").toLowerCase().includes(busqueda.toLowerCase()) ||
         (i.barcode || "") === busqueda
@@ -79,25 +108,35 @@ export default function InventarioModal({ isOpen, onClose, tenantId }) {
                         🔍 Escanee o busque el Insumo:
                     </label>
                     <input 
-    ref={inputBusquedaRef}
-    type="text" 
-    placeholder="Pistolee el código aquí..." 
-    value={busqueda}
-    onChange={(e) => setBusqueda(e.target.value)}
-    // 🚀 BLINDAJE PARA ENTER Y PEGADO
-    onKeyDown={(e) => {
-        if (e.key === 'Enter') {
-            e.preventDefault(); // Evita ruidos en el DOM
-            // Forzamos la búsqueda manual por si el useEffect no ha disparado
-            const insumo = insumos.find(i => i.barcode === busqueda || i.codigoBalanza === busqueda);
-            if (insumo) {
-                handleCargar(insumo._id, 1);
-                setBusqueda('');
-            }
-        }
-    }}
-    style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #D1D5DB', outline: 'none', fontSize: '1rem' }}
-/>
+                        ref={inputBusquedaRef}
+                        type="text" 
+                        placeholder="Pistolee el código aquí..." 
+                        value={busqueda}
+                        onChange={(e) => setBusqueda(e.target.value)}
+                        // 🚀 BLINDAJE EXTRA PARA GATILLO ENTER MANUAL
+                        onKeyDown={async (e) => {
+                            if (e.key === 'Enter') {
+                                e.preventDefault(); 
+                                let insumo = insumos.find(i => i.barcode === busqueda || i.codigoBalanza === busqueda);
+                                
+                                if (insumo) {
+                                    handleCargar(insumo.id || insumo._id, 1);
+                                    setBusqueda('');
+                                } else {
+                                    // Rescate rápido al dar enter si Supabase está vacío
+                                    const rescate = await sanityClientServer.fetch(
+                                        `*[_type == "inventario" && tenant == $tenantId && (barcode == $busqueda || codigoBalanza == $busqueda)][0]{ _id }`,
+                                        { tenantId, busqueda }
+                                    );
+                                    if (rescate?._id) {
+                                        handleCargar(rescate._id, 1);
+                                        setBusqueda('');
+                                    }
+                                }
+                            }
+                        }}
+                        style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #D1D5DB', outline: 'none', fontSize: '1rem' }}
+                    />
                 </div>
 
                 <div style={{ maxHeight: '50vh', overflowY: 'auto', borderRadius: '8px', border: '1px solid #F3F4F6' }}>
@@ -111,10 +150,12 @@ export default function InventarioModal({ isOpen, onClose, tenantId }) {
                         </thead>
                         <tbody>
                             {insumosProcesados.map((insumo) => {
+                                const insumoId = insumo.id || insumo._id;
                                 const esCritico = insumo.stockActual <= (insumo.stockMinimo || 5);
-                                const guardadoOk = confirmacion[insumo._id];
+                                const guardadoOk = confirmacion[insumoId];
+
                                 return (
-                                    <tr key={insumo._id} style={{ 
+                                    <tr key={insumoId} style={{ 
                                         borderBottom: '1px solid #F3F4F6',
                                         backgroundColor: guardadoOk ? '#ECFDF5' : (esCritico ? '#FFF7F7' : 'transparent'),
                                         transition: 'background-color 0.3s ease'
@@ -133,12 +174,13 @@ export default function InventarioModal({ isOpen, onClose, tenantId }) {
                                                 <input 
                                                     type="number" 
                                                     placeholder="0"
-                                                    value={cantidades[insumo._id] || ''}
-                                                    onChange={(e) => setCantidades({...cantidades, [insumo._id]: e.target.value})}
-                                                    style={{ width: '60px', padding: '8px', borderRadius: '6px', border: '1px solid #D1D5DB', textAlign: 'center', fontWeight: 'bold' }}
+                                                    step="0.001" // 🥩 PERMITE ENTRADA DE GRAMOS Y DECIMALES EXACTOS
+                                                    value={cantidades[insumoId] || ''}
+                                                    onChange={(e) => setCantidades({...cantidades, [insumoId]: e.target.value})}
+                                                    style={{ width: '70px', padding: '8px', borderRadius: '6px', border: '1px solid #D1D5DB', textAlign: 'center', fontWeight: 'bold' }}
                                                 />
                                                 <button 
-                                                    onClick={() => handleCargar(insumo._id)}
+                                                    onClick={() => handleCargar(insumoId)}
                                                     disabled={cargando}
                                                     style={{ background: guardadoOk ? '#059669' : '#10B981', color: 'white', border: 'none', padding: '8px 15px', borderRadius: '6px', fontWeight: '900', cursor: 'pointer', transition: 'all 0.3s ease' }}
                                                 >

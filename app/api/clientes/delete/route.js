@@ -1,10 +1,11 @@
 import { NextResponse } from 'next/server';
-import { sanityClientServer } from '@/lib/sanity';
+import { supabaseServer } from '@/lib/supabase'; // 🛡️ Conexión oficial a Supabase
+import { sanityClientServer } from '@/lib/sanity';   // 🛡️ Mantenemos Sanity solo para el escudo de mesas vivas
 
 export async function POST(request) {
     try {
         const body = await request.json();
-        const { id, tenant } = body;
+        const { id, tenant } = body; // 'id' es el UUID de Supabase, 'tenant' es el código del comercio
 
         if (!id || !tenant) {
             return NextResponse.json(
@@ -13,12 +14,18 @@ export async function POST(request) {
             );
         }
 
-        // ✅ Verificar que el cliente exista y pertenezca al tenant
-        const cliente = await sanityClientServer.fetch(
-            `*[_type == "cliente" && _id == $id && tenant == $tenant][0]`,
-            { id, tenant },
-            { useCdn: false }
-        );
+        // 1. 🛡️ VERIFICACIÓN EN SUPABASE: Validar que el cliente exista y pertenezca al negocio
+        const { data: cliente, error: errorCliente } = await supabaseServer
+            .from('clientes')
+            .select('id')
+            .eq('id', id)
+            .eq('tenant_id', tenant)
+            .maybeSingle(); // Evita lanzar excepciones si no encuentra nada
+
+        if (errorCliente) {
+            console.error('❌ Error consultando cliente en Supabase:', errorCliente.message);
+            throw new Error(`SUPABASE_FETCH_FAILED: ${errorCliente.message}`);
+        }
 
         if (!cliente) {
             return NextResponse.json(
@@ -27,13 +34,10 @@ export async function POST(request) {
             );
         }
 
-        // ✅ Verificar si existe alguna orden activa usando este cliente
+        // 2. 🛡️ ESCUDO DE INTEGRIDAD EN SANITY: Validar si el UUID está amarrado a un pedido vivo (Cocina/Caja)
+        // Buscamos si el string del UUID coincide directamente con 'clienteRef' en las mesas activas
         const ordenVinculada = await sanityClientServer.fetch(
-            `*[
-                _type == "ordenActiva" &&
-                tenant == $tenant &&
-                clienteRef._ref == $id
-            ][0]{
+            `*[_type == "ordenActiva" && tenant == $tenant && clienteRef == $id][0]{
                 _id,
                 mesa
             }`,
@@ -44,27 +48,36 @@ export async function POST(request) {
         if (ordenVinculada) {
             return NextResponse.json(
                 {
-                    error:
-                        `No se puede eliminar el cliente porque está vinculado a la orden activa "${ordenVinculada.mesa}". Primero cierre o elimine esa orden.`
+                    error: `No se puede eliminar el cliente porque está vinculado a la orden activa "${ordenVinculada.mesa}". Primero cierre o elimine esa orden.`
                 },
                 { status: 409 }
             );
         }
 
-        // ✅ Borrado seguro
-        await sanityClientServer.delete(id);
+        // 3. 🗑️ DESTRUCCIÓN ATÓMICA EN POSTGRESQL
+        const { error: errorDelete } = await supabaseServer
+            .from('clientes')
+            .delete()
+            .eq('id', id)
+            .eq('tenant_id', tenant);
+
+        if (errorDelete) {
+            console.error('❌ Error eliminando cliente en Supabase:', errorDelete.message);
+            throw new Error(`SUPABASE_DELETE_FAILED: ${errorDelete.message}`);
+        }
 
         return NextResponse.json({
             success: true,
-            message: 'Cliente eliminado'
+            message: 'Cliente eliminado correctamente de Supabase.'
         });
 
     } catch (error) {
-        console.error('🔥 [API_CLIENTE_DELETE_ERROR]:', error);
+        console.error('🔥 [API_CLIENTE_DELETE_ERROR]:', error.message);
 
         return NextResponse.json(
             {
-                error: 'Error interno al eliminar cliente.'
+                error: 'Error interno al intentar eliminar el cliente.',
+                details: error.message
             },
             { status: 500 }
         );

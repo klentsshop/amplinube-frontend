@@ -92,35 +92,56 @@ export default function VistaInventario({
                     </thead>
                     <tbody>
                         {inventarioFiltrado.map((item) => {
-                            const siendoEditado = idItemEditando === item._id;
-                            return (
-                                <tr 
-                                    key={item._id} 
-                                    onClick={() => seleccionarParaEditar(item)}
-                                    style={{ borderBottom: '1px solid #f3f4f6', cursor: 'pointer', backgroundColor: siendoEditado ? '#eff6ff' : 'transparent', transition: 'background 0.15s' }}
-                                    onMouseEnter={(e) => !siendoEditado && (e.currentTarget.style.backgroundColor = '#f9fafb')}
-                                    onMouseLeave={(e) => !siendoEditado && (e.currentTarget.style.backgroundColor = 'transparent')}
-                                >
-                                    <td style={{ padding: '10px', fontWeight: 'bold', color: '#374151', textTransform: 'uppercase' }}>
-                                        {item.nombre} {siendoEditado && <span style={{ color: '#2563eb', fontSize: '0.75rem', fontWeight: 'normal' }}>(en formulario)</span>}
-                                    </td>
-                                    <td style={{ padding: '10px', textAlign: 'center', color: '#dc2626', fontWeight: '900', fontSize: '0.95rem' }}>
-                                        {item.stockActual}
-                                    </td>
-                                    <td style={{ padding: '10px', textAlign: 'center', color: '#4b5563', fontWeight: '500' }}>
-                                        {item.stockMinimo || 5}
-                                    </td>
-                                    <td style={{ padding: '10px', textAlign: 'center' }}>
-                                        <button onClick={(e) => { e.stopPropagation(); handleBorrarInventario(item._id); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', fontSize: '1rem' }}>🗑️</button>
-                                    </td>
-                                </tr>
-                            );
-                        })}
-                        {inventarioFiltrado.length === 0 && (
-                            <tr>
-                                <td colSpan="4" style={{ padding: '15px', color: '#9ca3af', textAlign: 'center' }}>No se encontraron insumos.</td>
-                            </tr>
-                        )}
+    // 🧠 BISTURÍ SENIOR: Supabase maneja 'id', Sanity manejaba '_id'. 
+    // Capturamos el que venga disponible de forma segura.
+    const idReal = item.id || item._id; 
+    const siendoEditado = idItemEditando === idReal;
+    
+    return (
+        <tr 
+            key={idReal} 
+            onClick={() => seleccionarParaEditar(item)}
+            style={{ 
+                borderBottom: '1px solid #f3f4f6', 
+                cursor: 'pointer', 
+                backgroundColor: siendoEditado ? '#eff6ff' : 'transparent', 
+                transition: 'background 0.15s' 
+            }}
+            onMouseEnter={(e) => !siendoEditado && (e.currentTarget.style.backgroundColor = '#f9fafb')}
+            onMouseLeave={(e) => !siendoEditado && (e.currentTarget.style.backgroundColor = 'transparent')}
+        >
+            <td style={{ padding: '10px', fontWeight: 'bold', color: '#374151', textTransform: 'uppercase' }}>
+                {item.nombre} {siendoEditado && <span style={{ color: '#2563eb', fontSize: '0.75rem', fontWeight: 'normal' }}>(en formulario)</span>}
+            </td>
+            
+            {/* 🥩 SOPORTE HÍBRIDO DE COLUMNAS: Lee stockActual o stock_actual según la respuesta */}
+            <td style={{ padding: '10px', textAlign: 'center', color: '#dc2626', fontWeight: '900', fontSize: '0.95rem' }}>
+                {item.stockActual !== undefined ? item.stockActual : (item.stock_actual || 0)}
+            </td>
+            
+            <td style={{ padding: '10px', textAlign: 'center', color: '#4b5563', fontWeight: '500' }}>
+                {item.stockMinimo !== undefined ? item.stockMinimo : (item.stock_minimo || 5)}
+            </td>
+            
+            <td style={{ padding: '10px', textAlign: 'center' }}>
+                <button 
+                    onClick={(e) => { 
+                        e.stopPropagation(); // 🛡️ Evita que se abra el formulario de edición al hacer clic en borrar
+                        handleBorrarInventario(idReal); // 🚀 Mandamos el ID real relacional de Supabase
+                    }} 
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', fontSize: '1rem' }}
+                >
+                    🗑️
+                </button>
+            </td>
+        </tr>
+    );
+})}
+{inventarioFiltrado.length === 0 && (
+    <tr>
+        <td colSpan="4" style={{ padding: '15px', color: '#9ca3af', textAlign: 'center' }}>No se encontraron insumos.</td>
+    </tr>
+)}
                     </tbody>
                 </table>
             </div>

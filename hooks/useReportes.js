@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { client } from '@/lib/sanity';
 
 export function useReportes(getFechaBogota, tenantId) {
     const [mostrarReporte, setMostrarReporte] = useState(false);
@@ -41,28 +40,24 @@ export function useReportes(getFechaBogota, tenantId) {
             const inicio = `${fechaInicioReporte} 00:00:00`;
             const fin = `${fechaFinReporte} 23:59:59`;
 
-            const queryVentas = `
-            *[_type == "venta" && tenant == $tenantId && (fechaLocal >= $inicio && fechaLocal <= $fin)]{
-                "totalPagado": coalesce(totalPagado, 0),
-                "propinaRecaudada": coalesce(propinaRecaudada, 0),
-                metodoPago,
-                detallePagos,
-                platosVendidosV2 
-            }
-            `;
+            const [resVentas, resGastos] = await Promise.all([
+            fetch(`/api/ventas/historial`, { 
+                method: 'POST', 
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ fechaSeleccionada: fechaInicioReporte, 
+                fechaFin: fechaFinReporte, tenantId }) 
+            }),
+           fetch(`/api/gastos?tenantId=${tenantId}&inicio=${encodeURIComponent(inicio)}&fin=${encodeURIComponent(fin)}`, { 
+        method: 'GET'
+    })
+        ]);
 
-            const queryGastos = `
-            *[_type == "gasto" && tenant == $tenantId && fecha >= $inicio && fecha <= $fin]{
-                "monto": coalesce(monto, 0),
-                descripcion,
-                fecha
+            if (!resVentas.ok || !resGastos.ok) {
+                throw new Error("No se pudo obtener la información financiera de Supabase.");
             }
-            `;
 
-            const [ventas, gastos] = await Promise.all([
-                client.fetch(queryVentas, { inicio, fin, tenantId }, { useCdn: false }),
-                client.fetch(queryGastos, { inicio, fin, tenantId }, { useCdn: false })
-            ]);
+            const ventas = await resVentas.json();
+            const gastos = await resGastos.json();
 
             let totalVentasNetas = 0;
             let totalPropinas = 0;
@@ -72,42 +67,48 @@ export function useReportes(getFechaBogota, tenantId) {
             let metodos = { efectivo: 0, tarjeta: 0, digital: 0 };
 
             ventas.forEach(v => {
-                const ventaNeta = Number(v.totalPagado || 0);
+                const ventaNeta = Number(v.totalPagado || 0); // Ya viene limpio sin propina duplicada
                 const propina = Number(v.propinaRecaudada || 0);
 
                 totalVentasNetas += ventaNeta;
                 totalPropinas += propina;
 
-                let procesado = false;
+                // ================================================================
+                // 🛡️ REGLA CONTABLE RE-BLINDADA: SUMATORIA DIRECTA POR COLUMNAS
+                // Prioridad absoluta a pagoEfectivo, pagoTarjeta y pagoDigital que vienen de Supabase
+                // ================================================================
+                if (v.pagoEfectivo > 0 || v.pagoTarjeta > 0 || v.pagoDigital > 0) {
+                    metodos.efectivo += (v.pagoEfectivo || 0);
+                    metodos.tarjeta += (v.pagoTarjeta || 0);
+                    metodos.digital += (v.pagoDigital || 0);
+                } else {
+                    // Fallback seguro de retrocompatibilidad por si hay registros viejos sin columnas planas
+                    let procesado = false;
+                    if (v.detallePagos && Array.isArray(v.detallePagos) && v.detallePagos.length > 0) {
+                        v.detallePagos.forEach(p => {
+                            const m = p.metodo?.toLowerCase() || 'efectivo';
+                            const monto = Number(p.monto || 0);
+                            if (m === 'efectivo') metodos.efectivo += monto;
+                            else if (m === 'tarjeta') metodos.tarjeta += monto;
+                            else if (m === 'digital' || m === 'nequi' || m === 'daviplata') metodos.digital += monto;
+                        });
+                        procesado = true;
+                    }
 
-                if (v.detallePagos && Array.isArray(v.detallePagos) && v.detallePagos.length > 0) {
-                    v.detallePagos.forEach(p => {
-                        const m = p.metodo?.toLowerCase() || 'efectivo';
-                        const monto = Number(p.monto || 0);
-                        if (m === 'efectivo') metodos.efectivo += monto;
-                        else if (m === 'tarjeta') metodos.tarjeta += monto;
-                        else if (m === 'digital') metodos.digital += monto;
-                    });
-                    procesado = true;
+                    if (!procesado) {
+                        const mp = v.metodoPago?.toLowerCase() || 'efectivo';
+                        if (mp === 'efectivo') metodos.efectivo += ventaNeta;
+                        else if (mp === 'tarjeta') metodos.tarjeta += ventaNeta;
+                        else metodos.digital += ventaNeta;
+                    }
                 }
 
-                if (!procesado) {
-                    const mp = v.metodoPago?.toLowerCase() || 'efectivo';
-                    if (mp === 'efectivo') metodos.efectivo += ventaNeta;
-                    else if (mp === 'tarjeta') metodos.tarjeta += ventaNeta;
-                    else metodos.digital += ventaNeta;
-                }
-
-                // 🥩 CONTEO DE PRODUCTOS (Precisión para Carnes/Pescados)
+                // 🥩 CONTEO DE PRODUCTOS (Lógica original idéntica)
                 v.platosVendidosV2?.forEach(p => {
                     const nombre = p.nombrePlato || "Desconocido";
                     const cant = Number(p.cantidad || 0);
-                    
-                    // Sumamos la cantidad real (con decimales si es peso)
                     productos[nombre] = (productos[nombre] || 0) + cant;
                     preciosParaExcel[nombre] = Number(p.precioUnitario || 0);
-                    
-                    // Si alguna vez se vendió con decimales, lo marcamos como 'kg' para el Excel
                     if (cant % 1 !== 0) {
                         unidadesMedida[nombre] = 'kg';
                     }
@@ -153,7 +154,8 @@ export function useReportes(getFechaBogota, tenantId) {
                     fechaInicio: `${fechaInicioFiltro} 00:00:00`,
                     fechaFin: `${fechaFinFiltro} 23:59:59`,
                     pinAdmin: pinFinal,
-                    tenantId
+                    tenantId,
+                    tenant: tenantId
                 })
             });
 
@@ -175,18 +177,25 @@ export function useReportes(getFechaBogota, tenantId) {
                 0
             );
 
-            setPinMemoria(pinFinal);
-            setReporteAdmin({
-                ventasTotales,
-                porMesero,
-                gastos: totalGastos,
-                porTipoOrden: data.porTipoOrden || { mesa: 0, domicilio: 0, llevar: 0 },
-                estadisticas: data.estadisticas || {
-                    metodosPago: { efectivo: 0, tarjeta: 0, digital: 0 },
-                    topPlatos: [],
-                    totalPropinas: 0
-                }
-            });
+            // Aseguramos que las llaves internas de métodos de pago en las estadísticas del backend unifiquen billeteras virtuales
+let estadisticasSaneadas = data.estadisticas || { metodosPago: { efectivo: 0, tarjeta: 0, digital: 0 }, topPlatos: [], totalPropinas: 0 };
+if (data.estadisticas?.metodosPago) {
+    const rawMp = data.estadisticas.metodosPago;
+    estadisticasSaneadas.metodosPago = {
+        efectivo: Number(rawMp.efectivo || 0),
+        tarjeta: Number(rawMp.tarjeta || 0),
+        digital: Number(rawMp.digital || 0) + Number(rawMp.nequi || 0) + Number(rawMp.daviplata || 0)
+    };
+}
+
+setPinMemoria(pinFinal);
+setReporteAdmin({
+    ventasTotales,
+    porMesero,
+    gastos: totalGastos,
+    porTipoOrden: data.porTipoOrden || { mesa: 0, domicilio: 0, llevar: 0 },
+    estadisticas: estadisticasSaneadas
+});
 
             setMostrarAdmin(true);
         } catch (error) {

@@ -129,18 +129,27 @@ export default function ModalPagoMixto({ total, montos, setMontos, onClose }) {
                     </button>
                     
                     <button 
-                        onClick={onClose} // 👈 SOLO CIERRA EL MODAL para usar el botón de afuera
-                        disabled={!isCuadrado}
-                        style={{
-                            flex: 1.5, padding: '16px', borderRadius: '14px',
-                            backgroundColor: isCuadrado ? '#7c3aed' : '#D1D5DB', 
-                            color: 'white', border: 'none', fontWeight: '900', fontSize: '1rem',
-                            cursor: isCuadrado ? 'pointer' : 'not-allowed',
-                            transition: 'all 0.2s'
-                        }}
-                    >
-                        APLICAR 
-                    </button>
+    onClick={() => {
+        // 🛡️ ESCUDO ANTI-STRINGS: Forzamos que todo lo que vaya al flujo de Supabase sea un número puro.
+        // Si el usuario dejó un campo vacío o borró el contenido, la API recibirá un 0 real.
+        setMontos({
+            efectivo: Number(montos.efectivo || 0),
+            tarjeta: Number(montos.tarjeta || 0),
+            digital: Number(montos.digital || 0)
+        });
+        onClose(); // Cierra el modal de forma segura con el estado ya saneado
+    }} 
+    disabled={!isCuadrado}
+    style={{
+        flex: 1.5, padding: '16px', borderRadius: '14px',
+        backgroundColor: isCuadrado ? '#7c3aed' : '#D1D5DB', 
+        color: 'white', border: 'none', fontWeight: '900', fontSize: '1rem',
+        cursor: isCuadrado ? 'pointer' : 'not-allowed',
+        transition: 'all 0.2s'
+    }}
+>
+    APLICAR 
+</button>
                 </div>
             </div>
 

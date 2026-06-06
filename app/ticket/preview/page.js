@@ -53,9 +53,10 @@ function TicketContent() {
     const esDomicilio = String(data.tipoOrden || "").toLowerCase() === 'domicilio';
 
     const totalProductos = (data.productos || []).reduce((acc, item) => {
-        const precio = Number(item.precioNum || item.precioUnitario) || 0;
-        const cantidad = Number(item.cantidad) || 0;
-        return acc + (precio * cantidad);
+    // 🛡️ Cirugía: Absorbemos tanto el formato estructurado viejo como el de las columnas planas de Supabase (precio)
+    const precio = Number(item.precioNum || item.precioUnitario || item.precio || 0);
+    const cantidad = Number(item.cantidad) || 0;
+    return acc + (precio * cantidad);
     }, 0);
 
     const valorPropina = data.propina === -1 
@@ -221,22 +222,30 @@ function TicketContent() {
                         </table>
 
                         {/* 🛡️ CONDICIONAL EXCLUSIVO PARA DOMICILIOS (IMAGEN 1 - image_b8853c.png) */}
-                        {esDomicilio && data.datosEntrega && (
-                            <div style={{ width: '100%' }}>
-                                <hr style={{ border: 'none', borderTop: '1px dashed #000', marginTop: '10px', marginBottom: '4px' }} />
-                                <h3 style={{ textAlign: 'center', margin: '4px 0', fontSize: '18px', fontWeight: 'bold' }}>DATOS DE ENTREGA</h3>
-                                
-                                <div style={{ fontSize: '14px', fontWeight: 'bold', lineHeight: '1.3', textAlign: 'left' }}>
-                                    <div style={{ borderTop: '1px dashed #000', margin: '4px 0' }}></div>
-                                    <p style={{ margin: '4px 0' }}>CLIENTE: {String(data.datosEntrega.nombreCliente || data.datosEntrega.nombre || 'GENERAL').toUpperCase()}</p>
-                                    <div style={{ borderTop: '1px dashed #000', margin: '4px 0' }}></div>
-                                    <p style={{ margin: '4px 0' }}>DIR: {String(data.datosEntrega.direccion || 'N/A').toUpperCase()}</p>
-                                    <div style={{ borderTop: '1px dashed #000', margin: '4px 0' }}></div>
-                                    <p style={{ margin: '4px 0' }}>TEL: {data.datosEntrega.telefono || 'N/A'}</p>
-                                    <div style={{ borderTop: '1px dashed #000', margin: '4px 0' }}></div>
-                                </div>
-                            </div>
-                        )}
+                       {/* 🛡️ Cirugía: Si no existe datosEntrega, buscamos el fallback directo del cliente unificado en Supabase */}
+{esDomicilio && (data.datosEntrega || data.cliente || data.clientes) && (() => {
+    const entrega = data.datosEntrega || data.cliente || data.clientes || {};
+    const nombreCli = entrega.nombreCliente || entrega.nombre || entrega.nombre_completo || 'GENERAL';
+    const direccionCli = entrega.direccion || entrega.direccion_entrega || 'N/A';
+    const telefonoCli = entrega.telefono || entrega.celular || 'N/A';
+
+    return (
+        <div style={{ width: '100%' }}>
+            <hr style={{ border: 'none', borderTop: '1px dashed #000', marginTop: '10px', marginBottom: '4px' }} />
+            <h3 style={{ textAlign: 'center', margin: '4px 0', fontSize: '18px', fontWeight: 'bold' }}>DATOS DE ENTREGA</h3>
+            
+            <div style={{ fontSize: '14px', fontWeight: 'bold', lineHeight: '1.3', textAlign: 'left' }}>
+                <div style={{ borderTop: '1px dashed #000', margin: '4px 0' }}></div>
+                <p style={{ margin: '4px 0' }}>CLIENTE: {String(nombreCli).toUpperCase()}</p>
+                <div style={{ borderTop: '1px dashed #000', margin: '4px 0' }}></div>
+                <p style={{ margin: '4px 0' }}>DIR: {String(direccionCli).toUpperCase()}</p>
+                <div style={{ borderTop: '1px dashed #000', margin: '4px 0' }}></div>
+                <p style={{ margin: '4px 0' }}>TEL: {telefonoCli}</p>
+                <div style={{ borderTop: '1px dashed #000', margin: '4px 0' }}></div>
+            </div>
+        </div>
+    );
+})()}
 
                         <p style={{ textAlign: 'center', marginTop: '15px', fontSize: '11px', fontWeight: 'bold' }}>GRACIAS POR SU VISITA</p>
                     </div>

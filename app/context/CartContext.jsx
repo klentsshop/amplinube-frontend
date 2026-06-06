@@ -95,80 +95,89 @@ export function CartProvider({ children, tenantId }) {
     
     // 🛡️ RECUERDA: Agregamos ordenActivaId a las dependencias para que el radar funcione
   }, [items, tipoOrden, ordenActivaId, CART_KEY, TYPE_KEY]);
-  
- const addProduct = React.useCallback(async (product, cantidadManual = null) => {
+
+  // 🚀 CONECTOR RELACIONAL: Alimenta el mapa de memoria rápido desde Supabase
+  const actualizarCacheStockMasivo = React.useCallback((listaInsumosSupabase) => {
+      if (!Array.isArray(listaInsumosSupabase)) return;
+      listaInsumosSupabase.forEach(insumo => {
+          const idReal = insumo.id || insumo._id;
+          if (idReal) {
+              stockLocalCache.set(idReal, Number(insumo.stockActual || 0));
+          }
+      });
+  }, [stockLocalCache]);
+  const addProduct = React.useCallback(async (product, cantidadManual = null) => {
     const pId = product._id || product.id;
     const precioNum = typeof product.precio === 'number' ? product.precio : cleanPrice(product.precio);
-    
-    // 🥩 LÓGICA DE PESO: Si viene de la báscula/manual lo usamos, si no, es 1.
     const cantAAgregar = cantidadManual !== null ? Number(cantidadManual) : 1;
 
-   setItems(prev => {
-    const esPesado = cantidadManual !== null;
-
-    // 1. Buscamos duplicados SOLO si es un producto de unidad (Restaurante)
-    const existingIdx = !esPesado ? prev.findIndex(it => 
-      (it._id || it.id) === pId && 
-      (it.comentario === (product.comentario || '')) &&
-      !it._key 
-    ) : -1;
-
-    // 2. Si es de Restaurante y ya existe, sumamos cantidad
-    if (existingIdx !== -1) {
-        const copy = [...prev];
-        const itemActual = copy[existingIdx];
-        const nuevaCantidad = itemActual.cantidad + cantAAgregar;
-        
-        copy[existingIdx] = { 
-            ...itemActual,           
-            ...product,
-            cantidad: nuevaCantidad, 
-            subtotalNum: Number((nuevaCantidad * precioNum).toFixed(2))
-        };
-        return copy;
-    }
-
-    // 3. Si es de Fama (Pesado) o producto nuevo, creamos línea independiente
-    return [...prev, { 
-      ...product, 
-      _id: pId, 
-      lineId: crypto.randomUUID(), // Vital: ID único por pesada
-      cantidad: cantAAgregar, 
-      precioNum, 
-      subtotalNum: Number((precioNum * cantAAgregar).toFixed(2)), 
-      comentario: product.comentario || '', 
-      categoria: (product.categoria || "").toString().toUpperCase().trim(),
-      seImprime: product.seImprime ?? true 
-    }];
-});
-
-    // --- 🛡️ 2. LÓGICA DE INVENTARIO (Validación Real Proporcional) ---
+    // 🛑 ESCUDO PREVENTIVO ANTI-SOBREVENTA (Intercepta antes de añadir)
     if (product.controlaInventario) {
-        const receta = (product.recetaInsumos || []).length > 0 
-            ? product.recetaInsumos 
-            : (product.insumoVinculado?._ref ? [{ 
-                insumoId: product.insumoVinculado._ref, 
+        const receta = (product.recetaInsumos || product.insumosReceta || []).length > 0 
+            ? (product.recetaInsumos || product.insumosReceta) 
+            : (product.insumoVinculado?._ref || product.insumoId || product.insumoVinculadoRef ? [{ 
+                insumoId: product.insumoVinculado?._ref || product.insumoId || product.insumoVinculadoRef, 
                 cantidad: Number(product.cantidadADescontar) || 1 
-            }] : []);
+              }] : []);
 
         if (receta.length > 0) {
-            // ⚡ PASO A: VALIDACIÓN INSTANTÁNEA (Caché Local)
-            for (const item of receta) {
-                const stockCache = stockLocalCache.get(item.insumoId);
+            for (const rec of receta) {
+                const stockDisponible = stockLocalCache.get(rec.insumoId);
                 
-                // 🔥 CRÍTICO: Validamos según lo que se va a pesar/vender realmente
-                const necesidadReal = item.cantidad * cantAAgregar;
+                if (stockDisponible !== undefined) {
+                    // Calculamos cuánto insumo ya está comprometido por este producto en el carrito actual
+                    const yaEnCarrito = items.reduce((acc, it) => {
+                        if ((it._id === pId || it.id === pId)) {
+                            return acc + (it.cantidad * rec.cantidad);
+                        }
+                        return acc;
+                    }, 0);
 
-                if (stockCache !== undefined && stockCache < necesidadReal) {
-                    alert(`🚫 AGOTADO: No hay stock suficiente para: "${product.nombre}".`);
-                    return; 
+                    const necesidadTotal = yaEnCarrito + (rec.cantidad * cantAAgregar);
+
+                    if (stockDisponible < necesidadTotal) {
+                        alert(`🚫 AGOTADO EN COCINA: No puedes agregar más "${product.nombre || product.nombrePlato}". Quedan ${stockDisponible} unidades disponibles en el inventario.`);
+                        return; // 🛑 Frenazo en seco: sale de la función sin tocar el carrito
+                    }
                 }
             }
-
-           
         }
     }
-}, [activeTenantId, items]);
+
+    // Si pasa el escudo, se agrega de forma normal al estado local
+    setItems(prev => {
+        const esPesado = cantidadManual !== null;
+        const existingIdx = !esPesado ? prev.findIndex(it => 
+          (it._id || it.id) === pId && (it.comentario === (product.comentario || '')) && !it._key 
+        ) : -1;
+
+        if (existingIdx !== -1) {
+            const copy = [...prev];
+            const itemActual = copy[existingIdx];
+            const nuevaCantidad = itemActual.cantidad + cantAAgregar;
+            
+            copy[existingIdx] = { 
+                ...itemActual,           
+                ...product,
+                cantidad: nuevaCantidad, 
+                subtotalNum: Number((nuevaCantidad * precioNum).toFixed(2))
+            };
+            return copy;
+        }
+
+        return [...prev, { 
+          ...product, 
+          _id: pId, 
+          lineId: crypto.randomUUID(), 
+          cantidad: cantAAgregar, 
+          precioNum, 
+          subtotalNum: Number((precioNum * cantAAgregar).toFixed(2)), 
+          comentario: product.comentario || '', 
+          categoria: (product.categoria || "").toString().toUpperCase().trim(),
+          seImprime: product.seImprime ?? true 
+        }];
+    });
+  }, [items, stockLocalCache, cleanPrice]);
   const setCartFromOrden = (platosOrdenados = [], tipoDeSanity = 'mesa') => {
     // 🧹 Limpiamos el rastro del localStorage antes de cargar lo nuevo
    localStorage.removeItem(`${activeTenantId}_cart`);
@@ -252,15 +261,16 @@ const clear = React.useCallback(() => {
 
 const eliminarLineaConStock = React.useCallback((lineId) => {
   const tenantId = activeTenantId;
+  let nuevoCarrito = [];
  setItems(prev => {
-        const nuevoCarrito = prev.filter(it => it.lineId !== lineId);
-        if (nuevoCarrito.length === 0) {
-            localStorage.removeItem(`${tenantId}_cart`);
-        }
-        
-        return nuevoCarrito;
-    });
-}, []);
+       nuevoCarrito = prev.filter(it => it.lineId !== lineId);
+      if (nuevoCarrito.length === 0) {
+          localStorage.removeItem(`${tenantId}_cart`);
+      }
+      return nuevoCarrito;
+  });
+  return nuevoCarrito; // 👈 ESTO ES LO QUE FALTABA
+}, [activeTenantId]);
 // 🚀 BISTURÍ: Esta función limpia la memoria de stock para forzar recarga
   const refreshStockLocal = () => {
     stockLocalCache.clear();
@@ -314,9 +324,10 @@ const eliminarLineaConStock = React.useCallback((lineId) => {
       setMontoManual,
       actualizarComentario,
       cleanPrice: cleanPrice,
-     refreshStockLocal 
+     refreshStockLocal,
+      actualizarCacheStockMasivo
       }), [
-      items, activeTenantId, clienteActivo,tipoOrden, ordenActivaId, total, metodoPago, propina, montoManual, eliminarLineaConStock, refreshStockLocal, addProduct, decrease, clear, clearWithStockReturn]);
+      items, activeTenantId, clienteActivo,tipoOrden, ordenActivaId, total, metodoPago, propina, montoManual, eliminarLineaConStock, refreshStockLocal, addProduct, decrease, clear, clearWithStockReturn, actualizarCacheStockMasivo]);
       
 return (
     <CartContext.Provider value={contextValue}>

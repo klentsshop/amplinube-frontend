@@ -49,7 +49,7 @@ export async function POST(request) {
         `;
 
         // 🔥 Agregamos { useCdn: false } para que el dato sea 100% fresco al cargar
-        const orden = await sanityClientServer.fetch(query, { ordenId, tenantId }, { useCdn: true });
+        const orden = await sanityClientServer.fetch(query, { ordenId, tenantId }, { useCdn: false});
         if (!orden) {
             return NextResponse.json(
                 { message: 'Orden no encontrada', exists: false },

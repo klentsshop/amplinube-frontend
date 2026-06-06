@@ -17,7 +17,7 @@ export async function POST(request) {
             tenant: tenantId,
             nombre: nombre || 'Caja Principal',
             pcFingerprint: fingerprint,
-            categoriasVinculadas: categorias
+            categoriasVinculadas: Array.isArray(categorias) && categorias.length > 0 ? categorias : []
         });
 
         return NextResponse.json({ success: true, result });

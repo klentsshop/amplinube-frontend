@@ -22,7 +22,12 @@ export function useGastos(tenantId) {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 // Enviamos el valorLimpio para que la API reciba números puros
-                body: JSON.stringify({ descripcion: desc, monto: valorLimpio, tenantId: tenantId })
+                body: JSON.stringify({ 
+                descripcion: desc.trim().toUpperCase(), 
+                monto: Number(valorLimpio), // 🛡️ Garantiza tipado numérico para PostgreSQL en Supabase
+                tenantId: tenantId, 
+                tenant: tenantId // 🛡️ Escudo de redundancia para la API del backend multitenant
+                })
             });
             
             if (res.ok) {

@@ -105,7 +105,7 @@ const platosFinales = useMemo(() => {
             const res = await fetch('/api/auth/verify', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ pin, tipo: 'admin', tenantId: tenantId }) // 👈 Cambiado a tenantId puro de las props
+                body: JSON.stringify({ pin, tipo: 'admin', tenantId: tenantId, tenant: tenantId }) // 👈 Cambiado a tenantId puro de las props
             });
             const data = await res.json();
             if (data.autorizado) {

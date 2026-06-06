@@ -216,10 +216,12 @@ export function useOrdenHandlers({
                 tipoOrden: tipoParaSanity,
                 ultimaActualizacion: new Date().toISOString(),
                 datosEntrega, 
-                clienteRef: clienteActivo?._id
-               ? {
-               _type: 'reference',
-               _ref: clienteActivo._id
+                // 🛡️ Cirugía: Extrae el ID real de Supabase o Sanity para que la relación no se rompa
+                clienteIdSupabase: clienteActivo?.id || clienteActivo?._id || null,
+                clienteRef: (clienteActivo?._id || clienteActivo?.id)
+                ? {
+                _type: 'reference',
+                _ref: clienteActivo._id || clienteActivo.id
                }
                : null
             });
@@ -312,12 +314,16 @@ export function useOrdenHandlers({
                 headers: { 'Content-Type': 'application/json' }, 
                 body: JSON.stringify({ 
                     tenant: tenantId,
+                    clienteId: clienteActivo?.id || clienteActivo?._id || null,
                     mesa: mesaParaVenta,
                     tipoOrden: tipoOrden || "mesa",
                     datosEntrega,
                     mesero: nombreMesero || "Caja", 
                     metodoPago: metodoPrimario,
                     detallePagos: detalleFinal,
+                    montoEfectivo: detalleFinal.find(p => p.metodo === 'efectivo')?.monto || 0,
+                    montoTarjeta: detalleFinal.find(p => p.metodo === 'tarjeta')?.monto || 0,
+                    montoDigital: detalleFinal.find(p => p.metodo === 'digital')?.monto || 0,
                     totalPagado: Number(subtotalVenta),
                     propinaRecaudada: Number(valorPropina),
                     fechaLocal, 
@@ -467,12 +473,13 @@ const sincronizarBorradoEnSanity = async (carritoFiltrado) => {
             platosOrdenados: platosParaSanity, // Coincide con línea 45 de la API
             imprimirSolicitada: true, 
             tipoOrden: tipoOrden || "mesa",
-            clienteRef: clienteActivo?._id
-        ? {
+            clienteIdSupabase: clienteActivo?.id || clienteActivo?._id || null,
+            clienteRef: (clienteActivo?._id || clienteActivo?.id)
+            ? {
             _type: 'reference',
-            _ref: clienteActivo._id
-          }
-        : null,
+            _ref: clienteActivo._id || clienteActivo.id
+           }
+          : null,
         datosEntrega,
             ultimaActualizacion: new Date().toISOString()
         });

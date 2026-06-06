@@ -174,15 +174,18 @@ export default function VistaProductos({
                         style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '2px solid #3b82f6', fontSize: '0.9rem', outline: 'none' }}
                     />
                     <datalist id="recetas-inventario-list">
-                        {listaInventario
-                            .filter(item => !Array.isArray(nuevoPlato.insumosReceta) || !nuevoPlato.insumosReceta.some(r => r.insumoId === item._id))
-                            .map(item => (
-                                <option key={item._id} value={item.nombre}>
-                                    Stock: {item.stockActual}
-                                </option>
-                            ))
-                        }
-                    </datalist>
+                    {listaInventario
+                    .filter(item => !Array.isArray(nuevoPlato.insumosReceta) || !nuevoPlato.insumosReceta.some(r => r.insumoId === (item.id || item._id)))
+                    .map(item => {
+                    const insumoIdReal = item.id || item._id;
+                    return (
+                    <option key={insumoIdReal} value={item.nombre}>
+                    Stock: {item.stockActual}
+                    </option>
+            );
+        })
+    }
+</datalist>
                 </div>
                 <button
                     type="button"
@@ -201,7 +204,7 @@ export default function VistaProductos({
                         const actuales = Array.isArray(nuevoPlato.insumosReceta) ? nuevoPlato.insumosReceta : [];
                         setNuevoPlato({
                             ...nuevoPlato,
-                            insumosReceta: [...actuales, { insumoId: encontrado._id, cantidad: 1 }]
+                            insumosReceta: [...actuales, { insumoId: (encontrado.id || encontrado._id), cantidad: 1 }]
                         });
                         if (selectEl) selectEl.value = "";
                     }}

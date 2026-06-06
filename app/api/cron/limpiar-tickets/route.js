@@ -22,7 +22,7 @@ export async function GET(req) {
 
         // 1. Buscamos los IDs usando un parámetro limpio ($tiempoCorte) que Sanity lee a la perfección
         const queryTicketsObsoletos = `
-            *[_type == "ticketCobro" && _createdAt < $tiempoCorte]{ _id }
+            *[(_type == "ticketCobro" || _type == "venta") && _createdAt < $tiempoCorte]{ _id }
         `;
         
         // Pasamos la variable de tiempo de forma segura

@@ -1,80 +1,77 @@
 import { NextResponse } from 'next/server';
-import { sanityClientServer } from '@/lib/sanity';
+import { supabaseServer } from '@/lib/supabase'; // 🛡️ Importación de tu cliente oficial de Supabase
 
 export async function POST(request) {
-    console.log("====== 🛵 INICIANDO PETICIÓN DE GUARDADO ======");
+    console.log("====== 🛵 INICIANDO PETICIÓN DE GUARDADO EN SUPABASE ======");
 
     try {
         const body = await request.json();
         console.log("📦 Datos recibidos en el Body:", JSON.stringify(body, null, 2));
 
         const { id, nombre, telefono, direccion, tenant } = body;
+        const tenantId = tenant || body.tenantId; // Captura flexible del identificador
 
         console.log(
-            `📋 Campos extraídos -> ID: ${id || 'NUEVO'}, Nombre: ${nombre}, Teléfono: ${telefono}, Dirección: ${direccion}, Tenant: ${tenant}`
+            `📋 Campos extraídos -> ID: ${id || 'NUEVO'}, Nombre: ${nombre}, Teléfono: ${telefono}, Dirección: ${direccion}, Tenant: ${tenantId}`
         );
 
-        if (!nombre || !telefono || !direccion || !tenant) {
-            console.error("❌ Validación fallida: Faltan campos requeridos.");
+        // 1. Escudo de Validación Estricta en Servidor
+        if (!nombre || !nombre.trim() || !tenantId || tenantId === 'undefined') {
+            console.error("❌ Validación fallida: Faltan campos requeridos obligatorios.");
 
             return NextResponse.json(
                 {
-                    error: 'Todos los campos son requeridos obligatoriamente',
+                    error: 'El nombre del cliente y el tenant son requeridos obligatoriamente.',
                     detalles: {
                         nombre: !!nombre,
-                        telefono: !!telefono,
-                        direccion: !!direccion,
-                        tenant: !!tenant
+                        tenant: !!tenantId
                     }
                 },
                 { status: 400 }
             );
         }
 
-        const datosCliente = {
-            _type: 'cliente',
+        // 2. Normalización de Datos al Estilo de tu POS
+        const objetoInyeccion = {
+            tenant_id: tenantId.trim(),
             nombre: nombre.toUpperCase().trim(),
-            telefono: telefono.trim(),
-            direccion: direccion.toUpperCase().trim(),
-            tenant: tenant.trim()
+            telefono: telefono ? telefono.trim() : null,
+            direccion: direccion ? direccion.toUpperCase().trim() : null
         };
 
-        let resultado;
+        // Si viene un ID válido (UUID), lo montamos para forzar la actualización (Update)
+        if (id && id !== 'undefined' && id !== 'null') {
+            objetoInyeccion.id = id;
+        }
 
-        if (id) {
-            console.log(`🔄 Ejecutando PATCH en Sanity para el ID: ${id}`);
+        console.log("🚀 Despachando mutación atómica (.upsert) a Supabase...");
 
-            resultado = await sanityClientServer
-                .patch(id)
-                .set(datosCliente)
-                .commit()
-                .catch(err => {
-                    console.error("❌ Falló el .commit() del PATCH:", err.message);
-                    throw new Error(`Sanity Patch Error: ${err.message}`);
-                });
+        // 3. Cirugía Mayor: UPSERT de PostgreSQL (Inserta o Actualiza en un solo golpe)
+        const { data: clienteProcesado, error } = await supabaseServer
+            .from('clientes')
+            .upsert([objetoInyeccion], { onConflict: 'id' }) // Evalúa conflicto por la llave primaria
+            .select('_id:id, tenant_id, nombre, telefono, direccion') // Retornamos aliaseado como _id por compatibilidad con Sanity
+            .single();
 
-        } else {
-            console.log("➕ Creando nuevo documento en Sanity...");
-
-            resultado = await sanityClientServer
-                .create(datosCliente)
-                .catch(err => {
-                    console.error("❌ Falló el .create() en Sanity:", err.message);
-                    throw new Error(`Sanity Create Error: ${err.message}`);
-                });
+        if (error) {
+            console.error("❌ Falló la operación en Supabase:", error.message);
+            throw new Error(`Supabase Upsert Error: ${error.message}`);
         }
 
         console.log(
-            "✅ Operación exitosa en Sanity. ID generado/modificado:",
-            resultado._id
+            "✅ Operación exitosa en Supabase. ID definitivo asignado:",
+            clienteProcesado._id
         );
-
         console.log("===============================================");
 
-        return NextResponse.json(resultado);
+        // 4. Retornamos el objeto clonando la estructura limpia que el POS necesita leer
+        return NextResponse.json({
+            ...clienteProcesado,
+            exists: true,
+            ok: true
+        });
 
     } catch (error) {
-
         console.error("🔥 ERROR CRÍTICO CAPTURADO EN LA API:");
         console.error("Mensaje:", error.message);
         console.error("Stack Trace Completo:", error.stack);
@@ -82,7 +79,7 @@ export async function POST(request) {
 
         return NextResponse.json(
             {
-                error: "Error interno en la mutación de Sanity",
+                error: "Error interno en la mutación de Supabase",
                 causaReal: error.message,
                 stack: error.stack
             },

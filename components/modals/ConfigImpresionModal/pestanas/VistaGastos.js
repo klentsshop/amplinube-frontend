@@ -111,13 +111,73 @@ export default function VistaGastos({
                     </thead>
                     <tbody>
                         {gastosFiltrados.map((item) => {
-                            const siendoEditado = editandoGastoId === item._id;
-                            const fechaLegible = item.fecha ? new Date(item.fecha).toLocaleString('es-CO', { dateStyle: 'short', timeStyle: 'short' }) : 'Sin fecha';
-                            
-                            return (
-                                <tr 
-                                    key={item._id} 
-                                    onClick={() => seleccionarGastoParaEditar(item)}
+                        // 🛡️ Cirugía: Normalizamos el ID del registro para Supabase (id) o Sanity (_id)
+                         const gastoIdReal = item.id || item._id;
+                         const siendoEditado = editandoGastoId === gastoIdReal;
+                         
+                         // 🎯 SOLUCIÓN RADICAL: Forzamos la interpretación manual del string de Supabase
+const fechaRaw = item.created_at || item.fecha;
+let fechaLegible = 'Sin fecha';
+
+if (fechaRaw) {
+    // 1. Limpiamos el string por si viene con offsets (+00, T, Z)
+    const stringLimpio = fechaRaw.replace('T', ' ').replace('Z', '').split('.')[0]; 
+    // Ejemplo resultante: "2026-06-03 20:17:54" o "2026-06-03 01:16:00"
+
+    // 2. Creamos el objeto Date interpretándolo estrictamente en UTC
+    const partes = stringLimpio.match(/(\d+)-(\d+)-(\d+)\s+(\d+):(\d+):(\d+)/);
+    
+    if (partes) {
+        // Creamos la fecha usando Date.UTC para que no dependa de la zona horaria del PC
+        const dateObj = new Date(Date.UTC(
+            parseInt(partes[1]),     // Año
+            parseInt(partes[2]) - 1, // Mes (0-11)
+            parseInt(partes[3]),     // Día
+            parseInt(partes[4]),     // Hora
+            parseInt(partes[5]),     // Minuto
+            parseInt(partes[6])      // Segundo
+        ));
+
+        if (!isNaN(dateObj.getTime())) {
+            // Evaluamos: si la hora se nos quedó atrás (en las 16:00 / 4:00 p.m.), 
+            // le sumamos las 5 horas del desfase de manera manual en caliente.
+            const horasFaltantes = dateObj.getHours() === 16 ? 5 : 0; 
+            if (horasFaltantes > 0) {
+                dateObj.setHours(dateObj.getHours() + horasFaltantes);
+            }
+
+            // 3. Renderizamos con formato limpio para Colombia
+            fechaLegible = dateObj.toLocaleString('es-CO', {
+                timeZone: 'America/Bogota',
+                day: 'numeric',
+                month: 'numeric',
+                year: '2-digit',
+                hour: 'numeric',
+                minute: '2-digit',
+                hour12: true
+            });
+        }
+    } else {
+        // Fallback por si el string viene en otro formato imprevisto
+        const dateObj = new Date(fechaRaw);
+        if (!isNaN(dateObj.getTime())) {
+            fechaLegible = dateObj.toLocaleString('es-CO', {
+                timeZone: 'America/Bogota',
+                day: 'numeric',
+                month: 'numeric',
+                year: '2-digit',
+                hour: 'numeric',
+                minute: '2-digit',
+                hour12: true
+            });
+        }
+    }
+}
+    
+                        return (
+                        <tr 
+                        key={gastoIdReal} 
+                        onClick={() => seleccionarGastoParaEditar({ ...item, _id: gastoIdReal })}
                                     style={{ 
                                         borderBottom: '1px solid #f3f4f6', 
                                         cursor: 'pointer', 
@@ -142,7 +202,7 @@ export default function VistaGastos({
                                         <button 
                                             onClick={(e) => { 
                                                 e.stopPropagation(); 
-                                                handleBorrarGasto(item._id); 
+                                                handleBorrarGasto(item.id || item._id);
                                             }} 
                                             style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', fontSize: '1rem' }}
                                         >
