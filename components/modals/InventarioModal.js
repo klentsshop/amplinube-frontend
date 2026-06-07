@@ -115,26 +115,31 @@ export default function InventarioModal({ isOpen, onClose, tenantId }) {
                         onChange={(e) => setBusqueda(e.target.value)}
                         // 🚀 BLINDAJE EXTRA PARA GATILLO ENTER MANUAL
                         onKeyDown={async (e) => {
-                            if (e.key === 'Enter') {
-                                e.preventDefault(); 
-                                let insumo = insumos.find(i => i.barcode === busqueda || i.codigoBalanza === busqueda);
-                                
-                                if (insumo) {
-                                    handleCargar(insumo.id || insumo._id, 1);
-                                    setBusqueda('');
-                                } else {
-                                    // Rescate rápido al dar enter si Supabase está vacío
-                                    const rescate = await sanityClientServer.fetch(
-                                        `*[_type == "inventario" && tenant == $tenantId && (barcode == $busqueda || codigoBalanza == $busqueda)][0]{ _id }`,
-                                        { tenantId, busqueda }
-                                    );
-                                    if (rescate?._id) {
-                                        handleCargar(rescate._id, 1);
-                                        setBusqueda('');
-                                    }
-                                }
-                            }
-                        }}
+    // 🛡️ EL ESCUDO DE ACERO: Detiene cualquier evento de tecla para que no viaje al carrito de atrás
+    e.stopPropagation(); 
+
+    if (e.key === 'Enter') {
+        e.preventDefault(); // Evita que se recargue la página o envíe formularios fantasmas
+        
+        // 🚨 Tu lógica actual intacta de búsqueda:
+        let insumo = insumos.find(i => i.barcode === busqueda || i.codigoBalanza === busqueda);
+        
+        if (insumo) {
+            handleCargar(insumo.id || insumo._id, 1);
+            setBusqueda('');
+        } else {
+            // Tu plan B de rescate en Sanity
+            const rescate = await sanityClientServer.fetch(
+                `*[_type == "inventario" && tenant == $tenantId && (barcode == $busqueda || codigoBalanza == $busqueda)][0]{ _id }`,
+                { tenantId, busqueda }
+            );
+            if (rescate?._id) {
+                handleCargar(rescate._id, 1);
+                setBusqueda('');
+            }
+        }
+    }
+}}
                         style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #D1D5DB', outline: 'none', fontSize: '1rem' }}
                     />
                 </div>
