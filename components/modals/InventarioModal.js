@@ -5,10 +5,11 @@ import { useInventario } from '@/hooks/useInventario';
 import { sanityClientServer } from '@/lib/sanity'; // 🛡️ Importamos para el Plan B de rescate del escáner
 
 export default function InventarioModal({ isOpen, onClose, tenantId }) {
-    const { insumos, cargarStock, cargando } = useInventario(tenantId);
+    
     const [busqueda, setBusqueda] = useState('');
     const [cantidades, setCantidades] = useState({});
     const [confirmacion, setConfirmacion] = useState({});
+    const { insumos, cargarStock, cargando } = useInventario(tenantId, busqueda);
     
     const inputBusquedaRef = useRef(null);
 

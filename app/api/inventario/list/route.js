@@ -9,6 +9,7 @@ export async function GET(request) {
     try {
         const { searchParams } = new URL(request.url);
         const tenantId = searchParams.get('tenantId') || searchParams.get('tenant');
+        const buscar = searchParams.get('search') || '';
 
         if (!tenantId || tenantId === 'undefined') {
             return NextResponse.json({ error: "Tenant ID es requerido" }, { status: 400 });
@@ -16,8 +17,8 @@ export async function GET(request) {
 
         console.log(`🔍 Listando inventario maestro desde Supabase para el Tenant: ${tenantId}`);
 
-        // 1. Intentamos traer los stocks vivos desde Supabase
-        let { data: insumos, error } = await supabaseServer
+        // 1. Inicializamos la query con la selección de campos exacta
+        let query = supabaseServer
             .from('inventarios')
             .select(`
                 _id:insumo_id,
@@ -29,15 +30,31 @@ export async function GET(request) {
                 barcode,
                 codigoBalanza:codigo_balanza
             `)
-            .eq('tenant_id', tenantId)
-            .order('nombre', { ascending: true });
+            .eq('tenant_id', tenantId);
+
+        // ⚡ Aplicamos el filtro de búsqueda de manera directa sobre la query viva
+        if (buscar.trim() !== '') {
+            const valor = buscar.trim();
+            const termino = `%${valor}%`;
+
+            if (/^\d+$/.test(valor)) {
+                // Si son números, busca por coincidencia en nombre o igualdad exacta en códigos
+                query = query.or(`nombre.ilike.${termino},barcode.eq.${valor},codigo_balanza.eq.${valor}`);
+            } else {
+                // Si es texto (ej: RICOSTILLA), busca puramente por coincidencia en el nombre
+                query = query.ilike('nombre', termino);
+            }
+        }
+
+        // Ejecutamos el ordenamiento y traemos los datos en una sola línea limpia
+        let { data: insumos, error } = await query.order('nombre', { ascending: true });
 
         if (error) throw error;
 
         // 🚀 2. AUTO-POBLADO INICIAL (El Escudo Anti-Pantallas Vacías):
         // Si la tabla de Supabase está vacía porque es un negocio nuevo o reseteado,
         // traemos el catálogo de Sanity y lo inyectamos en Supabase con stock 0 automáticamente.
-        if (!insumos || insumos.length === 0) {
+        if ((!insumos || insumos.length === 0) && buscar.trim() === '') {
             console.log("🌱 Tabla vacía detectada. Sincronizando catálogo base desde Sanity...");
             
             const catalogoSanity = await sanityClientServer.fetch(

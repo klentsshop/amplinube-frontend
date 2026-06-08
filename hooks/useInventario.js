@@ -13,16 +13,16 @@ const fetcher = async (url) => {
     return res.json();
 };
 
-export function useInventario(tenantId) {
+export function useInventario(tenantId, search = '') {
     const { refreshStockLocal, actualizarCacheStockMasivo } = useCart();
     const { data, error, mutate, isLoading } = useSWR(
-        tenantId ? `/api/inventario/list?tenantId=${tenantId}` : null, 
+        tenantId ? `/api/inventario/list?tenantId=${tenantId}&search=${encodeURIComponent(search.trim())}` : null,
         fetcher, 
         {
             refreshInterval: 10000,      // 🚀 Sincronización masiva de respaldo cada 30s
-            revalidateOnFocus: true,
+            revalidateOnFocus: false,
             revalidateOnMount: true,     
-            dedupingInterval: 0,         // Permite cambios instantáneos al mutar
+            dedupingInterval: 4000,        // Permite cambios instantáneos al mutar
             revalidateIfStale: false     // Elimina destellos de datos viejos en la UI
         }
     );

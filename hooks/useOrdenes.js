@@ -10,11 +10,11 @@ const fetcher = (url) => fetch(url).then((res) => {
 export function useOrdenes(providedTenantId) {
     const tenantId = (!providedTenantId || providedTenantId === 'demo') ? CURRENT_TENANT : providedTenantId;
     const { data: ordenes = [], mutate, error } = useSWR(tenantId ? `/api/ordenes/list?tenantId=${tenantId}` : null, fetcher, {
-        refreshInterval: 7000, 
-        revalidateOnFocus: true,
+        refreshInterval: 8000, 
+        revalidateOnFocus: false,
         revalidateOnReconnect: true,
-        dedupingInterval: 0,         // ⚡ Cirugía: Cambios instantáneos sin lag de reuso
-        revalidateIfStale: false     // ⚡ Cirugía: Bloquea renderizado de datos viejos al mutar
+        dedupingInterval: 3000,       
+        revalidateIfStale: true     
     });
 
     const [cargandoAccion, setCargandoAccion] = useState(false);

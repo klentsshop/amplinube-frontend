@@ -100,13 +100,14 @@ export default function MenuPanel({ configNegocio: configInyectada }) {
     });
     // Carga inicial del directorio al abrir el modal
     useEffect(() => {
-        if (mostrarModalClientes && tenantId) {
+        // 🛡️ BISTURÍ: Solo va al servidor si abren el modal Y la lista local está completamente vacía
+        if (mostrarModalClientes && tenantId && clientesLista.length === 0) {
             fetch(`/api/clientes?tenant=${tenantId}`)
                 .then(res => res.json())
                 .then(data => setClientesLista(data || []))
                 .catch(err => console.error("Error en directorio:", err));
         }
-    }, [mostrarModalClientes, tenantId]);
+    }, [mostrarModalClientes, tenantId, clientesLista.length]);
 
     const seleccionarParaEditar = (c) => {
         setIdClienteEditando(c._id); setCliNombre(c.nombre); setCliTelefono(c.telefono); setCliDireccion(c.direccion);
@@ -139,12 +140,11 @@ export default function MenuPanel({ configNegocio: configInyectada }) {
         }, 
         tenantId // 👈 BISTURÍ: Inyectamos la identidad del cliente
     );
-
+// --- LÍNEA 119: VERIFICACIÓN DE SEGURIDAD CON CANDADO DE SESIÓN ---
     useEffect(() => {
         const verificarSeguridadMesero = async () => {
             const vendedorPersistido = localStorage.getItem('ultimoMesero');
             
-            // CASO 1: Si no hay mesero seleccionado aún, el POS entra libre (Modo mostrador/caja inicial)
             if (!vendedorPersistido) {
                 setEstaActivo(true);
                 return;
@@ -152,26 +152,33 @@ export default function MenuPanel({ configNegocio: configInyectada }) {
 
             setNombreMesero(vendedorPersistido);
 
-            // CASO 2: Hay un mesero en disco. Le preguntamos a Sanity si el jefe lo tiene activo
+            // 🛡️ BISTURÍ: Si ya verificamos a este mesero en esta pestaña, evitamos ir a Sanity
+            const llaveSesion = `check_mesero_${vendedorPersistido}_${tenantId}`;
+            const yaVerificado = sessionStorage.getItem(llaveSesion);
+            if (yaVerificado === 'true') {
+                setEstaActivo(true);
+                return;
+            }
+
             try {
-                // Buscamos por el string del nombre exacto que tienes mapeado
                 const query = `*[_type == "mesero" && nombre == $nombre && tenant == $tenantId][0]{ activo }`;
                 const resultado = await client.fetch(query, { nombre: vendedorPersistido, tenantId }, { useCdn: false });
                 
-                // Si el campo 'activo' viene explícitamente en false, se bloquea. Si no viene o está en true, pasa.
                 if (resultado && resultado.activo === false) {
                     setEstaActivo(false);
                 } else {
+                    // Guardamos en la sesión local que este mesero ya fue validado con éxito
+                    sessionStorage.setItem(llaveSesion, 'true');
                     setEstaActivo(true);
                 }
             } catch (e) {
                 console.error("Lag de red: Acceso permitido por caché síncrona.");
-                setEstaActivo(true); // Escudo de redundancia: si no hay internet, no paramos la venta
+                setEstaActivo(true); 
             }
         };
 
         verificarSeguridadMesero();
-    }, []);
+    }, [tenantId]); // 🎯 Agregamos tenantId como dependencia segura
 
     const datosAgrupados = React.useMemo(() => {
         if (!cart?.length)return { cliente: [], cocina: [] };

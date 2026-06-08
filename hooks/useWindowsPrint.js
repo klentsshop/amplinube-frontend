@@ -21,7 +21,7 @@ export function useWindowsPrint(ordenesActivas, imprimirCocina, tenantId) {
                 const data = await client.fetch(
                     `*[_type == "estacionPC" && pcFingerprint == $idPC && tenant == $tenantId][0]`, 
                     { idPC, tenantId }, // 👈 Pasamos ambos parámetros
-                    { useCdn: false }
+                    { useCdn: true }
                 );
 
                 if (data) {
@@ -40,14 +40,21 @@ export function useWindowsPrint(ordenesActivas, imprimirCocina, tenantId) {
 
     // 2️⃣ EL "OÍDO" (WATCHER) REACTIVO
     useEffect(() => {
-        // Si no hay configuración o no tiene categorías, el listener no tiene sentido
+        // 🛡️ REGLA DE ORO MULTITENANT: Si la PC no tiene configuración o no tiene categorías vinculadas,
+        // matamos el Listener de inmediato. No importa si es Caja o Mesero; si imprime por Bluetooth, consume $0.
         if (!miConfig || !miConfig.categoriasVinculadas?.length) {
             if (!yaAvisoFaltaConfig.current) {
-            console.log("💤 Esperando configuración válida para activar Listener...");
-            yaAvisoFaltaConfig.current = true; // Bloquea futuros avisos en consola
+                console.log("💤 Sin tiquetera por cable configurada. Listener DESACTIVADO de forma segura.");
+                yaAvisoFaltaConfig.current = true;
             }
-            return;
+            return; // 🏁 Freno de mano total. Cierra el grifo de API requests aquí mismo.
         }
+
+        const meseroPersistido = localStorage.getItem('ultimoMesero');
+        if (meseroPersistido && meseroPersistido !== 'Caja' && !meseroPersistido.includes('*')) {
+            return; // 🏁 Filtro secundario para meseros en tablets
+        }
+
         yaAvisoFaltaConfig.current = false;
         const misCats = miConfig.categoriasVinculadas.map(c => c.trim().toUpperCase());
         // Limpiamos el nombre para crear el campo dinámico (ej: "CajaPrincipal")

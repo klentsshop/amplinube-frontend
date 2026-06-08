@@ -50,6 +50,7 @@ export default function ConfigImpresionModal({ isOpen, onClose, categorias, tena
     const [busquedaInv, setBusquedaInv] = useState('');
     const [cargandoInv, setCargandoInv] = useState(false);
     const [idItemEditando, setIdItemEditando] = useState(null);
+    const timerInventarioRef = React.useRef(null);
 
     const [listaGastosCompletas, setListaGastosCompletas] = useState([]);
     const [busquedaGasto, setBusquedaGasto] = useState('');
@@ -82,7 +83,7 @@ export default function ConfigImpresionModal({ isOpen, onClose, categorias, tena
         if (!tenantId) return;
         setCargandoInv(true);
         try {
-            const res = await fetch(`/api/inventario/list?tenantId=${tenantId}`);
+            const res = await fetch(`/api/inventario/list?tenantId=${tenantId}&search=${encodeURIComponent(busquedaInv.trim())}`);
             const data = await res.json();
             setListaInventario(data || []);
         } catch (e) {
@@ -115,24 +116,44 @@ export default function ConfigImpresionModal({ isOpen, onClose, categorias, tena
         }
     };
 
+    // --- LÍNEA 95 aprox: REEMPLAZAR POR ESTA LÓGICA DE CONSUMO CONTROLADO ---
     useEffect(() => {
-        if (pestanaActiva === 'inventario'|| pestanaActiva === 'productos') {
-            cargarInventarioAdmin();
-            cargarProductosNegocio();
-        }
+        if (!tenantId) return;
+
+        // 1. Si el cajero cambia de pestaña, ejecutamos las cargas estáticas de inmediato
         if (pestanaActiva === 'productos') {
             cargarProductosNegocio();
         }
-        if (pestanaActiva === 'gastos') { // 👈 AGREGA ESTE CONDICIONAL
+        if (pestanaActiva === 'gastos') { 
             cargarGastosNegocio();
         }
-        if (pestanaActiva === 'meseros') { // 👈 AGREGAR ESTA CONDICIÓN
+        if (pestanaActiva === 'meseros') { 
             cargarMeserosNegocio();
         }
         if (pestanaActiva === 'seguridad') { 
             cargarSeguridadNegocio();
         }
-    }, [pestanaActiva, tenantId]);
+
+        // 2. 🛡️ CONTROL DE INTEGRIDAD Y CONSUMO PARA LOS 1,721 INSUMOS
+        if (pestanaActiva === 'inventario' || pestanaActiva === 'productos') {
+            // Si el buscador está vacío, cargamos la lista inicial de inmediato sin esperas
+            if (!busquedaInv.trim()) {
+                cargarInventarioAdmin();
+            } else {
+                // Si el cajero está digitando, cancelamos la petición anterior en ráfaga
+                if (timerInventarioRef.current) clearTimeout(timerInventarioRef.current);
+
+                // Esperamos 400ms de calma antes de ir a la base de datos a buscar el insumo para editar
+                timerInventarioRef.current = setTimeout(() => {
+                    cargarInventarioAdmin();
+                }, 400);
+            }
+        }
+
+        return () => {
+            if (timerInventarioRef.current) clearTimeout(timerInventarioRef.current);
+        };
+    }, [pestanaActiva, tenantId, busquedaInv]); // 🔒 Mantenemos busquedaInv para que no pierdas la edición de ningún producto
     useEffect(() => {
         if (isOpen && typeof window !== 'undefined') {
             const idUnico = getStationFingerprint(); 
@@ -804,6 +825,7 @@ export default function ConfigImpresionModal({ isOpen, onClose, categorias, tena
         editandoProductoId={editandoProductoId} cancelarEdicionProducto={cancelarEdicionProducto}
         subirImagenASanity={subirImagenASanity}
         handleBorrarProducto={handleBorrarProducto}
+        tenantId={tenantId}
     />
 )}
                     {/* 💸 PESTAÑA 5: MÓDULO DE GASTOS (AGREGA ESTE BLOQUE EXACTAMENTE AQUÍ) */}
