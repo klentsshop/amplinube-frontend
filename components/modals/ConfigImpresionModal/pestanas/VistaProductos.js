@@ -12,6 +12,7 @@ export default function VistaProductos({
     const fileInputRef = useRef(null);
     const [estadoImagen, setEstadoImagen] = useState('');
     const timerBusquedaRef = useRef(null);
+    const [subPestana, setSubPestana] = useState(editandoProductoId ? 'formulario' : 'listado');
     
     // Filtrado de productos en tiempo real con blindaje contra valores nulos
     const productosFiltrados = listaProductosCompletas.filter(p => 
@@ -19,12 +20,28 @@ export default function VistaProductos({
     );
 
     return (
-        /* 📱 CONTENEDOR PADRE RESPONSIVO: Si la pantalla es muy chica, permite hacer scroll a todo el módulo */
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', maxHeight: 'calc(100vh - 180px)', overflowY: 'auto', paddingRight: '4px' }}>
-            
-            {/* FORMULARIO */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', backgroundColor: editandoProductoId ? '#eff6ff' : '#f9fafb', padding: '15px', borderRadius: '12px', border: editandoProductoId ? '2px dashed #3b82f6' : '1px solid #e5e7eb', flexShrink: 0 }}>
-                
+    /* 📱 CONTENEDOR PADRE BLINDADO: Bloquea el scroll general para mantener las pestañas fijas arriba */
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', maxHeight: 'calc(100vh - 140px)', overflowY: 'hidden' }}>
+        
+        {/* 📑 BOTONERA DE PESTAÑAS RESPONSIVAS */}
+        <div style={{ display: 'flex', width: '100%', borderBottom: '2px solid #e5e7eb', backgroundColor: '#fff', borderRadius: '8px 8px 0 0', overflow: 'hidden', flexShrink: 0 }}>
+            <button 
+                type="button"
+                onClick={() => setSubPestana('listado')}
+                style={{ flex: 1, padding: '12px', fontSize: '0.85rem', fontWeight: 'bold', border: 'none', backgroundColor: subPestana === 'listado' ? '#fff' : '#f3f4f6', color: subPestana === 'listado' ? '#10b981' : '#6b7280', borderBottom: subPestana === 'listado' ? '3px solid #10b981' : 'none', cursor: 'pointer', transition: 'all 0.2s' }}
+            >
+                📋 LISTADO DE PRODUCTOS ({productosFiltrados.length})
+            </button>
+            <button 
+                type="button"
+                onClick={() => setSubPestana('formulario')}
+                style={{ flex: 1, padding: '12px', fontSize: '0.85rem', fontWeight: 'bold', border: 'none', backgroundColor: subPestana === 'formulario' ? '#fff' : '#f3f4f6', color: subPestana === 'formulario' ? (editandoProductoId ? '#3b82f6' : '#10b981') : '#6b7280', borderBottom: subPestana === 'formulario' ? `3px solid ${editandoProductoId ? '#3b82f6' : '#10b981'}` : 'none', cursor: 'pointer', transition: 'all 0.2s' }}
+            >
+                {editandoProductoId ? '🔄 MODIFICAR SELECCIONADO' : '✨ REGISTRAR NUEVO'}
+            </button>
+        </div> 
+            {subPestana === 'formulario' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', backgroundColor: editandoProductoId ? '#eff6ff' : '#f9fafb', padding: '15px', borderRadius: '12px', border: editandoProductoId ? '2px dashed #3b82f6' : '1px solid #e5e7eb', overflowY: 'auto', paddingBottom: '140px' }}>
                 {/* CABECERA DINÁMICA CON BOTÓN DE ESCAPE INTEGRADO */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
                     <h3 style={{ margin: 0, fontSize: '0.9rem', fontWeight: 'bold', color: editandoProductoId ? '#1e40af' : '#374151' }}>
@@ -33,11 +50,14 @@ export default function VistaProductos({
                     {editandoProductoId && (
                         <button 
                             type="button" 
-                            onClick={() => {
-                            cancelarEdicionProducto();
-                            const inputReceta = document.getElementById('buscador-insumo-receta');
-                            if (inputReceta) inputReceta.value = "";
-                            }}
+                            onClick={async () => {
+    await handleCrearProducto();
+    if (fileInputRef.current) fileInputRef.current.value = "";
+    const inputReceta = document.getElementById('buscador-insumo-receta');
+    if (inputReceta) inputReceta.value = "";
+    setEstadoImagen('');
+    setSubPestana('listado'); // 🚀 Sincronización UX: Cierra edición y muestra la tabla actualizada
+}}
                             style={{ border: 'none', background: '#ef4444', color: 'white', padding: '3px 8px', borderRadius: '4px', fontSize: '0.7rem', fontWeight: 'bold', cursor: 'pointer' }}
                         >
                             CREAR NUEVO X
@@ -279,14 +299,14 @@ export default function VistaProductos({
                             left: 0, 
                             right: 0, 
                             backgroundColor: 'white', 
-                            border: '1px solid #d1d5db', 
+                            border: '2px solid #3b82f6', // Borde azul para que resalte más en celular
                             borderRadius: '6px', 
-                            boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)', 
-                            zIndex: 50, 
-                            maxHeight: '220px', 
+                            boxShadow: '0 10px 15px -3px rgba(0,0,0,0.3), 0 4px 6px -2px rgba(0,0,0,0.15)', // Sombra más pesada para romper el fondo
+                            zIndex: 9999, // 🚀 Rompe cualquier guillotina de overflow superior
+                            maxHeight: '180px', // Un poco más compacto para que quepa perfecto con el teclado en celular
                             overflowY: 'auto', 
                             display: 'none',
-                            marginTop: '4px'
+                            marginTop: '2px'
                         }}
                     />
                 </div>
@@ -308,7 +328,10 @@ export default function VistaProductos({
                     {guardando ? 'PROCESANDO...' : editandoProductoId ? '💾 GUARDAR PRODUCTO' : '🚀 REGISTRAR PRODUCTO'}
                 </button>
             </div>
-
+            )}
+            {/* 🎯 CONVERGENCIA SENIOR: Si la pestaña es listado, renderizamos la tabla */}
+            {subPestana === 'listado' && (
+            <>
             {/* BUSCADOR Y TABLA */}
             <input 
                 type="text" 
@@ -330,28 +353,25 @@ export default function VistaProductos({
                     </thead>
                     <tbody>
     {productosFiltrados.map(p => (
-     <tr key={p._id} onClick={() => {
-    // 1. Cargamos el producto en edición con el array de recetas blindado del backend
-    // Cambia esto en el onClick de la fila de la tabla de productos:
-const recetaNormalizada = (p.recetaInsumos || []).map(item => {
-    const idInsumo = item.insumo?._ref || item.insumoId;
-    // Buscamos si el insumo de la receta existe en la lista cargada para extraer su nombre real
-    const coincidencia = listaInventario.find(i => i._id === idInsumo || i.id === idInsumo || i.insumo_id === idInsumo);
-    
-    return {
-        insumoId: idInsumo,
-        cantidad: item.cantidad || item.amount || 1,
-        nombre: coincidencia ? coincidencia.nombre : 'Insumo guardado',
-        stockActual: coincidencia ? (coincidencia.stockActual ?? coincidencia.stock_actual ?? 0) : 0
-    };
-});
+        <tr key={p._id} onClick={() => {
+            const recetaNormalizada = (p.recetaInsumos || []).map(item => {
+                const idInsumo = item.insumo?._ref || item.insumoId;
+                const coincidencia = listaInventario.find(i => i._id === idInsumo || i.id === idInsumo || i.insumo_id === idInsumo);
+                
+                return {
+                    insumoId: idInsumo,
+                    cantidad: item.cantidad || item.amount || 1,
+                    nombre: coincidencia ? coincidencia.nombre : 'Insumo guardado',
+                    stockActual: coincidencia ? (coincidencia.stockActual ?? coincidencia.stock_actual ?? 0) : 0
+                };
+            });
 
-activarEdicionProducto({ ...p, insumosReceta: recetaNormalizada });
-    
-    // 2. Limpiamos la caja de texto predictiva para dejarla lista para nuevos ingresos
-    const inputReceta = document.getElementById('buscador-insumo-receta');
-    if (inputReceta) inputReceta.value = "";
-}} style={{ borderBottom: '1px solid #e5e7eb', cursor: 'pointer' }}>
+         activarEdicionProducto({ ...p, insumosReceta: recetaNormalizada });
+            
+            const inputReceta = document.getElementById('buscador-insumo-receta');
+            if (inputReceta) inputReceta.value = "";
+            setSubPestana('formulario'); // 🎯 VIAJE AUTOMÁTICO: Manda al usuario al formulario al tocar la fila
+        }} style={{ borderBottom: '1px solid #e5e7eb', cursor: 'pointer' }}>
             <td style={{ padding: '10px', fontWeight: '500', color: '#111827', textTransform: 'uppercase' }}>{p.nombre}</td>
             <td style={{ padding: '10px', textAlign: 'right', fontWeight: 'bold', color: '#059669' }}>${p.precio}</td>
             {/* 🗑️ BOTÓN DE DESTRUCCIÓN DIRECTA */}
@@ -370,9 +390,11 @@ activarEdicionProducto({ ...p, insumosReceta: recetaNormalizada });
             </td>
         </tr>
     ))}
-</tbody>
+          </tbody>
                 </table>
             </div>
+            </>
+            )}
         </div>
     );
 }

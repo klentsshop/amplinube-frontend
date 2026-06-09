@@ -192,7 +192,8 @@ if (fechaRaw) {
                                             {item.descripcion} {siendoEditado && <span style={{ color: '#2563eb', fontSize: '0.75rem', fontWeight: 'normal' }}>(en formulario)</span>}
                                         </div>
                                         <div style={{ fontSize: '0.7rem', color: '#9ca3af', marginTop: '2px' }}>
-                                            🗓️ {fechaLegible}
+                                            {/* 🎯 BISTURÍ: Pica el string en la coma y bota la hora para que quede limpio en el listado */}
+                                            🗓️ {fechaLegible.split(',')[0]}
                                         </div>
                                     </td>
                                     <td style={{ padding: '10px', textAlign: 'right', color: '#dc2626', fontWeight: '900', fontSize: '0.95rem' }}>

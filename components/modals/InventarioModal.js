@@ -10,6 +10,7 @@ export default function InventarioModal({ isOpen, onClose, tenantId }) {
     const [cantidades, setCantidades] = useState({});
     const [confirmacion, setConfirmacion] = useState({});
     const { insumos, cargarStock, cargando } = useInventario(tenantId, busqueda);
+    const [procesandoId, setProcesandoId] = useState(null);
     
     const inputBusquedaRef = useRef(null);
 
@@ -73,9 +74,12 @@ export default function InventarioModal({ isOpen, onClose, tenantId }) {
     }) || [];
 
     const handleCargar = async (id, cantidadManual = null) => {
+        if (procesandoId === id) return;
         const cantidad = cantidadManual || cantidades[id];
         if (!cantidad || cantidad <= 0) return;
-        
+        try {
+        // Encendemos el escudo para este insumo específico
+        setProcesandoId(id);
         const ok = await cargarStock(id, parseFloat(cantidad), tenantId);
         if (ok) {
             setConfirmacion(prev => ({ ...prev, [id]: true }));
@@ -91,7 +95,13 @@ export default function InventarioModal({ isOpen, onClose, tenantId }) {
                 setConfirmacion(prev => ({ ...prev, [id]: false }));
             }, 2000);
         }
-    };
+    } catch (error) {
+        console.error("Error al cargar el stock del insumo:", error);
+    } finally {
+        // 🚀 CONTROL DE SALIDA: Liberamos el botón únicamente cuando la API de Supabase/Sanity respondió
+        setProcesandoId(null);
+    }
+};
 
     return (
         <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.8)', display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '15px', zIndex: 10000 }}>
@@ -186,12 +196,24 @@ export default function InventarioModal({ isOpen, onClose, tenantId }) {
                                                     style={{ width: '70px', padding: '8px', borderRadius: '6px', border: '1px solid #D1D5DB', textAlign: 'center', fontWeight: 'bold' }}
                                                 />
                                                 <button 
-                                                    onClick={() => handleCargar(insumoId)}
-                                                    disabled={cargando}
-                                                    style={{ background: guardadoOk ? '#059669' : '#10B981', color: 'white', border: 'none', padding: '8px 15px', borderRadius: '6px', fontWeight: '900', cursor: 'pointer', transition: 'all 0.3s ease' }}
-                                                >
-                                                    {guardadoOk ? '✅' : '+ OK'}
-                                                </button>
+    onClick={() => handleCargar(insumoId)}
+    // Bloquea el botón si el hook está cargando de forma global, si está confirmado, o si este ID específico está en transmisión
+    disabled={cargando || guardadoOk || procesandoId === insumoId}
+    style={{ 
+        background: guardadoOk ? '#059669' : (procesandoId === insumoId ? '#9CA3AF' : '#10B981'), 
+        color: 'white', 
+        border: 'none', 
+        padding: '8px 15px', 
+        borderRadius: '6px', 
+        fontWeight: '900', 
+        // Cambia el cursor a prohibido si está deshabilitado para que el usuario entienda visualmente que debe esperar
+        cursor: (cargando || guardadoOk || procesandoId === insumoId) ? 'not-allowed' : 'pointer', 
+        transition: 'all 0.3s ease',
+        opacity: (procesandoId === insumoId) ? 0.7 : 1
+    }}
+>
+    {guardadoOk ? '✅' : (procesandoId === insumoId ? '⏳ ...' : '+ OK')}
+</button>
                                             </div>
                                         </td>
                                     </tr>

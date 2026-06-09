@@ -22,16 +22,40 @@ export default function VistaInventario({
     seleccionarParaEditar,
     handleBorrarInventario
 }) {
+    const [subPestana, setSubPestana] = React.useState(idItemEditando ? 'formulario' : 'listado');
     return (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-            {/* FORMULARIO DINÁMICO SUPERIOR */}
-            <form onSubmit={handleGuardarInventario} style={{ background: idItemEditando ? '#eff6ff' : '#f9fafb', padding: '14px', borderRadius: '10px', border: idItemEditando ? '2px dashed #3b82f6' : '1px solid #e5e7eb', transition: 'all 0.3s' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+        /* 📱 CONTENEDOR PADRE BLINDADO: Fija la cabecera con pestañas arriba */
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', maxHeight: 'calc(100vh - 140px)', overflowY: 'hidden' }}>
+            
+            {/* 📑 BOTONERA DE PESTAÑAS RESPONSIVAS */}
+            <div style={{ display: 'flex', width: '100%', borderBottom: '2px solid #e5e7eb', backgroundColor: '#fff', borderRadius: '8px 8px 0 0', overflow: 'hidden', flexShrink: 0 }}>
+                <button 
+                    type="button"
+                    onClick={() => setSubPestana('listado')}
+                    style={{ flex: 1, padding: '12px', fontSize: '0.85rem', fontWeight: 'bold', border: 'none', backgroundColor: subPestana === 'listado' ? '#fff' : '#f3f4f6', color: subPestana === 'listado' ? '#10b981' : '#6b7280', borderBottom: subPestana === 'listado' ? '3px solid #10b981' : 'none', cursor: 'pointer', transition: 'all 0.2s' }}
+                >
+                    📋 LISTADO ({inventarioFiltrado.length})
+                </button>
+                <button 
+                    type="button"
+                    onClick={() => setSubPestana('formulario')}
+                    style={{ flex: 1, padding: '12px', fontSize: '0.85rem', fontWeight: 'bold', border: 'none', backgroundColor: subPestana === 'formulario' ? '#fff' : '#f3f4f6', color: subPestana === 'formulario' ? (idItemEditando ? '#3b82f6' : '#10b981') : '#6b7280', borderBottom: subPestana === 'formulario' ? `3px solid ${idItemEditando ? '#3b82f6' : '#10b981'}` : 'none', cursor: 'pointer', transition: 'all 0.2s' }}
+                >
+                    {idItemEditando ? '🔄 MODIFICAR INSUMO' : '➕ REGISTRAR STOCK'}
+                </button>
+            </div>
+            {/* VISTA A: FORMULARIO DINÁMICO SUPERIOR */}
+            {subPestana === 'formulario' && (
+                <form onSubmit={(e) => {
+                    handleGuardarInventario(e);
+                    setSubPestana('listado'); // Retorna al listado al enviar de forma exitosa
+                }} style={{ background: idItemEditando ? '#eff6ff' : '#f9fafb', padding: '14px', borderRadius: '10px', border: idItemEditando ? '2px dashed #3b82f6' : '1px solid #e5e7eb', transition: 'all 0.3s', overflowY: 'auto', paddingBottom: '20px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
                     <h4 style={{ margin: 0, color: idItemEditando ? '#1e40af' : '#374151', fontSize: '0.85rem', fontWeight: 'bold', textTransform: 'uppercase' }}>
                         {idItemEditando ? '🔄 MODIFICAR INSUMO SELECCIONADO' : '➕ REGISTRAR MATERIA PRIMA / STOCK'}
                     </h4>
                     {idItemEditando && (
-                        <button type="button" onClick={cancelarEdicion} style={{ border: 'none', background: '#ef4444', color: 'white', padding: '3px 8px', borderRadius: '4px', fontSize: '0.7rem', fontWeight: 'bold', cursor: 'pointer' }}>CREAR NUEVO X</button>
+                        <button type="button" onClick={() => { cancelarEdicion(); setSubPestana('listado'); }} style={{ border: 'none', background: '#ef4444', color: 'white', padding: '3px 8px', borderRadius: '4px', fontSize: '0.7rem', fontWeight: 'bold', cursor: 'pointer' }}>CREAR NUEVO X</button>
                     )}
                 </div>
                 
@@ -64,9 +88,12 @@ export default function VistaInventario({
                     </button>
                 </div>
             </form>
+          )}
 
-            {/* TABLA SOLO LECTURA INTERACTIVA */}
-            <label style={{ display: 'block', fontWeight: 'bold', fontSize: '0.8rem', color: '#374151', textTransform: 'uppercase', marginBottom: '2px' }}>Existencias en Sistema (Clic en fila para editar)</label>
+            {/* VISTA B: TABLA SOLO LECTURA INTERACTIVA */}
+            {subPestana === 'listado' && (
+                <>
+                <label style={{ display: 'block', fontWeight: 'bold', fontSize: '0.8rem', color: '#374151', textTransform: 'uppercase', marginBottom: '2px' }}>Existencias en Sistema (Clic en fila para editar)</label>
             <div style={{ position: 'relative', marginBottom: '8px' }}>
                 <input 
                     type="text" 
@@ -100,7 +127,7 @@ export default function VistaInventario({
     return (
         <tr 
             key={idReal} 
-            onClick={() => seleccionarParaEditar(item)}
+            onClick={() => { seleccionarParaEditar(item); setSubPestana('formulario'); }}
             style={{ 
                 borderBottom: '1px solid #f3f4f6', 
                 cursor: 'pointer', 
@@ -145,6 +172,8 @@ export default function VistaInventario({
                     </tbody>
                 </table>
             </div>
+            </>
+            )}
         </div>
     );
 }

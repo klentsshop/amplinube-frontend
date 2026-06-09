@@ -59,26 +59,39 @@ if (!tenantId || tenantId === 'undefined') {
 ) {
             return NextResponse.json({ error: 'Datos incompletos.' }, { status: 400 });
         }
-// 2. NORMALIZACIÓN DE PLATOS (Cirugía anti-impresión de categorías excluidas)
-// Traemos las categorías del negocio que explícitamente tienen desactivada la impresión
+// ✅ REEMPLAZAR POR ESTE BLOQUE:
+// Traemos tanto el _id como el titulo de las categorías con impresión desactivada
 const categoriasNoImprimibles = await sanityClientServer.fetch(
-    `*[_type == "categoria" && tenant == $tenantId && seImprime == false].titulo`,
+    `*[_type == "categoria" && tenant == $tenantId && seImprime == false]{ _id, titulo }`,
     { tenantId },
     { useCdn: false }
 );
 
-// Pasamos los títulos a mayúsculas y limpios para comparar de forma segura
-const listaExcluidas = (categoriasNoImprimibles || []).map(c => c.trim().toUpperCase());
+// Estructuramos conjuntos indexados (Set) para búsquedas instantáneas
+const idsExcluidos = new Set((categoriasNoImprimibles || []).map(c => String(c._id).trim()));
+const titulosExcluidos = new Set((categoriasNoImprimibles || []).map(c => String(c.titulo).trim().toUpperCase()));
 
+// ✅ REEMPLAZAR POR ESTE BLOQUE:
 const estacionesSet = new Set();
 const platosNormalizados = platosOrdenados.map(p => {
-    const categoriaPlato = (p.categoria || "").trim().toUpperCase();
+    // Extraemos de forma elástica el ID de la categoría (si viene como string o como objeto de referencia)
+    const catIdOriginal = typeof p.categoria === 'object' ? (p.categoria?._ref || p.categoria?._id) : p.categoria;
+    const catIdLimpio = String(catIdOriginal || "").trim();
     
-    // El plato se imprime si su bandera es true Y si su categoría NO está en la lista negra
-    const debeImprimirPlato = p.seImprime === true && !listaExcluidas.includes(categoriaPlato);
+    // Extraemos el nombre de la categoría (usando p.categoriaLabel o la propiedad cruda)
+    const catLabelLimpia = String(p.categoriaLabel || p.categoria || "").trim().toUpperCase();
     
-    if (debeImprimirPlato) {
-        estacionesSet.add(categoriaPlato);
+    // Un plato NO se imprime si su ID de categoría está excluido O si su nombre de texto coincide con uno excluido
+    const esCategoriaExcluida = idsExcluidos.has(catIdLimpio) || titulosExcluidos.has(catLabelLimpia);
+    
+    // Condición maestra final
+    const debeImprimirPlato = p.seImprime === true && !esCategoriaExcluida;
+    
+    // Definimos la etiqueta limpia que leerá el despachador de la comanda
+    const categoriaFinal = p.categoriaLabel ? String(p.categoriaLabel).trim().toUpperCase() : catLabelLimpia;
+    
+    if (debeImprimirPlato && categoriaFinal) {
+        estacionesSet.add(categoriaFinal);
     }
 
     return {
@@ -89,8 +102,8 @@ const platosNormalizados = platosOrdenados.map(p => {
         precioUnitario: Number(p.precioUnitario || p.precioNum) || 0,
         subtotal: (Number(p.precioUnitario || p.precioNum) || 0) * (Number(p.cantidad) || 1),
         comentario: p.comentario || "",
-        categoria: categoriaPlato,
-        seImprime: debeImprimirPlato, // Guardamos el estado real filtrado
+        categoria: categoriaFinal, 
+        seImprime: debeImprimirPlato, 
         controlaInventario: p.controlaInventario || false,
         amount: Number(p.cantidad) || 1,
         cantidadADescontar: p.cantidadADescontar || 0,
