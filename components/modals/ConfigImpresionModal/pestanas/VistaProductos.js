@@ -32,9 +32,19 @@ export default function VistaProductos({
             >
                 📋 LISTADO DE PRODUCTOS ({productosFiltrados.length})
             </button>
-            <button 
+           <button 
                 type="button"
-                onClick={() => setSubPestana('formulario')}
+                onClick={() => {
+                    // 🎯 COPIA FIEL DE INVENTARIO: Si está editando y da clic aquí, limpia el modo edición
+                    if (editandoProductoId) {
+                        cancelarEdicionProducto();
+                        if (fileInputRef.current) fileInputRef.current.value = "";
+                        const inputReceta = document.getElementById('buscador-insumo-receta');
+                        if (inputReceta) inputReceta.value = "";
+                        setEstadoImagen('');
+                    }
+                    setSubPestana('formulario');
+                }}
                 style={{ flex: 1, padding: '12px', fontSize: '0.85rem', fontWeight: 'bold', border: 'none', backgroundColor: subPestana === 'formulario' ? '#fff' : '#f3f4f6', color: subPestana === 'formulario' ? (editandoProductoId ? '#3b82f6' : '#10b981') : '#6b7280', borderBottom: subPestana === 'formulario' ? `3px solid ${editandoProductoId ? '#3b82f6' : '#10b981'}` : 'none', cursor: 'pointer', transition: 'all 0.2s' }}
             >
                 {editandoProductoId ? '🔄 MODIFICAR SELECCIONADO' : '✨ REGISTRAR NUEVO'}
@@ -47,17 +57,18 @@ export default function VistaProductos({
                     <h3 style={{ margin: 0, fontSize: '0.9rem', fontWeight: 'bold', color: editandoProductoId ? '#1e40af' : '#374151' }}>
                         {editandoProductoId ? '🔄 MODIFICAR PRODUCTO SELECCIONADO' : '✨ REGISTRAR NUEVO PRODUCTO / ARTÍCULO'}
                     </h3>
-                    {editandoProductoId && (
+                     {editandoProductoId && (
                         <button 
                             type="button" 
-                            onClick={async () => {
-    await handleCrearProducto();
-    if (fileInputRef.current) fileInputRef.current.value = "";
-    const inputReceta = document.getElementById('buscador-insumo-receta');
-    if (inputReceta) inputReceta.value = "";
-    setEstadoImagen('');
-    setSubPestana('listado'); // 🚀 Sincronización UX: Cierra edición y muestra la tabla actualizada
-}}
+                            onClick={() => {
+                                // 🎯 BISTURÍ REPARADOR: Cancela la edición y limpia la interfaz sin disparar guardados falsos
+                                cancelarEdicionProducto();
+                                if (fileInputRef.current) fileInputRef.current.value = "";
+                                const inputReceta = document.getElementById('buscador-insumo-receta');
+                                if (inputReceta) inputReceta.value = "";
+                                setEstadoImagen('');
+                                setSubPestana('listado'); 
+                            }}
                             style={{ border: 'none', background: '#ef4444', color: 'white', padding: '3px 8px', borderRadius: '4px', fontSize: '0.7rem', fontWeight: 'bold', cursor: 'pointer' }}
                         >
                             CREAR NUEVO X
@@ -316,13 +327,17 @@ export default function VistaProductos({
 )}
                 {/* ACCIÓN DE GUARDADO */}
                 <button 
-                       onClick={async () => {
-                       await handleCrearProducto();
-                       if (fileInputRef.current) fileInputRef.current.value = "";
-                       const inputReceta = document.getElementById('buscador-insumo-receta');
-                       if (inputReceta) inputReceta.value = "";
-                       setEstadoImagen('');
-                       }}
+                    type="button"
+                    disabled={guardando} 
+                    onClick={async () => {
+                        // 🎯 RETORNO AUTOMÁTICO AL LISTADO AL GUARDAR EXITOSAMENTE
+                        await handleCrearProducto();
+                        if (fileInputRef.current) fileInputRef.current.value = "";
+                        const inputReceta = document.getElementById('buscador-insumo-receta');
+                        if (inputReceta) inputReceta.value = "";
+                        setEstadoImagen('');
+                        setSubPestana('listado');
+                    }}
                     style={{ padding: '9px', backgroundColor: editandoProductoId ? '#2563eb' : '#10b981', color: 'white', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.8rem', textTransform: 'uppercase', marginTop: '4px' }}
                 >
                     {guardando ? 'PROCESANDO...' : editandoProductoId ? '💾 GUARDAR PRODUCTO' : '🚀 REGISTRAR PRODUCTO'}
@@ -373,7 +388,7 @@ export default function VistaProductos({
             setSubPestana('formulario'); // 🎯 VIAJE AUTOMÁTICO: Manda al usuario al formulario al tocar la fila
         }} style={{ borderBottom: '1px solid #e5e7eb', cursor: 'pointer' }}>
             <td style={{ padding: '10px', fontWeight: '500', color: '#111827', textTransform: 'uppercase' }}>{p.nombre}</td>
-            <td style={{ padding: '10px', textAlign: 'right', fontWeight: 'bold', color: '#059669' }}>${p.precio}</td>
+            <td style={{ padding: '10px', textAlign: 'right', fontWeight: 'bold', color: '#059669' }}>${Number(p.precio || 0).toLocaleString('es-CO')}</td>
             {/* 🗑️ BOTÓN DE DESTRUCCIÓN DIRECTA */}
             <td style={{ padding: '10px', textAlign: 'center' }}>
                 <button 
