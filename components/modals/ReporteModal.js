@@ -56,7 +56,28 @@ export default function ReporteModal({
             { "CONCEPTO": "Tarjeta", "VALOR": datos.metodosPago?.tarjeta || datos.metodos?.tarjeta || 0 },
             { "CONCEPTO": "Digital (Nequi/Davi/Transf)", "VALOR": datos.metodosPago?.digital || datos.metodos?.digital || 0 }
            ]);
+
+           const datosRentabilidad = Object.entries(datos.productos || {})
+          .sort(([a], [b]) => a.localeCompare(b))
+          .map(([nombre, cantidad]) => {
+
+           const precioVenta = datos.precios?.[nombre] || 0;
+           const precioCosto = datos.preciosCosto?.[nombre] || 0;
+
+           const totalVenta = precioVenta * cantidad;
+           const totalCosto = precioCosto * cantidad;
+           const utilidad = totalVenta - totalCosto;
+
+          return {
+          "PRODUCTO": nombre.toUpperCase(),
+          "UNIDADES VENDIDAS": cantidad,
+          "PRECIO COSTO": precioCosto,
+          "PRECIO VENTA": precioVenta,
+          "UTILIDAD": utilidad
+         };
+        });
         const hojaVentas = XLSX.utils.json_to_sheet(datosVentas);
+        const hojaRentabilidad = XLSX.utils.json_to_sheet(datosRentabilidad);
         const hojaGastos = XLSX.utils.json_to_sheet(gastosParaExcel.map(g => {
         const descReal = g.descripcion || g.descripcionGasto || "Gasto sin nombre";
         const fechaReal = g.fecha || g.fechaRegistro || "Sin fecha";
@@ -75,8 +96,10 @@ export default function ReporteModal({
         hojaVentas['!cols'] = [{ wch: 40 }, { wch: 15 }, { wch: 10 }, { wch: 20 }, { wch: 20 }];
         hojaGastos['!cols'] = [{ wch: 25 }, { wch: 55 }, { wch: 20 }];
 
+        hojaRentabilidad['!cols'] = [ { wch: 40 },{ wch: 18 },{ wch: 18 },{ wch: 18 },{ wch: 18 }];
         XLSX.utils.book_append_sheet(libro, hojaResumen, "Resumen Contable");
         XLSX.utils.book_append_sheet(libro, hojaVentas, "Ventas por Producto");
+        XLSX.utils.book_append_sheet(libro, hojaRentabilidad, "Rentabilidad");
         XLSX.utils.book_append_sheet(libro, hojaGastos, "Gastos y Proveedores");
 
      const nombreNegocio = config?.nombre?.replace(/\s+/g, '_') || 'SocioPOS';

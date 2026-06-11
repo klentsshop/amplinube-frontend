@@ -63,6 +63,7 @@ export function useReportes(getFechaBogota, tenantId) {
             let totalPropinas = 0;
             let productos = {};
             let preciosParaExcel = {};
+            let preciosCostoParaExcel = {};
             let unidadesMedida = {}; // 🥩 Rastreador de tipos (Kg vs Und)
             let metodos = { efectivo: 0, tarjeta: 0, digital: 0 };
 
@@ -109,6 +110,12 @@ export function useReportes(getFechaBogota, tenantId) {
                     const cant = Number(p.cantidad || 0);
                     productos[nombre] = (productos[nombre] || 0) + cant;
                     preciosParaExcel[nombre] = Number(p.precioUnitario || 0);
+
+                     if (Number(p.precioCosto) > 0) {
+                     preciosCostoParaExcel[nombre] = Number(p.precioCosto);
+                     } else if (!preciosCostoParaExcel[nombre]) {
+                     preciosCostoParaExcel[nombre] = 0;
+                     }
                     if (cant % 1 !== 0) {
                         unidadesMedida[nombre] = 'kg';
                     }
@@ -123,6 +130,7 @@ export function useReportes(getFechaBogota, tenantId) {
                 gastos: totalGastos,
                 productos,
                 precios: preciosParaExcel,
+                preciosCosto: preciosCostoParaExcel,
                 unidadesMedida, // 🥩 Importante para el ReporteModal
                 metodosPago: metodos
             });

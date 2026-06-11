@@ -171,6 +171,7 @@ export function CartProvider({ children, tenantId }) {
           lineId: crypto.randomUUID(), 
           cantidad: cantAAgregar, 
           precioNum, 
+          precioCosto: Number(product.precioCosto || 0),
           subtotalNum: Number((precioNum * cantAAgregar).toFixed(2)), 
           comentario: product.comentario || '', 
           categoria: (product.categoria || "").toString().toUpperCase().trim(),

@@ -10,6 +10,7 @@ export async function POST(req) {
             _type: 'plato',
             nombre: data.nombre.trim(),
             precio: Number(data.precio),
+            precioCosto: Number(data.precioCosto || 0),
             disponible: data.disponible !== false,
             controlaInventario: data.controlaInventario || false,
             barcode: data.barcode || null,
@@ -54,6 +55,7 @@ export async function PUT(req) {
         const camposAActualizar = {
             nombre: data.nombre.trim(),
             precio: Number(data.precio),
+            precioCosto: Number(data.precioCosto || 0),
             categoria: { _type: 'reference', _ref: data.categoria },
             disponible: data.disponible,
             controlaInventario: data.controlaInventario,

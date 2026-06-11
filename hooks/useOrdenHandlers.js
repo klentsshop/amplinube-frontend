@@ -85,6 +85,7 @@ export function useOrdenHandlers({
                         nombre: p.nombrePlato || p.nombre,
                         comentario: p.comentario || "",
                         precioNum: p.precioUnitario || p.precio,
+                        precioCosto: Number(p.precioCosto || 0),
                         
                         // 2. 🛡️ BLINDAJE DE CATEGORÍA: 
                         categoria: (p.categoria || p.categoriaPlato || "").toString().toUpperCase().trim(),
@@ -175,22 +176,26 @@ export function useOrdenHandlers({
         localStorage.setItem('ultimoMesero', meseroFinal);
 
         // ✅ LÓGICA DE INVENTARIO Y MAPEO (INTACTA)
-        const platosParaGuardar = cart.map(i => ({ 
-            _id: i._id,
-            _key: i._key || i.lineId || `new-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`, 
-            nombrePlato: i.nombre || i.nombrePlato, 
-            cantidad: i.cantidad, 
-            precioUnitario: i.precioNum, 
-            subtotal: i.precioNum * i.cantidad,
-            comentario: normalizarParaImpresora(i.comentario),
-            // 🚀 BISTURÍ: Aquí resolvemos el problema de la categoría en una sola línea
-            categoria: (i.categoria || i.categoriaPlato || i.nombreCategoria || "").toString().trim().toUpperCase(),
-            seImprime: i.seImprime === true,
-            controlaInventario: i.controlaInventario || false,
-            recetaInsumos: i.recetaInsumos || [],
-            insumoVinculado: i.insumoVinculado || null,
-            cantidadADescontar: i.cantidadADescontar || 0
-        }));
+        // ✅ POR ESTE BLOQUE (Sincroniza el costo nativo antes de enviar a Sanity):
+const platosParaGuardar = cart.map(i => {
+    const platoCatalogo = (rep || []).find(p => p._id === i._id || p.id === i._id);
+    return { 
+        _id: i._id,
+        _key: i._key || i.lineId || `new-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`, 
+        nombrePlato: i.nombre || i.nombrePlato, 
+        cantidad: i.cantidad, 
+        precioUnitario: i.precioNum,
+        precioCosto: Number(platoCatalogo?.precioCosto || i.precioCosto || 0), 
+        subtotal: i.precioNum * i.cantidad,
+        comentario: normalizarParaImpresora(i.comentario),
+        categoria: (i.categoria || i.categoriaPlato || i.nombreCategoria || "").toString().trim().toUpperCase(),
+        seImprime: i.seImprime === true,
+        controlaInventario: i.controlaInventario || false,
+        recetaInsumos: i.recetaInsumos || [],
+        insumoVinculado: i.insumoVinculado || null,
+        cantidadADescontar: i.cantidadADescontar || 0
+    };
+});
 
         let datosEntrega = null;
         if (clienteActivo) {
@@ -329,13 +334,18 @@ export function useOrdenHandlers({
                     fechaLocal, 
                     transaccionId, 
                     ordenId: idParaCerrar || null,
-                    platosVendidosV2: cart.map(i => ({ 
-                        nombrePlato: i.nombre || i.nombrePlato,
-                        cantidad: i.cantidad, 
-                        precioUnitario: i.precioNum, 
-                        subtotal: i.precioNum * i.cantidad,
-                        comentario: normalizarParaImpresora(i.comentario || "")
-                    })) 
+                    platosVendidosV2: cart.map(i => {
+    // Buscamos el plato en el catálogo 'rep' usando el ID para extraer el costo real
+    const platoCatalogo = (rep || []).find(p => p._id === i._id || p.id === i._id);
+    return { 
+        nombrePlato: i.nombre || i.nombrePlato,
+        cantidad: i.cantidad, 
+        precioUnitario: i.precioNum, 
+        precioCosto: Number(platoCatalogo?.precioCosto || i.precioCosto || 0),
+        subtotal: i.precioNum * i.cantidad,
+        comentario: normalizarParaImpresora(i.comentario || "")
+    };
+})
                 }) 
             });
 
@@ -440,22 +450,26 @@ const sincronizarBorradoEnSanity = async (carritoFiltrado) => {
         setMensajeExito(true);
         const mesaReal = ordenMesa || ordenesActivas.find(o => o._id === ordenActivaId)?.mesa;
 
-        const platosParaSanity = carritoFiltrado.map(i => ({ 
-            _id: i._id,
-            _key: i._key || i.lineId, 
-            nombrePlato: i.nombre || i.nombrePlato, 
-            cantidad: Number(i.cantidad), 
-            precioUnitario: Number(i.precioNum || i.precioUnitario), // Según Schema
-            subtotal: Number((i.precioNum || i.precioUnitario) * i.cantidad),
-            comentario: normalizarParaImpresora(i.comentario || ""),
-            categoria: (i.categoria || "").toString().trim().toUpperCase(),
-            seImprime: i.seImprime === true,
-            controlaInventario: i.controlaInventario || false,
-            esDeOrdenGuardada: true,
-            recetaInsumos: i.recetaInsumos || [],
-            insumoVinculado: i.insumoVinculado || null,
-            cantidadADescontar: Number(i.cantidadADescontar || 0)
-        }));
+      const platosParaSanity = carritoFiltrado.map(i => {
+    const platoCatalogo = (rep || []).find(p => p._id === i._id || p.id === i._id);
+    return { 
+        _id: i._id,
+        _key: i._key || i.lineId, 
+        nombrePlato: i.nombre || i.nombrePlato, 
+        cantidad: Number(i.cantidad), 
+        precioUnitario: Number(i.precioNum || i.precioUnitario), 
+        precioCosto: Number(platoCatalogo?.precioCosto || i.precioCosto || 0),
+        subtotal: Number((i.precioNum || i.precioUnitario) * i.cantidad),
+        comentario: normalizarParaImpresora(i.comentario || ""),
+        categoria: (i.categoria || "").toString().trim().toUpperCase(),
+        seImprime: i.seImprime === true,
+        controlaInventario: i.controlaInventario || false,
+        esDeOrdenGuardada: true,
+        recetaInsumos: i.recetaInsumos || [],
+        insumoVinculado: i.insumoVinculado || null,
+        cantidadADescontar: Number(i.cantidadADescontar || 0)
+    };    
+   }); 
         let datosEntrega = null;
 
         if (clienteActivo) {

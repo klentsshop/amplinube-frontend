@@ -36,6 +36,7 @@ export default function ConfigImpresionModal({ isOpen, onClose, categorias, tena
     const [nuevoPlato, setNuevoPlato] = useState({
         nombre: '',
         precio: '',
+        precioCosto: '',
         categoria: '',
         controlaInventario: false,
         disponible: true,
@@ -101,6 +102,7 @@ export default function ConfigImpresionModal({ isOpen, onClose, categorias, tena
                 _id, 
                 nombre, 
                 precio, 
+                precioCosto,
                 categoria, 
                 "categoriaLabel": categoria->titulo, 
                 disponible, 
@@ -413,6 +415,7 @@ export default function ConfigImpresionModal({ isOpen, onClose, categorias, tena
             const datosEnvio = {
                 nombre: nuevoPlato.nombre.trim(),
                 precio: Number(nuevoPlato.precio),
+                precioCosto: Number(nuevoPlato.precioCosto || 0),
                 disponible: nuevoPlato.disponible,
                 controlaInventario: nuevoPlato.controlaInventario,
                 barcode: nuevoPlato.barcode ? nuevoPlato.barcode.trim() : null,
@@ -453,6 +456,7 @@ export default function ConfigImpresionModal({ isOpen, onClose, categorias, tena
     setNuevoPlato({
         nombre: prod.nombre,
         precio: prod.precio,
+        precioCosto: prod.precioCosto || '',
         categoria: prod.categoria?._ref || prod.categoria || '',
         controlaInventario: prod.controlaInventario || false,
         disponible: prod.disponible !== false,
@@ -468,6 +472,7 @@ export default function ConfigImpresionModal({ isOpen, onClose, categorias, tena
         setNuevoPlato({
             nombre: '',
             precio: '',
+            precioCosto: '',
             categoria: '',
             controlaInventario: false,
             disponible: true,

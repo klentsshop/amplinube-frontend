@@ -37,6 +37,7 @@ export async function POST(request) {
                     nombrePlato,
                     cantidad,
                     precioUnitario,
+                    precioCosto,
                     subtotal,
                     comentario,
                     seImprime,

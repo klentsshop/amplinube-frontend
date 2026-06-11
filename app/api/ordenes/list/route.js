@@ -100,6 +100,7 @@ const platosNormalizados = platosOrdenados.map(p => {
         nombrePlato: p.nombrePlato || p.nombre,
         cantidad: Number(p.cantidad) || 1,
         precioUnitario: Number(p.precioUnitario || p.precioNum) || 0,
+        precioCosto: Number(p.precioCosto || 0),
         subtotal: (Number(p.precioUnitario || p.precioNum) || 0) * (Number(p.cantidad) || 1),
         comentario: p.comentario || "",
         categoria: categoriaFinal, 

@@ -91,6 +91,7 @@ export async function POST(req) {
                 nombrePlato: item.nombrePlato || item.nombre,
                 cantidad: cantidadFinal,
                 precioUnitario: precioFinal,
+                precioCosto: Number(item.precioCosto || 0),
                 subtotal: Number(item.subtotal) || (precioFinal * cantidadFinal),
                 comentario: item.comentario || ""
             };

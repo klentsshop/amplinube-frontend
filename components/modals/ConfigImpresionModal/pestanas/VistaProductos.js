@@ -76,24 +76,32 @@ export default function VistaProductos({
                     )}
                 </div>
                 
-                {/* 📐 FILA 1: DATOS BÁSICOS (Misma estructura de grilla que Inventario) */}
-                <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '8px', marginBottom: '2px' }}>
-                    <div>
-                        <label style={{ fontSize: '0.7rem', fontWeight: 'bold', color: '#6b7280', display: 'block', marginBottom: '4px' }}>Nombre del Producto</label>
-                        <input type="text" placeholder="Nombre" value={nuevoPlato.nombre} onChange={(e) => setNuevoPlato({...nuevoPlato, nombre: e.target.value})} style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #ccc', fontSize: '0.9rem', outline: 'none', textTransform: 'uppercase' }} />
-                    </div>
-                    <div>
-                        <label style={{ fontSize: '0.7rem', fontWeight: 'bold', color: '#6b7280', display: 'block', marginBottom: '4px' }}>Precio ($)</label>
-                        <input type="number" placeholder="Precio" value={nuevoPlato.precio} onChange={(e) => setNuevoPlato({...nuevoPlato, precio: e.target.value})} style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #ccc', fontSize: '0.9rem', outline: 'none', textAlign: 'center' }} />
-                    </div>
-                    <div>
-                        <label style={{ fontSize: '0.7rem', fontWeight: 'bold', color: '#6b7280', display: 'block', marginBottom: '4px' }}>Categoría</label>
-                        <select value={nuevoPlato.categoria} onChange={(e) => setNuevoPlato({...nuevoPlato, categoria: e.target.value})} style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #ccc', fontSize: '0.9rem', outline: 'none' }}>
-                            <option value="">Categoría...</option>
-                            {categorias.map(c => <option key={c._id} value={c._id}>{c.titulo}</option>)}
-                        </select>
-                    </div>
-                </div>
+                {/* 📐 FILA 1A: IDENTIDAD Y VENTA (Diseño responsive 50/50) */}
+<div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '8px' }}>
+    <div>
+        <label style={{ fontSize: '0.7rem', fontWeight: 'bold', color: '#6b7280', display: 'block', marginBottom: '4px' }}>Nombre del Producto</label>
+        <input type="text" placeholder="Nombre" value={nuevoPlato.nombre} onChange={(e) => setNuevoPlato({...nuevoPlato, nombre: e.target.value})} style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #ccc', fontSize: '0.9rem', outline: 'none', textTransform: 'uppercase' }} />
+    </div>
+    <div>
+        <label style={{ fontSize: '0.7rem', fontWeight: 'bold', color: '#6b7280', display: 'block', marginBottom: '4px' }}>Precio Venta ($)</label>
+        <input type="number" placeholder="Precio" value={nuevoPlato.precio} onChange={(e) => setNuevoPlato({...nuevoPlato, precio: e.target.value})} style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #ccc', fontSize: '0.9rem', outline: 'none', textAlign: 'center' }} />
+    </div>
+</div>
+
+{/* 📐 FILA 1B: COSTO Y CATEGORÍA (Diseño responsive 50/50 justo abajo) */}
+<div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '2px' }}>
+    <div>
+        <label style={{ fontSize: '0.7rem', fontWeight: 'bold', color: '#6b7280', display: 'block', marginBottom: '4px' }}>Precio Costo ($)</label>
+        <input type="number" placeholder="Costo" value={nuevoPlato.precioCosto || ''} onChange={(e) => setNuevoPlato({...nuevoPlato, precioCosto: e.target.value})} style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #ccc', fontSize: '0.9rem', outline: 'none', textAlign: 'center' }} />
+    </div>
+    <div>
+        <label style={{ fontSize: '0.7rem', fontWeight: 'bold', color: '#6b7280', display: 'block', marginBottom: '4px' }}>Categoría</label>
+        <select value={nuevoPlato.categoria} onChange={(e) => setNuevoPlato({...nuevoPlato, categoria: e.target.value})} style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #ccc', fontSize: '0.9rem', outline: 'none' }}>
+            <option value="">Categoría...</option>
+            {categorias.map(c => <option key={c._id} value={c._id}>{c.titulo}</option>)}
+        </select>
+    </div>
+</div>
                 
                 {/* 📐 FILA 2: INTEGRACIÓN CÓDIGOS DE HARDWARE Y MULTIMEDIA */}
                 <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1.2fr 1fr', gap: '8px', alignItems: 'end', marginBottom: '2px' }}>
