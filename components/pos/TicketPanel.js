@@ -260,6 +260,23 @@ export default function TicketPanel({
     >
         + GASTO
     </button>
+    {/* 6. VENTAS */}
+    <button 
+        onClick={() => setMostrarModalHistorial(true)} 
+        style={{
+            flex: '0 0 31%',
+            padding: 'clamp(14px, 3.5vw, 10px) 2px',
+            fontSize: 'clamp(0.85rem, 2.5vw, 0.75rem)',
+            backgroundColor: '#228B22', 
+            color: 'white',
+            border: 'none',
+            borderRadius: '6px',
+            fontWeight: '900',
+            cursor: 'pointer'
+        }}
+    >
+        VENTAS
+    </button>
    {/* 🛡️ RESTRICCIÓN DE AUDITORÍA: Los siguientes botones críticos solo abren si es Modo Cajero AND (Es Caja central o es Mesero Autorizado con '*') */}
     {esModoCajero && (nombreMesero === 'Caja' || nombreMesero === '' || nombreMesero === null || nombreMesero?.includes('*')) && (
         <>
@@ -317,24 +334,6 @@ export default function TicketPanel({
 >
     INVENTARIO
 </button>
-
-    {/* 6. VENTAS */}
-    <button 
-        onClick={() => setMostrarModalHistorial(true)} 
-        style={{
-            flex: '0 0 31%',
-            padding: 'clamp(14px, 3.5vw, 10px) 2px',
-            fontSize: 'clamp(0.85rem, 2.5vw, 0.75rem)',
-            backgroundColor: '#228B22', 
-            color: 'white',
-            border: 'none',
-            borderRadius: '6px',
-            fontWeight: '900',
-            cursor: 'pointer'
-        }}
-    >
-        VENTAS
-    </button>
     </>
     )}
 </div>

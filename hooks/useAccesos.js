@@ -21,7 +21,7 @@ export function useAccesos(config, setNombreMesero, { onAdminSuccess } = {}, ten
     // Lógica para habilitar/deshabilitar modo Cobro (CAJERO)
     const solicitarAccesoCajero = async () => {
         if (esModoCajero) {
-            if (confirm("¿Cerrar/activar sesión?")) {
+            if (confirm("¿Cerrar sesión Cajero?")) {
                 setEsModoCajero(false);
                 localStorage.removeItem(`${tenantId}_cajero_activa`);
                 setNombreMesero(null);
@@ -91,11 +91,34 @@ export function useAccesos(config, setNombreMesero, { onAdminSuccess } = {}, ten
             return false;
         }
     };
+    const solicitarAccesoCajeroConPinDirecto = async (pinIngresado) => {
+        if (!pinIngresado || !tenantId) return false;
+        try {
+            const res = await fetch('/api/auth/verify', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ pin: pinIngresado, tipo: 'cajero', tenantId, tenant: tenantId })
+            });
+            const data = await res.json();
 
+            if (res.ok && data.autorizado) { 
+                setEsModoCajero(true);
+                localStorage.setItem(`${tenantId}_cajero_activa`, 'true');
+                localStorage.setItem('ultimoMesero', 'Caja');
+                setNombreMesero("Caja");
+                return true;
+            }
+            return false;
+        } catch (error) {
+            console.error("🔥 Error en validación táctil directa:", error);
+            return false;
+        }
+    };
     // ÚNICO RETURN AL FINAL
     return { 
         esModoCajero, 
         solicitarAccesoCajero, 
+        solicitarAccesoCajeroConPinDirecto, // 🎯 Bisturí: El puente táctil
         solicitarAccesoAdmin,
         validarPinAdmin 
     };

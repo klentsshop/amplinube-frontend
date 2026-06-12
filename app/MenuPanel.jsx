@@ -96,7 +96,7 @@ export default function MenuPanel({ configNegocio: configInyectada }) {
         cart, total, clearCart, clearWithStockReturn, setCartFromOrden, eliminarLineaConStock, apiGuardar, apiEliminar, 
         refreshOrdenes, ordenActivaId, setOrdenMesa, ordenMesa,
         setOrdenActivaId, ordenesActivas, esModoCajero: acc.esModoCajero, 
-        setMostrarCarritoMobile, nombreMesero, setNombreMesero, tipoOrden, validarPinAdmin: acc.validarPinAdmin, tenantId, config: configNegocio
+        setMostrarCarritoMobile, nombreMesero: acc.esModoCajero ? "Caja" : nombreMesero, setNombreMesero, tipoOrden, validarPinAdmin: acc.validarPinAdmin, tenantId, config: configNegocio
     });
     // Carga inicial del directorio al abrir el modal
     useEffect(() => {
@@ -140,45 +140,56 @@ export default function MenuPanel({ configNegocio: configInyectada }) {
         }, 
         tenantId // 👈 BISTURÍ: Inyectamos la identidad del cliente
     );
-// --- LÍNEA 119: VERIFICACIÓN DE SEGURIDAD CON CANDADO DE SESIÓN ---
-    useEffect(() => {
-        const verificarSeguridadMesero = async () => {
-            const vendedorPersistido = localStorage.getItem('ultimoMesero');
+     // REEMPLAZAR EL EFECTO DE LA LÍNEA 119 POR ESTE:
+useEffect(() => {
+    const verificarSeguridadMesero = async () => {
+        if (!tenantId) return;
+
+        // 1. Radar Prioritario: Si el almacenamiento dice que hay una sesión de Cajero activa para este Tenant,
+        // rehidratamos los permisos en el frontend inmediatamente.
+        const sesionCajeroActiva = localStorage.getItem(`${tenantId}_cajero_activa`) === 'true';
+        
+        if (sesionCajeroActiva) {
+            setNombreMesero('Caja');
+            setEstaActivo(true);
+            return; // Fin de la ejecución, el cajero es dueño de la terminal
+        }
+
+        // 2. Si no es cajero, evaluamos la persistencia del mesero común
+        const vendedorPersistido = localStorage.getItem('ultimoMesero');
+        
+        if (!vendedorPersistido || vendedorPersistido === 'Caja') {
+            // 🛡️ BISTURÍ SENIOR: Si dice "Caja" pero la sesión de cajero no está activa para este tenant,
+            // significa que la terminal quedó huérfana. Forzamos que seleccione un mesero válido.
+            setNombreMesero(null);
+            setEstaActivo(true);
+            return;
+        }
+
+        setNombreMesero(vendedorPersistido);
+        const llaveSesion = `check_mesero_${vendedorPersistido}_${tenantId}`;
+        const yaVerificado = sessionStorage.getItem(llaveSesion);
+        if (yaVerificado === 'true') {
+            setEstaActivo(true);
+            return;
+        }
+
+      try {
+            const query = `*[_type == "mesero" && nombre == $nombre && tenant == $tenantId][0]{ activo }`;
+            const resultado = await client.fetch(query, { nombre: vendedorPersistido, tenantId }, { useCdn: false });
             
-            if (!vendedorPersistido) {
-                setEstaActivo(true);
-                return;
+            if (resultado && resultado.activo === false) {
+                setEstaActivo(false); // 🔒 Bloqueo fulminante en F5
+            } else {
+                setEstaActivo(true);  // 🔓 Empleado al día, puede trabajar
             }
-
-            setNombreMesero(vendedorPersistido);
-
-            // 🛡️ BISTURÍ: Si ya verificamos a este mesero en esta pestaña, evitamos ir a Sanity
-            const llaveSesion = `check_mesero_${vendedorPersistido}_${tenantId}`;
-            const yaVerificado = sessionStorage.getItem(llaveSesion);
-            if (yaVerificado === 'true') {
-                setEstaActivo(true);
-                return;
-            }
-
-            try {
-                const query = `*[_type == "mesero" && nombre == $nombre && tenant == $tenantId][0]{ activo }`;
-                const resultado = await client.fetch(query, { nombre: vendedorPersistido, tenantId }, { useCdn: false });
-                
-                if (resultado && resultado.activo === false) {
-                    setEstaActivo(false);
-                } else {
-                    // Guardamos en la sesión local que este mesero ya fue validado con éxito
-                    sessionStorage.setItem(llaveSesion, 'true');
-                    setEstaActivo(true);
-                }
-            } catch (e) {
-                console.error("Lag de red: Acceso permitido por caché síncrona.");
-                setEstaActivo(true); 
-            }
-        };
-
-        verificarSeguridadMesero();
-    }, [tenantId]); // 🎯 Agregamos tenantId como dependencia segura
+        } catch (e) {
+            console.error("Lag de red: Permitiendo acceso por seguridad operativa.");
+            setEstaActivo(true); 
+        }
+    };
+ verificarSeguridadMesero();
+}, [tenantId, acc.esModoCajero, nombreMesero]); // Escucha activamente si el modo cajero muta para liberar o congelar la terminal
 
     const datosAgrupados = React.useMemo(() => {
         if (!cart?.length)return { cliente: [], cocina: [] };
@@ -380,34 +391,32 @@ if (!estaActivo) {
         };
 
         const verificarPinMaestro = async () => {
-            try {
-                // 📡 GATILLO QUIRÚRGICO: Comparamos contra el rol 'cajero' que sí muta y valida la sesión real
-                const res = await fetch('/api/auth/verify', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ pin: pinBloqueo, tipo: 'cajero', tenantId: tenantId })
-                });
-                
-                const data = await res.json();
-
-                if (res.ok && data.success) {
-                    // 💵 ÉXITO OPERATIVO: El cajero/jefe toma el control de la terminal
-                    localStorage.setItem('ultimoMesero', 'Caja');
-                    setNombreMesero('Caja');
-                    setPinBloqueo('');
-                    setErrorPin(false);
-                    setEstaActivo(true); // Desbloqueo y rendering inmediato del POS
-                } else {
-                    setErrorPin(true);
-                    setPinBloqueo('');
-                }
-            } catch (error) {
-                console.error("Error en pasarela de autenticación:", error);
-                setErrorPin(true);
-                setPinBloqueo('');
-            }
-        };
-        
+    try {
+        const verificado = await acc.solicitarAccesoCajeroConPinDirecto(pinBloqueo);
+        if (verificado) {
+            // 🛡️ LIMPIEZA PROFUNDA Y DESAMARRE: Erradicamos por completo al mesero del almacenamiento
+            localStorage.removeItem('ultimoMesero'); // Borra el nombre del mesero inactivo
+            localStorage.removeItem('vendedor_pos');  // Borra variantes si las tienes
+            
+            // Si manejas sesiones específicas de caja por dispositivo, aquí decides si lo dejas como Caja o limpio:
+            localStorage.setItem('ultimoMesero', 'Caja'); 
+            
+            setNombreMesero('Caja'); // Cambiamos el estado del componente inmediatamente
+            setEstaActivo(true);     // Desbloqueamos la pantalla
+            
+            setPinBloqueo('');
+            setErrorPin(false);
+            alert("🔒 Dispositivo desamarrado con éxito. Ahora está en modo Caja/Limpio.");
+        } else {
+            setErrorPin(true);
+            setPinBloqueo('');
+        }
+    } catch (error) {
+        console.error("🔥 Error desamarrando dispositivo:", error);
+        setErrorPin(true);
+        setPinBloqueo('');
+    }
+};
         return (
             <div style={{ position: 'fixed', inset: 0, backgroundColor: '#090d16', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', zIndex: 999999, color: 'white', fontFamily: 'sans-serif', padding: '20px' }}>
                 

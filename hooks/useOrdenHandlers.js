@@ -442,7 +442,8 @@ const sincronizarBorradoEnSanity = async (carritoFiltrado) => {
     // Si el carrito queda vacío, el Schema de Sanity (min 1) o tu API (línea 45) darán error.
     // En ese caso, lo correcto es eliminar la orden completa.
     if (!ordenActivaId || !carritoFiltrado || carritoFiltrado.length === 0) {
-        await apiEliminar(ordenActivaId, tenantId);
+        console.warn("⚠️ [BLOQUEO DE SEGURIDAD]: Intento de vaciado completo mediante borrado individual cancelado.");
+        alert("🔒 Para eliminar el último plato de la mesa, use el botón 'Eliminar Orden' con autorización.");
         return;
     }
 
@@ -505,50 +506,54 @@ const sincronizarBorradoEnSanity = async (carritoFiltrado) => {
         setMensajeExito(false);
     }
 };
-  const solicitarEliminacionAdmin = async (item) => {
-    // 1. Lógica para Cajero
+// REEMPLAZAR LA FUNCIÓN COMPLETA POR ESTA:
+const solicitarEliminacionAdmin = async (item) => {
+    // 🛡️ CIRUGÍA ATÓMICA: Calculamos el estado futuro del carrito de forma síncrona
+    // sin confiar en el retorno rezagado del dispatcher de React.
+    const obtenerCarritoFiltrado = () => {
+        return cart.filter(it => it.lineId !== item.lineId);
+    };
+
+    // 1. Lógica para Cajero directo (Ya está logueado, no pide PIN)
     if (esModoCajero) {
         if (confirm(`⚠️ ¿Desea eliminar "${item.nombre}"? Este plato ya fue enviado a cocina.`)) {
-            const carritoFiltrado = await eliminarLineaConStock(item.lineId);
+            const nuevoCarrito = obtenerCarritoFiltrado();
             
-            if (carritoFiltrado) {
-                // ✅ CAMBIO AQUÍ: Usamos la gemela para que no limpie pantalla ni imprima
-                await sincronizarBorradoEnSanity(carritoFiltrado); 
-            }
+            // Primero actualizamos el estado local de React
+            eliminarLineaConStock(item.lineId);
+            
+            // Pasamos la instantánea calculada síncronamente a Sanity
+            await sincronizarBorradoEnSanity(nuevoCarrito); 
         }
         return;
     }
 
-    // 2. Lógica para Mesero (Pide PIN)
-    const pinIngresado = prompt(`🔒 PIN de Administrador para eliminar "${item.nombre}":`);
+    // 2. Lógica para Mesero (Pide PIN de supervisión para autorizar)
+    const pinIngresado = prompt(`🔒 PIN de Autorización (Caja/Admin) para eliminar "${item.nombre}":`);
     if (!pinIngresado) return; 
 
-  try {
-  const res = await fetch('/api/auth/verify', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    // 🛡️ Enviamos tenantId mapeado correctamente como exige la nueva API
-    body: JSON.stringify({ pin: pinIngresado, tipo: 'cajero', tenant: tenantId })
-});
+    try {
+        const res = await fetch('/api/auth/verify', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ pin: pinIngresado, tipo: 'cajero', tenantId: tenantId, tenant: tenantId })
+        });
 
-const data = await res.json();
+        const data = await res.json();
 
-// 🛡️ Evaluamos con 'success' que es el parámetro real que devuelve el backend multitenant
-if (res.ok && data.success) {
+        if (res.ok && (data.success || data.autorizado)) {
             if (confirm(`✅ PIN Correcto. ¿Eliminar "${item.nombre}" de la mesa?`)) {
-                const carritoFiltrado = await eliminarLineaConStock(item.lineId);
-
-                if (carritoFiltrado) {
-                    // ✅ CAMBIO AQUÍ: Sincronización silenciosa
-                    await sincronizarBorradoEnSanity(carritoFiltrado);
-                }
+                const nuevoCarrito = obtenerCarritoFiltrado();
+                
+                eliminarLineaConStock(item.lineId);
+                await sincronizarBorradoEnSanity(nuevoCarrito);
             }
         } else {
-            alert("❌ PIN Administrativo incorrecto.");
+            alert("❌ PIN de autorización incorrecto.");
         }
     } catch (error) {
-        console.error("🔥 Error en validación:", error);
-        alert("❌ Error de seguridad.");
+        console.error("🔥 Error en validación perimetral de borrado:", error);
+        alert("❌ Error de seguridad o pérdida de conexión.");
     }
 };
     return React.useMemo(() => ({
