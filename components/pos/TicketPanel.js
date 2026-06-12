@@ -622,59 +622,62 @@ export default function TicketPanel({
                         <div style={{ flex: 1 }}></div> 
                     )}
 
-                   <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
-        <span style={{ fontSize: '0.75rem', fontWeight: '800', color: SITE_CONFIG.theme.textDark, lineHeight: '1' }}>TOTAL</span>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '2px' }}>
-            {esModoCajero && (
-                <button
-                    type="button"
-                    onClick={() => typeof setMostrarModalClientes === 'function' && setMostrarModalClientes(true)}
-                    title={clienteActivo ? `Cliente: ${clienteActivo.nombre}` : "Asignar Cliente"}
-                    style={{
-                        background: 'none',
-                        border: 'none',
-                        padding: '4px',
-                        cursor: 'pointer',
-                        fontSize: '1.4rem', // Tamaño ideal para que se vea nítido
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        transition: 'transform 0.1s ease',
-                        position: 'relative'
-                    }}
-                    onMouseDown={(e) => e.currentTarget.style.transform = 'scale(0.9)'}
-                    onMouseUp={(e) => e.currentTarget.style.transform = 'scale(1)'}
-                >
-                    {clienteActivo ? '👤' : '👤'}
-                    {/* 🟢 Indicador minimalista flotante: si hay cliente activo, pone un punto verde esmeralda */}
-                    {clienteActivo && (
-                        <span style={{
-                            position: 'absolute',
-                            right: '-2px',
-                            top: '-2px',
-                            width: '8px',
-                            height: '8px',
-                            backgroundColor: '#10B981',
-                            borderRadius: '50%',
-                            border: '1px solid white',
-                            boxShadow: '0 0 4px #10B981'
-                        }} />
-                    )}
-                </button>
+                   {/* POR ESTE BLOQUE BLINDADO (El mesero ya puede tocar el muñequito): */}
+<div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+    <span style={{ fontSize: '0.75rem', fontWeight: '800', color: SITE_CONFIG.theme.textDark, lineHeight: '1' }}>TOTAL</span>
+    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '2px' }}>
+        
+        {/* 🛡️ CIRUGÍA: Quitamos el 'esModoCajero &&' para que el mesero pueda amarrar clientes y domicilios */}
+        <button
+            type="button"
+            onClick={() => typeof setMostrarModalClientes === 'function' && setMostrarModalClientes(true)}
+            title={clienteActivo ? `Cliente: ${clienteActivo.nombre}` : "Asignar Cliente"}
+            style={{
+                background: 'none',
+                border: 'none',
+                padding: '4px',
+                cursor: 'pointer',
+                fontSize: '1.4rem', 
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                transition: 'transform 0.1s ease',
+                position: 'relative'
+            }}
+            onMouseDown={(e) => e.currentTarget.style.transform = 'scale(0.9)'}
+            onMouseUp={(e) => e.currentTarget.style.transform = 'scale(1)'}
+        >
+            {clienteActivo ? '👤' : '👤'}
+            {/* 🟢 Indicador minimalista flotante: si hay cliente activo, pone un punto verde esmeralda */}
+            {clienteActivo && (
+                <span style={{
+                    position: 'absolute',
+                    right: '-2px',
+                    top: '-2px',
+                    width: '8px',
+                    height: '8px',
+                    backgroundColor: '#10B981',
+                    borderRadius: '50%',
+                    border: '1px solid white',
+                    boxShadow: '0 0 4px #10B981'
+                }} />
             )}
+        </button>
 
-            {esModoCajero && (
-                <button 
-                    type="button"
-                    onClick={() => setVerModalMixto(true)}
-                    style={{ background: '#7c3aed', color: 'white', border: 'none', borderRadius: '50%', width: '24px', height: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: '14px' }}
-                >➕</button>
-            )}
-            <span style={{ fontSize: '1.45rem', fontWeight: '950', color: '#000', lineHeight: '1.1' }}>
-                {SITE_CONFIG.brand.symbol}{total.toLocaleString(SITE_CONFIG.brand.currency)}
-            </span>
-        </div>
+        {/* 🛡️ El Pago Mixto sí se queda bloqueado solo para el cajero */}
+        {esModoCajero && (
+            <button 
+                type="button"
+                onClick={() => setVerModalMixto(true)}
+                style={{ background: '#7c3aed', color: 'white', border: 'none', borderRadius: '50%', width: '24px', height: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: '14px' }}
+            >➕</button>
+        )}
+        
+        <span style={{ fontSize: '1.45rem', fontWeight: '950', color: '#000', lineHeight: '1.1' }}>
+            {SITE_CONFIG.brand.symbol}{total.toLocaleString(SITE_CONFIG.brand.currency)}
+        </span>
     </div>
+</div>
 </div>
 {verModalMixto && (
     <ModalPagoMixto 
