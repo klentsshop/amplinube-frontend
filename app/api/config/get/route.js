@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
-import { sanityClientServer } from '@/lib/sanity';
+import { supabaseServer } from '@/lib/supabase'; // 🛡️ Cliente oficial de Supabase
 import { DEFAULT_CONFIG } from '@/lib/config'; // Traemos los valores por defecto
+
+export const dynamic = 'force-dynamic';
 
 export async function GET(request) {
     try {
@@ -11,41 +13,38 @@ export async function GET(request) {
             return NextResponse.json({ error: 'Tenant ID requerido' }, { status: 400 });
         }
 
-        // 🛡️ BISTURÍ: Usamos "configuracion" que es el nombre real del schema que migramos
-        // Además, traemos el logo y colores si existen
-        const query = `*[_type == "configuracion" && tenant == $tenantId][0]{
-            nombreNegocio,
-            nit,
-            direccion,
-            telefono,
-            mensajeTicket,
-            colores,
-            logo
-        }`;
+        // 🛡️ BISTURÍ SENIOR: Leemos la configuración pre-clonada directamente del búnker (Costos Sanity: $0)
+        const { data: cacheRow } = await supabaseServer
+            .from('catalog_cache')
+            .select('payload_json')
+            .eq('tenant_host', tenantId.toLowerCase().trim())
+            .single();
 
-        const configSanity = await sanityClientServer.fetch(query, { tenantId }, { useCdn: false });
+        // Extraemos el nodo correspondiente a la configuración guardada por el escudo
+        const p = cacheRow?.payload_json;
+        const configSanity = p?.configuracion || p?.config || p;
 
-        // 🧠 LÓGICA DE FUSIÓN:
-        // Si hay datos en Sanity, los usamos. Si no, usamos el DEFAULT_CONFIG para que el POS no se rompa.
+        // 🧠 LÓGICA DE FUSIÓN PRESERVADA:
+        // Si hay datos en el búnker, los usamos. Si no, mapeamos DEFAULT_CONFIG para que el POS no parpadee.
         const finalConfig = {
             brand: {
-                name: configSanity?.nombreNegocio || DEFAULT_CONFIG.brand.name,
-                nit: configSanity?.nit || DEFAULT_CONFIG.brand.nit,
-                address: configSanity?.direccion || DEFAULT_CONFIG.brand.address,
-                phone: configSanity?.telefono || DEFAULT_CONFIG.brand.phone,
-                mensajeTicket: configSanity?.mensajeTicket || DEFAULT_CONFIG.brand.mensajeTicket,
+                name: configSanity?.nombreNegocio || configSanity?.brand?.name || DEFAULT_CONFIG.brand.name,
+                nit: configSanity?.nit || configSanity?.brand?.nit || DEFAULT_CONFIG.brand.nit,
+                address: configSanity?.direccion || configSanity?.brand?.address || DEFAULT_CONFIG.brand.address,
+                phone: configSanity?.telefono || configSanity?.brand?.phone || DEFAULT_CONFIG.brand.phone,
+                mensajeTicket: configSanity?.mensajeTicket || configSanity?.brand?.mensajeTicket || DEFAULT_CONFIG.brand.mensajeTicket,
             },
             theme: {
                 ...DEFAULT_CONFIG.theme,
-                primary: configSanity?.colores?.primary || DEFAULT_CONFIG.theme.primary,
+                primary: configSanity?.colores?.primary || configSanity?.theme?.primary || DEFAULT_CONFIG.theme.primary,
             }
         };
 
         return NextResponse.json(finalConfig);
 
     } catch (error) {
-        console.error("🔥 Error cargando configuración multitenant:", error);
-        // Nunca devolvemos un error 500 si podemos devolver la configuración por defecto
+        console.error("🔥 Error cargando configuración desde el búnker multitenant:", error.message);
+        // Respaldo absoluto: Nunca devolvemos un error 500 si podemos devolver la configuración por defecto
         return NextResponse.json(DEFAULT_CONFIG);
     }
 }

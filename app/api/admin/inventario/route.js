@@ -39,13 +39,21 @@ export async function POST(request) {
                 unidad_medida: body.unidadMedida || 'unidades'
             }]);
 
-        if (supabaseError) {
-            // Rollback en Sanity si Supabase llega a fallar para no dejar datos corruptos
-            await sanityClientServer.delete(idGenerado);
-            throw new Error(`SUPABASE_INSERT_FAILED: ${supabaseError.message}`);
-        }
+           if (supabaseError) {
+    await sanityClientServer.delete(idGenerado);
+    throw new Error(`SUPABASE_INSERT_FAILED: ${supabaseError.message}`);
+}
 
-        return NextResponse.json({ ok: true, item: resultSanity });
+// 🪓 DESTRUCCIÓN DE CACHÉ: Asegura que el nuevo ítem aparezca inmediatamente en el ProductGrid
+try {
+    const { supabaseServer } = await import('@/lib/supabase');
+    await supabaseServer.from('catalog_cache').delete().eq('tenant_host', tenantId.toLowerCase().trim());
+    console.log(`🗑️ Caché del catálogo purgado síncronamente en POST inventario para: ${tenantId}`);
+} catch (e) {
+    console.error("⚠️ Error purgando búnker en inserción de inventario:", e);
+}
+
+return NextResponse.json({ ok: true, item: resultSanity });
     } catch (error) {
         console.error('🔥 [API_POST_INVENTARIO_ERROR]:', error.message);
         return NextResponse.json({ error: error.message }, { status: 500 });
@@ -89,7 +97,13 @@ export async function PUT(request) {
 
             if (supabaseError) throw new Error(`SUPABASE_UPDATE_FAILED: ${supabaseError.message}`);
         }
-
+        try {
+            const { supabaseServer } = await import('@/lib/supabase');
+            await supabaseServer.from('catalog_cache').delete().eq('tenant_host', tenantId.toLowerCase().trim());
+            console.log(`🗑️ Caché del catálogo purgado síncronamente en PUT inventario para: ${tenantId}`);
+        } catch (cacheError) {
+            console.warn("⚠️ Falla no-bloqueante al purgar el catálogo desde PUT inventario:", cacheError.message);
+        }
         return NextResponse.json({ ok: true, id: resultSanity._id });
     } catch (error) {
         console.error('🔥 [API_PUT_INVENTARIO_ERROR]:', error.message);
@@ -150,7 +164,13 @@ export async function DELETE(request) {
                 .set({ productosCriticos: nuevasAlertas, ultimaSincronizacion: new Date().toISOString() })
                 .commit();
         }
-
+         try {
+            const { supabaseServer } = await import('@/lib/supabase');
+            await supabaseServer.from('catalog_cache').delete().eq('tenant_host', tenantId.toLowerCase().trim());
+            console.log(`🗑️ Caché del catálogo purgado síncronamente en DELETE inventario para: ${tenantId}`);
+        } catch (cacheError) {
+            console.warn("⚠️ Falla no-bloqueante al purgar el catálogo desde DELETE inventario:", cacheError.message);
+        }
         return NextResponse.json({ ok: true });
     } catch (error) {
         console.error('🔥 [API_DELETE_INVENTARIO_ERROR]:', error.message);

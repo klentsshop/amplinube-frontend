@@ -23,48 +23,67 @@ export async function POST(request) {
         }
 
         // 2. 📡 CONSULTA HÍBRIDA PARALELA: Traemos la configuración de Sanity y el stock vivo de Supabase
-        const [insumoSanity, insumoSupabase] = await Promise.all([
-            sanityClientServer.fetch(
-                `*[_type == "inventario" && _id == $insumoId && tenant == $tenant][0]{
-                    nombre,
-                    barcode,
-                    codigoBalanza,
-                    unidadMedida,
-                    stockMinimo
-                }`,
-                { insumoId, tenant }
-            ),
-            supabaseServer
-                .from('inventarios')
-                .select('stock_actual')
-                .eq('insumo_id', insumoId)
-                .eq('tenant_id', tenant)
-                .maybeSingle()
-        ]);
+        // 2. 📡 CONSULTA DE ALTA VELOCIDAD DESDE SUPABASE (Costo Sanity de lectura: $0)
+        const { data: insumoSupabase, error: errorDb } = await supabaseServer
+            .from('inventarios')
+            .select('nombre, stock_actual, stock_minimo, barcode, codigo_balanza, unidad_medida')
+            .eq('insumo_id', insumoId)
+            .eq('tenant_id', tenant)
+            .maybeSingle();
 
-        // Evitamos que falle si el insumo no se encuentra o es nuevo en Sanity
-        const nombreInsumo = insumoSanity?.nombre || "Insumo POS";
-        const stockActualBase = insumoSupabase?.data?.stock_actual ? Number(insumoSupabase.data.stock_actual) : 0;
+        if (errorDb) throw new Error(`Supabase Fetch Error: ${errorDb.message}`);
+
+        // Declaramos las variables base heredadas de Supabase
+        let nombreInsumo = insumoSupabase?.nombre || "Insumo POS";
+        let barcodeInsumo = insumoSupabase?.barcode || "";
+        let codigoBalanzaInsumo = insumoSupabase?.codigo_balanza || "";
+        let unidadMedidaInsumo = insumoSupabase?.unidad_medida || "unidades";
+        let stockMinimoInsumo = insumoSupabase?.stock_minimo ? Number(insumoSupabase.stock_minimo) : 5;
+        
+        const stockActualBase = insumoSupabase?.stock_actual ? Number(insumoSupabase.stock_actual) : 0;
         const nuevoStockCalculado = stockActualBase + monto;
 
+        // 🧠 RESPALDO PROACTIVO: Si el insumo es nuevo en la tabla, extraemos metadatos del búnker
+        if (!insumoSupabase) {
+            try {
+                const { data: cacheRow } = await supabaseServer
+                    .from('catalog_cache')
+                    .select('payload_json')
+                    .eq('tenant_host', tenant.toLowerCase().trim())
+                    .single();
+                
+                const p = cacheRow?.payload_json;
+                const catalogoInsumosBunker = p?.inventario || p?.inventarios || [];
+                const insumoBunker = catalogoInsumosBunker.find(i => i._id === insumoId);
+
+                if (insumoBunker) {
+                    nombreInsumo = insumoBunker.nombre || nombreInsumo;
+                    barcodeInsumo = insumoBunker.barcode || barcodeInsumo;
+                    codigoBalanzaInsumo = insumoBunker.codigoBalanza || codigoBalanzaInsumo;
+                    unidadMedidaInsumo = insumoBunker.unidadMedida || unidadMedidaInsumo;
+                    stockMinimoInsumo = insumoBunker.stockMinimo ? Number(insumoBunker.stockMinimo) : stockMinimoInsumo;
+                }
+            } catch (e) {
+                console.warn("⚠️ Metadatos no hallados en el búnker, usando valores por defecto.");
+            }
+        }
+
         // 3. 🚀 UPSERT MAESTRO EN POSTGRESQL (Inserta si es primer escaneo, actualiza si ya existe)
-        // Guardamos todas las propiedades espejo indexadas para que la pistola busque en 3ms
         const { data: insumoActualizado, error: errorUpdate } = await supabaseServer
             .from('inventarios')
             .upsert({ 
                 tenant_id: tenant,
                 insumo_id: insumoId,
-                nombre: nombreInsumo,
-                barcode: insumoSanity?.barcode || "",
-                codigo_balanza: insumoSanity?.codigoBalanza || "",
-                unidad_medida: insumoSanity?.unidadMedida || "unidades",
-                stock_minimo: Number(insumoSanity?.stockMinimo || 5),
+                nombre: nombreInsumo.toUpperCase().trim(),
+                barcode: barcodeInsumo,
+                codigo_balanza: codigoBalanzaInsumo,
+                unidad_medida: unidadMedidaInsumo,
+                stock_minimo: stockMinimoInsumo,
                 stock_actual: nuevoStockCalculado,
                 updated_at: new Date().toISOString()
             }, { onConflict: 'tenant_id, insumo_id' })
             .select('stock_actual')
             .single();
-
         if (errorUpdate) throw new Error(`Supabase Upsert Error: ${errorUpdate.message}`);
 
         console.log(`✅ Supabase actualizado. Producto: ${nombreInsumo} | Stock: ${insumoActualizado.stock_actual}`);
@@ -117,11 +136,12 @@ export async function POST(request) {
                 // No disparamos un error 500 para que el POS no se detenga si Sanity parpadea
             });
 
+       
         // 💰 Retorno de éxito exacto esperado por el hook y componentes React
         return NextResponse.json({ 
             success: true, 
             nuevoStock: insumoActualizado.stock_actual,
-            enAlerta: nuevoStockCalculado <= Number(insumoSanity?.stockMinimo || 5)
+            enAlerta: nuevoStockCalculado <= stockMinimoInsumo
         });
 
     } catch (error) {

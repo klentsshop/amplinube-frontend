@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
 import { supabaseServer } from '@/lib/supabase';
-import { sanityClientServer } from '@/lib/sanity'; // 🛡️ Importado para auto-poblado inicial
 
 export const dynamic = 'force-dynamic'; 
 export const revalidate = 0;
@@ -51,61 +50,64 @@ export async function GET(request) {
 
         if (error) throw error;
 
-        // 🚀 2. AUTO-POBLADO INICIAL (El Escudo Anti-Pantallas Vacías):
-        // Si la tabla de Supabase está vacía porque es un negocio nuevo o reseteado,
-        // traemos el catálogo de Sanity y lo inyectamos en Supabase con stock 0 automáticamente.
+       // 🚀 2. AUTO-POBLADO DESDE EL ESCUDO DE SUPABASE (Zero llamadas a Sanity)
         if ((!insumos || insumos.length === 0) && buscar.trim() === '') {
-            console.log("🌱 Tabla vacía detectada. Sincronizando catálogo base desde Sanity...");
+            console.log("🌱 Tabla vacía detectada. Sincronizando catálogo de insumos desde el búnker central...");
             
-            const catalogoSanity = await sanityClientServer.fetch(
-                `*[_type == "inventario" && tenant == $tenantId]{
-                    _id,
-                    nombre,
-                    barcode,
-                    codigoBalanza,
-                    unidadMedida,
-                    stockMinimo
-                }`,
-                { tenantId }
-            );
+            try {
+                // Consultamos el JSON maestro que el Escudo ya clonó en Supabase para el POS
+                const { data: cacheRow } = await supabaseServer
+                    .from('catalog_cache')
+                    .select('payload_json')
+                    .eq('tenant_host', tenantId.toLowerCase().trim())
+                    .single();
 
-            if (catalogoSanity && catalogoSanity.length > 0) {
-                // Preparamos los registros masivos para Supabase
-                const filasParaInyectar = catalogoSanity.map(insumo => ({
-                    tenant_id: tenantId,
-                    insumo_id: insumo._id,
-                    nombre: insumo.nombre || "Insumo sin nombre",
-                    barcode: insumo.barcode || "",
-                    codigo_balanza: insumo.codigoBalanza || "",
-                    unidad_medida: insumo.unidadMedida || "unidades",
-                    stock_minimo: Number(insumo.stockMinimo || 5),
-                    stock_actual: 0.000 // Arrancan en cero listos para ser cargados
-                }));
+                // Extraemos la colección estática de inventarios guardada en el payload
+                const p = cacheRow?.payload_json;
+                const catalogoInsumosBunker = p?.inventario || p?.inventarios || [];
 
-                // Inserción masiva veloz
-                const { error: errorSincro } = await supabaseServer
-                    .from('inventarios')
-                    .insert(filasParaInyectar);
+                if (catalogoInsumosBunker && catalogoInsumosBunker.length > 0) {
+                    // Preparamos los registros masivos para inyectar en la tabla viva de stock
+                    const filasParaInyectar = catalogoInsumosBunker.map(insumo => ({
+                        tenant_id: tenantId,
+                        insumo_id: insumo._id,
+                        nombre: (insumo.nombre || "Insumo sin nombre").toUpperCase().trim(),
+                        barcode: insumo.barcode || "",
+                        codigo_balanza: insumo.codigoBalanza || insumo.codigo_balanza || "",
+                        unidad_medida: insumo.unidadMedida || insumo.unidad_medida || "unidades",
+                        stock_minimo: Number(insumo.stockMinimo || insumo.stock_minimo || 5),
+                        stock_actual: 0.000 // Arrancan limpios listos para cargas de inventario
+                    }));
 
-                if (!errorSincro) {
-                    // Volvemos a consultar para entregarle los datos limpios al Modal
-                    const { data: recarga } = await supabaseServer
+                    // Inserción masiva veloz
+                    const { error: errorSincro } = await supabaseServer
                         .from('inventarios')
-                        .select(`
-                            _id:insumo_id,
-                            id:insumo_id,
-                            nombre,
-                            stockActual:stock_actual,
-                            stockMinimo:stock_minimo,
-                            unidadMedida:unidad_medida,
-                            barcode,
-                            codigoBalanza:codigo_balanza
-                        `)
-                        .eq('tenant_id', tenantId)
-                        .order('nombre', { ascending: true });
-                    
-                    insumos = recarga;
+                        .insert(filasParaInyectar);
+
+                    if (!errorSincro) {
+                        // Recargamos los insumos inyectados directamente de Supabase
+                        const { data: recarga } = await supabaseServer
+                            .from('inventarios')
+                            .select(`
+                                _id:insumo_id,
+                                id:insumo_id,
+                                nombre,
+                                stockActual:stock_actual,
+                                stockMinimo:stock_minimo,
+                                unidadMedida:unidad_medida,
+                                barcode,
+                                codigoBalanza:codigo_balanza
+                            `)
+                            .eq('tenant_id', tenantId)
+                            .order('nombre', { ascending: true });
+                        
+                        insumos = recarga;
+                    }
+                } else {
+                    console.log("⚠️ El búnker del tenant no contiene colecciones de inventario estático.");
                 }
+            } catch (cacheError) {
+                console.error("❌ Falló la auto-población desde el búnker central:", cacheError.message);
             }
         }
 

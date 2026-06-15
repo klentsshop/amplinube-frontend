@@ -12,15 +12,29 @@ export async function POST(request) {
         if (!tenantId) {
             return NextResponse.json({ error: 'Tenant ID no identificado' }, { status: 400 });
         }
+       // 🛡️ 1. VALIDACIÓN DESDE EL ESCUDO DE SUPABASE (Zero llamadas a Sanity)
+        // 🛡️ 1. VALIDACIÓN DESDE EL ESCUDO DE SUPABASE (Zero llamadas a Sanity)
+        let PIN_ADMIN_REAL = process.env.PIN_ADMIN;
 
-        // 🛡️ 1. VALIDACIÓN DE PRIVACIDAD DESDE SANITY (Echematype estático)
-        const seguridad = await sanityClientServer.fetch(
-            `*[_type == "seguridad" && tenant == $tenantId][0]{ pinAdmin }`,
-            { tenantId }, 
-            { useCdn: false }
-        );
+        try {
+            // Buscamos el PIN en la tabla de configuración ya clonada en el búnker
+            const { data: configNegocio } = await supabaseServer
+                .from('catalog_cache')
+                .select('payload_json')
+                .eq('tenant_host', tenantId.toLowerCase().trim())
+                .single();
 
-        const PIN_ADMIN_REAL = seguridad?.pinAdmin || process.env.PIN_ADMIN;
+            // 🔍 LUPA SENIOR: Validamos las 2 rutas posibles del JSON clonado para asegurar compatibilidad total
+            const pinDesdeEscudo = configNegocio?.payload_json?.seguridad?.pinAdmin || 
+                                   configNegocio?.payload_json?.configSeguridad?.pinAdmin ||
+                                   configNegocio?.payload_json?.pinAdmin;
+
+            if (pinDesdeEscudo) {
+                PIN_ADMIN_REAL = String(pinDesdeEscudo).trim();
+            }
+        } catch (dbError) {
+            console.warn("⚠️ No se pudo leer el PIN desde el Escudo, usando variable de entorno de respaldo.");
+        }
 
         if (!pinAdmin || pinAdmin !== PIN_ADMIN_REAL) {
             return NextResponse.json(

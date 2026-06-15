@@ -1,6 +1,6 @@
 # 📖 Manual de Operación - Pedidos Pro
 **Versión del Usuario:** 1.0  
-**Desarrollado por:** Klentsshop
+**Desarrollado por:** Kelly Johanna Rodriguez 
 
 ---
 
@@ -24,4 +24,4 @@
 * **Cierre de Caja:** Al finalizar el día, ingrese al módulo de Reportes para ver el resumen total de ventas y el saldo final.
 
 ---
-*Si tiene dudas sobre el uso, consulte a su administrador o contacte al soporte técnico de Klentsshop.*
+*Si tiene dudas sobre el uso, consulte a su administrador o contacte al soporte técnico de Kelly Johanna Rodriguez.*

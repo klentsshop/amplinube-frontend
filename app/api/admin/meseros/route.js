@@ -19,6 +19,19 @@ export async function POST(request) {
         };
 
         const result = await sanityClientServer.create(nuevoMeseroDoc);
+
+        // 🪓 GUILLOTINA SÍNCRONA: Purgamos la caché para que el nuevo mesero aparezca en el select del POS
+        try {
+            const { supabaseServer } = await import('@/lib/supabase');
+            await supabaseServer
+                .from('catalog_cache')
+                .delete()
+                .eq('tenant_host', tenantId.toLowerCase().trim());
+            console.log(`🗑️ Caché invalidado síncronamente tras crear mesero para: ${tenantId}`);
+        } catch (cacheError) {
+            console.warn("⚠️ Falla no-bloqueante al purgar el catálogo desde POST meseros:", cacheError.message);
+        }
+
         return NextResponse.json({ ok: true, item: result });
     } catch (error) {
         console.error('🔥 [API_POST_MESEROS_ERROR]:', error.message);
@@ -45,6 +58,18 @@ export async function PUT(request) {
             .set(camposAActualizar)
             .commit();
 
+        // 🪓 GUILLOTINA SÍNCRONA: Si se suspende o edita al mesero, la terminal debe enterarse al instante
+        try {
+            const { supabaseServer } = await import('@/lib/supabase');
+            await supabaseServer
+                .from('catalog_cache')
+                .delete()
+                .eq('tenant_host', tenantId.toLowerCase().trim());
+            console.log(`🗑️ Caché invalidado síncronamente tras actualizar mesero para: ${tenantId}`);
+        } catch (cacheError) {
+            console.warn("⚠️ Falla no-bloqueante al purgar el catálogo desde PUT meseros:", cacheError.message);
+        }
+
         return NextResponse.json({ ok: true, id: result._id });
     } catch (error) {
         console.error('🔥 [API_PUT_MESEROS_ERROR]:', error.message);
@@ -62,7 +87,20 @@ export async function DELETE(request) {
             return NextResponse.json({ error: 'Faltan credenciales o el ID para borrar.' }, { status: 400 });
         }
 
-        await sanityClientServer.delete(itemId);
+          await sanityClientServer.delete(itemId);
+
+        // 🪓 GUILLOTINA SÍNCRONA: Sacamos de circulación al mesero eliminado eliminando la caché
+        try {
+            const { supabaseServer } = await import('@/lib/supabase');
+            await supabaseServer
+                .from('catalog_cache')
+                .delete()
+                .eq('tenant_host', tenantId.toLowerCase().trim());
+            console.log(`🗑️ Caché invalidado síncronamente tras eliminar mesero para: ${tenantId}`);
+        } catch (cacheError) {
+            console.warn("⚠️ Falla no-bloqueante al purgar el catálogo desde DELETE meseros:", cacheError.message);
+        }
+
         return NextResponse.json({ ok: true });
     } catch (error) {
         console.error('🔥 [API_DELETE_MESEROS_ERROR]:', error.message);

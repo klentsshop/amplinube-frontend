@@ -63,22 +63,44 @@ export async function POST(req) {
         }
 
         // --- 4. 🚀 BÚSQUEDA DE IDS Y RECETAS EN SANITY (CORREGIDA SIN ERRORES DE SINTAXIS) ---
+        // --- 4. 🚀 BÚSQUEDA DE IDS Y RECETAS DESDE EL BÚNKER DE SUPABASE ---
         const nombresPlatos = (payload.platosVendidosV2 || []).map(item => item.nombrePlato || item.nombre);
-        const mapeoSanity = await sanityClientServer.fetch(
-           `*[_type == "plato" && tenant == $tenantId && nombre in $nombres]{
-                nombre, 
-                _id, 
-                controlaInventario,
-                "insumoVinculadoRef": insumoVinculado._ref,
-                cantidadADescontar,
-                recetaInsumos[]{
-                    "insumoId": insumo._ref,
-                    cantidad
-                }
-            }`,
-            { nombres: nombresPlatos, tenantId },
-            { useCdn: false }
-        );
+        let mapeoSanity = [];
+        
+        try {
+            const { data: cacheRow } = await supabaseServer
+                .from('catalog_cache')
+                .select('payload_json')
+                .eq('tenant_host', tenantId.toLowerCase().trim())
+                .single();
+
+            const platosBunker = cacheRow?.payload_json?.plato || cacheRow?.payload_json?.platos || [];
+            
+            // Filtramos en memoria local solo los platos involucrados en esta venta
+            mapeoSanity = platosBunker.filter(p => nombresPlatos.includes(p.nombre)).map(p => ({
+                nombre: p.nombre,
+                _id: p._id,
+                controlaInventario: p.controlaInventario || false,
+                insumoVinculadoRef: p.insumoVinculado?._ref || p.insumoVinculadoRef || null,
+                cantidadADescontar: p.cantidadADescontar || 0,
+                recetaInsumos: (p.recetaInsumos || []).map(r => ({
+                    insumoId: r.insumo?._ref || r.insumoId || null,
+                    cantidad: r.cantidad || 0
+                }))
+            }));
+        } catch (cacheError) {
+            console.warn("⚠️ Falló lectura de recetas desde el búnker, activando contingencia en Sanity...");
+            mapeoSanity = await sanityClientServer.fetch(
+               `*[_type == "plato" && tenant == $tenantId && nombre in $nombres]{
+                    nombre, _id, controlaInventario,
+                    "insumoVinculadoRef": insumoVinculado._ref,
+                    cantidadADescontar,
+                    recetaInsumos[]{ "insumoId": insumo._ref, cantidad }
+                }`,
+                { nombres: nombresPlatos, tenantId },
+                { useCdn: false }
+            );
+        }
 
         // --- 5. MAPEO DE PLATOS PARA LA VENTA ---
         const platosVenta = (payload.platosVendidosV2 || []).map(item => {
@@ -246,6 +268,18 @@ export async function POST(req) {
             );
         }
           
+        // 🎉 PASO C: Éxito absoluto y retorno limpio al frontend
+       // 🪓 GUILLOTINA SÍNCRONA: Como mutamos la popularidad de los platos, destruimos la caché del catálogo
+        try {
+            await supabaseServer
+                .from('catalog_cache')
+                .delete()
+                .eq('tenant_host', tenantId.toLowerCase().trim());
+            console.log(`🗑️ Caché del catálogo purgado tras venta para: ${tenantId}`);
+        } catch (cacheError) {
+            console.warn("⚠️ Falla no-bloqueante al purgar búnker desde API ventas:", cacheError.message);
+        }
+
         // 🎉 PASO C: Éxito absoluto y retorno limpio al frontend
         return NextResponse.json({ 
             ok: true, 

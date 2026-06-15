@@ -62,6 +62,18 @@ export async function POST(request) {
             "✅ Operación exitosa en Supabase. ID definitivo asignado:",
             clienteProcesado._id
         );
+
+        // 🪓 GUILLOTINA SÍNCRONA: Si la lista de clientes elegibles del POS vive en la caché, la destruimos
+        try {
+            await supabaseServer
+                .from('catalog_cache')
+                .delete()
+                .eq('tenant_host', tenantId.toLowerCase().trim());
+            console.log(`🗑️ Caché del catálogo purgado síncronamente en guardado de cliente para: ${tenantId}`);
+        } catch (cacheError) {
+            console.warn("⚠️ Falla no-bloqueante al purgar búnker desde save clientes:", cacheError.message);
+        }
+
         console.log("===============================================");
 
         // 4. Retornamos el objeto clonando la estructura limpia que el POS necesita leer

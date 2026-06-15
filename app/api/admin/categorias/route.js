@@ -23,8 +23,19 @@ export async function POST(request) {
             tenant: tenantId // 👈 SE MAPEA AL CAMPO 'tenant' EXIGIDO POR TU SCHEMA
         };
 
-        // Inyección directa atómica en Sanity
-        const result = await sanityClientServer.create(nuevaCategoriaDoc);
+         const result = await sanityClientServer.create(nuevaCategoriaDoc);
+
+        // 🪓 GUILLOTINA SÍNCRONA LIMPIA (Ajustada a supabaseServer y sin fetch masivo)
+        try {
+            const { supabaseServer } = await import('@/lib/supabase');
+            await supabaseServer
+                .from('catalog_cache')
+                .delete()
+                .eq('tenant_host', tenantId.toLowerCase().trim());
+            console.log(`🗑️ Caché invalidado síncronamente tras inserción de categoría para: ${tenantId}`);
+        } catch (cacheError) {
+            console.warn("⚠️ Falla no-bloqueante al purgar el catálogo en Supabase:", cacheError.message);
+        }
 
         return NextResponse.json({ ok: true, id: result._id });
 
@@ -48,7 +59,7 @@ export async function PUT(request) {
 
         console.log(`🔄 [PATCH_SANITY]: Actualizando ID ${categoriaId} para el Tenant: ${tenantId}`);
 
-        // ⚡ MUTACIÓN ATÓMICA CON EL CLIENTE DE ESCRITURA
+        // ⚡ TU LÓGICA ORIGINAL INTACTA: Mutación atómica en Sanity
         const result = await sanityClientServer
             .patch(categoriaId)
             .set({
@@ -60,6 +71,18 @@ export async function PUT(request) {
                 seImprime: seImprime === true
             })
             .commit(); // Inyecta y consolida el cambio en la nube
+
+        // 🪓 GUILLOTINA SÍNCRONA LIMPIA: Purgamos la fila en Supabase para este restaurante
+       try {
+            const { supabaseServer } = await import('@/lib/supabase');
+            await supabaseServer
+                .from('catalog_cache')
+                .delete()
+                .eq('tenant_host', tenantId.toLowerCase().trim());
+            console.log(`🗑️ Caché invalidado síncronamente tras actualización de categoría para: ${tenantId}`);
+        } catch (cacheError) {
+            console.warn("⚠️ Falla no-bloqueante al purgar el catálogo en Supabase:", cacheError.message);
+        }
 
         return NextResponse.json({ ok: true, id: result._id });
 
@@ -83,8 +106,20 @@ export async function DELETE(request) {
 
         console.log(`🗑️ [DELETE_SANITY]: Eliminando Categoría ID ${categoriaId} del Tenant: ${tenantId}`);
 
-        // Borrado atómico directo en Sanity
+        // TU LÓGICA ORIGINAL INTACTA: Borrado atómico directo en Sanity
         await sanityClientServer.delete(categoriaId);
+
+        // 🪓 GUILLOTINA SÍNCRONA LIMPIA: Evitamos que el POS siga mostrando la categoría eliminada
+        try {
+            const { supabaseServer } = await import('@/lib/supabase');
+            await supabaseServer
+                .from('catalog_cache')
+                .delete()
+                .eq('tenant_host', tenantId.toLowerCase().trim());
+            console.log(`🗑️ Caché invalidado síncronamente tras eliminación de categoría para: ${tenantId}`);
+        } catch (cacheError) {
+            console.warn("⚠️ Falla no-bloqueante al purgar el catálogo en Supabase:", cacheError.message);
+        }
 
         return NextResponse.json({ ok: true });
 

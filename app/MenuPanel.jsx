@@ -14,7 +14,6 @@ import { useOrdenHandlers } from '@/hooks/useOrdenHandlers';
 import { useGastos } from '@/hooks/useGastos';
 import { useWindowsPrint } from '@/hooks/useWindowsPrint';
 import { cleanPrice, getFechaBogota } from '@/lib/utils';
-import { client } from '@/lib/sanity';
 
 import { SITE_CONFIG as RESTAURANTE_CONFIG, CURRENT_TENANT } from '@/lib/config';
 import { PrintTemplates } from '@/components/pos/PrintTemplates';
@@ -140,27 +139,21 @@ export default function MenuPanel({ configNegocio: configInyectada }) {
         }, 
         tenantId // 👈 BISTURÍ: Inyectamos la identidad del cliente
     );
-     // REEMPLAZAR EL EFECTO DE LA LÍNEA 119 POR ESTE:
 useEffect(() => {
     const verificarSeguridadMesero = async () => {
         if (!tenantId) return;
 
-        // 1. Radar Prioritario: Si el almacenamiento dice que hay una sesión de Cajero activa para este Tenant,
-        // rehidratamos los permisos en el frontend inmediatamente.
+        // 1. Radar Prioritario: Rehidratación de permisos de Caja
         const sesionCajeroActiva = localStorage.getItem(`${tenantId}_cajero_activa`) === 'true';
-        
         if (sesionCajeroActiva) {
             setNombreMesero('Caja');
             setEstaActivo(true);
-            return; // Fin de la ejecución, el cajero es dueño de la terminal
+            return;
         }
 
-        // 2. Si no es cajero, evaluamos la persistencia del mesero común
+        // 2. Evaluación de persistencia de meseros comunes
         const vendedorPersistido = localStorage.getItem('ultimoMesero');
-        
         if (!vendedorPersistido || vendedorPersistido === 'Caja') {
-            // 🛡️ BISTURÍ SENIOR: Si dice "Caja" pero la sesión de cajero no está activa para este tenant,
-            // significa que la terminal quedó huérfana. Forzamos que seleccione un mesero válido.
             setNombreMesero(null);
             setEstaActivo(true);
             return;
@@ -174,23 +167,22 @@ useEffect(() => {
             return;
         }
 
-      try {
-            const query = `*[_type == "mesero" && nombre == $nombre && tenant == $tenantId][0]{ activo }`;
-            const resultado = await client.fetch(query, { nombre: vendedorPersistido, tenantId }, { useCdn: false });
-            
-            if (resultado && resultado.activo === false) {
-                setEstaActivo(false); // 🔒 Bloqueo fulminante en F5
+        // 🛡️ CIRUGÍA DEL ESCUDO: Evaluamos el estado usando la lista local cargada desde el búnker de Supabase
+        if (listaMeseros.length > 0) {
+            const coincidencia = listaMeseros.find(m => m.nombre === vendedorPersistido);
+            if (coincidencia && coincidencia.activo === false) {
+                setEstaActivo(false); // 🔒 Bloqueo fulminante si el administrador lo desactivó
             } else {
-                setEstaActivo(true);  // 🔓 Empleado al día, puede trabajar
+                setEstaActivo(true);  // 🔓 Empleado al día
+                if (coincidencia) sessionStorage.setItem(llaveSesion, 'true');
             }
-        } catch (e) {
-            console.error("Lag de red: Permitiendo acceso por seguridad operativa.");
-            setEstaActivo(true); 
+        } else {
+            // Si el escudo aún está viajando por la red, permitimos acceso temporal para evitar lag visual
+            setEstaActivo(true);
         }
     };
- verificarSeguridadMesero();
-}, [tenantId, acc.esModoCajero, nombreMesero]); // Escucha activamente si el modo cajero muta para liberar o congelar la terminal
-
+    verificarSeguridadMesero();
+}, [tenantId, acc.esModoCajero, nombreMesero, listaMeseros]); // 🎯 Agregamos listaMeseros a las dependencias
     const datosAgrupados = React.useMemo(() => {
         if (!cart?.length)return { cliente: [], cocina: [] };
         return {

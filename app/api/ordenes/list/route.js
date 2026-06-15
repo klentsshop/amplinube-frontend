@@ -27,8 +27,9 @@ if (!tenantId || tenantId === 'undefined') {
             status: 200,
             headers: {
                 'Content-Type': 'application/json',
-                'Cache-Control': 'public, s-maxage=1, stale-while-revalidate=2', // Evita que llamadas repetidas idénticas tumben el servidor
-                'CDN-Cache-Control': 'no-store'
+                'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0',
+                'Pragma': 'no-cache',
+                'Expires': '0',
             }
         });
     } catch (error) {
@@ -61,11 +62,31 @@ if (!tenantId || tenantId === 'undefined') {
         }
 // ✅ REEMPLAZAR POR ESTE BLOQUE:
 // Traemos tanto el _id como el titulo de las categorías con impresión desactivada
-const categoriasNoImprimibles = await sanityClientServer.fetch(
-    `*[_type == "categoria" && tenant == $tenantId && seImprime == false]{ _id, titulo }`,
-    { tenantId },
-    { useCdn: false }
-);
+// 🛡️ LECTURA DESDE EL ESCUDO DE SUPABASE (Costo Sanity: $0)
+        let categoriasNoImprimibles = [];
+        try {
+            const { supabaseServer } = await import('@/lib/supabase');
+            const { data: cacheRow } = await supabaseServer
+                .from('catalog_cache')
+                .select('payload_json')
+                .eq('tenant_host', tenantId.toLowerCase().trim())
+                .single();
+
+            const categoriasBunker = cacheRow?.payload_json?.categoria || cacheRow?.payload_json?.categorias || [];
+            categoriasNoImprimibles = categoriasBunker.filter(c => c.seImprime === false);
+        } catch (cacheError) {
+            console.error("⚠️ Falló búnker de caché. Activando contingencia directa en Sanity para salvar tiqueteras...");
+            try {
+                // Plan de rescate: Si Supabase no responde, sacrificamos una API request a Sanity antes de mandar basura a las impresoras
+                categoriasNoImprimibles = await sanityClientServer.fetch(
+                    `*[_type == "categoria" && tenant == $tenantId && seImprime == false]{ _id, titulo }`,
+                    { tenantId },
+                    { useCdn: false }
+                );
+            } catch (sanityFatalError) {
+                console.error("🔥 Error crítico global: Sin acceso a catálogos para mapear impresión.", sanityFatalError.message);
+            }
+        }
 
 // Estructuramos conjuntos indexados (Set) para búsquedas instantáneas
 const idsExcluidos = new Set((categoriasNoImprimibles || []).map(c => String(c._id).trim()));

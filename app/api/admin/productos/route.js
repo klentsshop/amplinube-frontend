@@ -35,9 +35,23 @@ export async function POST(req) {
       }))
     : []
         };
-
-        // USAMOS EL CLIENTE CON PERMISOS
+      // USAMOS EL CLIENTE CON PERMISOS
         const resultado = await sanityClientServer.create(docProducto);
+
+        // 🪓 GUILLOTINA SÍNCRONA: El nuevo producto debe forzar la actualización inmediata de la rejilla
+        if (data.tenantId) {
+            try {
+                const { supabaseServer } = await import('@/lib/supabase');
+                await supabaseServer
+                    .from('catalog_cache')
+                    .delete()
+                    .eq('tenant_host', data.tenantId.toLowerCase().trim());
+                console.log(`🗑️ Caché invalidado síncronamente tras crear producto para: ${data.tenantId}`);
+            } catch (cacheError) {
+                console.warn("⚠️ Falla no-bloqueante al purgar catálogo desde POST productos:", cacheError.message);
+            }
+        }
+
         return NextResponse.json({ ok: true, id: resultado._id });
     } catch (error) {
         console.error("Error en POST:", error);
@@ -85,6 +99,20 @@ export async function PUT(req) {
             .set(camposAActualizar)
             .commit();
 
+        // 🪓 GUILLOTINA SÍNCRONA: Si cambia el precio o nombre, el búnker viejo del POS se destruye
+        if (data.tenantId) {
+            try {
+                const { supabaseServer } = await import('@/lib/supabase');
+                await supabaseServer
+                    .from('catalog_cache')
+                    .delete()
+                    .eq('tenant_host', data.tenantId.toLowerCase().trim());
+                console.log(`🗑️ Caché invalidado síncronamente tras actualizar producto para: ${data.tenantId}`);
+            } catch (cacheError) {
+                console.warn("⚠️ Falla no-bloqueante al purgar catálogo desde PUT productos:", cacheError.message);
+            }
+        }
+
         return NextResponse.json({ ok: true });
     } catch (error) {
         console.error("Error en PUT:", error);
@@ -99,9 +127,22 @@ export async function DELETE(req) {
         if (!data.productoId) {
             return NextResponse.json({ ok: false, error: "Falta el parámetro productoId" }, { status: 400 });
         }
-
         // 🛡️ Conexión directa a Sanity usando el token con permisos plenos de escritura
         await sanityClientServer.delete(data.productoId);
+
+        // 🪓 GUILLOTINA SÍNCRONA: Sacamos el plato del menú del restaurante purgando la caché
+        if (data.tenantId) {
+            try {
+                const { supabaseServer } = await import('@/lib/supabase');
+                await supabaseServer
+                    .from('catalog_cache')
+                    .delete()
+                    .eq('tenant_host', data.tenantId.toLowerCase().trim());
+                console.log(`🗑️ Caché invalidado síncronamente tras eliminar producto para: ${data.tenantId}`);
+            } catch (cacheError) {
+                console.warn("⚠️ Falla no-bloqueante al purgar catálogo desde DELETE productos:", cacheError.message);
+            }
+        }
 
         return NextResponse.json({ ok: true });
     } catch (error) {

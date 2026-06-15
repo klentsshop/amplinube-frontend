@@ -1,6 +1,13 @@
 import React, { memo, useMemo } from 'react';
 import { formatPrecioDisplay, categoriasMap } from '@/lib/utils';
-import { urlFor } from '@/lib/sanity';
+
+// 🛡️ RESOLVEDOR DE IMÁGENES SENIOR: Extrae la URL estática sin instanciar el cliente de Sanity
+const getSanityImageUrl = (imageAsset) => {
+    if (!imageAsset || !imageAsset.asset || !imageAsset.asset._ref) return null;
+    const ref = imageAsset.asset._ref; // Formato: image-assetId-dimension-ext
+    const [,, id, dimensions, ext] = ref.split('-');
+    return `https://cdn.sanity.io/images/${process.env.NEXT_PUBLIC_SANITY_PROJECT_ID}/${process.env.NEXT_PUBLIC_SANITY_DATASET}/${id}-${dimensions}.${ext}?w=300`;
+};
 // ✅ Importamos la configuración maestra para la moneda y lógica
 import { SITE_CONFIG } from '@/lib/config';
 import { Settings } from 'lucide-react';
@@ -206,15 +213,15 @@ onClick={() => {
 }}
 >
                         {/* 1. Área de Imagen */}
-                        <div 
-                            className={styles.cardImage} 
-                            style={{ 
-                                backgroundImage: plato.imagen 
-                                    ? `url(${urlFor(plato.imagen).width(300).url()})` 
-                                    : 'none',
-                                backgroundColor: '#f3f4f6'
-                            }}
-                        />
+                       <div 
+                       className={styles.cardImage} 
+                       style={{ 
+                       backgroundImage: plato.imagen 
+                       ? `url(${getSanityImageUrl(plato.imagen)})` 
+                       : 'none',
+                     backgroundColor: '#f3f4f6'
+                       }}
+                      />
                         
                         {/* 2. Área de Información */}
                         <div className={styles.cardInfo}>

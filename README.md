@@ -1,5 +1,5 @@
 T# 🚀 Pedidos Pro POS - Sistema de Gestión Gastronómica
-**Desarrollado por: Klentsshop** **Versión:** 1.0.0 | **Estado:** Estable
+**Desarrollado por: Kelly Johanna Rodriguez** **Versión:** 1.0.0 | **Estado:** Estable
 
 ---
 
@@ -24,4 +24,4 @@ Para una gestión eficiente, consulte los manuales especializados en la carpeta 
 Este software cuenta con una capa de blindaje de datos mediante adaptadores (`lib/dataAdapter.js`) y gestión de roles por PIN (Admin/Cajero).
 
 ---
-© 2026 Klentsshop - Todos los derechos reservados.
+© 2026 Kelly Johanna Rodriguez - Todos los derechos reservados.

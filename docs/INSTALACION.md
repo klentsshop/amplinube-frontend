@@ -60,4 +60,4 @@ Antes de entregar al cliente, marque estas casillas:
 
 [ ] Cierre de Caja: Cobrar la orden de prueba y verificar que sume correctamente en el modal de Reporte.
 
-Desarrollado por Klentsshop Si tiene dudas técnicas, contacte al soporte de desarrollo.
+Desarrollado por Kelly Johanna Rodriguez Si tiene dudas técnicas, contacte al soporte de desarrollo.

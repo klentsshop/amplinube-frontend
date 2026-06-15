@@ -23,7 +23,7 @@
     3. Para la impresión, deberá esperar a que retorne la energía o entregar facturas manuales temporalmente anotando el número de orden del sistema.
 
 ## 🔑 Escenario D: Olvido de PIN
-* **Acción:** Contacte de inmediato al soporte técnico de Klentsshop para el restablecimiento manual desde la base de datos central.
+* **Acción:** Contacte de inmediato al soporte técnico de Kelly Johanna Rodriguez para el restablecimiento manual desde la base de datos central.
 
 ---
 **Nota:** El sistema está diseñado para proteger los datos. Aunque el hardware falle, su historial de ventas permanece seguro en la nube.
