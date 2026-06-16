@@ -62,8 +62,8 @@ export async function POST(request) {
                 .from('gastos')
                 .select('*')
                 .eq('tenant_id', tenantId)
-                .gte('created_at', new Date(fechaInicio).toISOString())
-                .lte('created_at', new Date(fechaFin).toISOString())
+                .gte('created_at', `${fechaInicio}T00:00:00.000Z`)
+                .lte('created_at', `${fechaFin}T23:59:59.999Z`)
         ]);
 
         if (resVentas.error) throw new Error(`Ventas db error: ${resVentas.error.message}`);
@@ -125,19 +125,36 @@ export async function POST(request) {
                     else metodosPago.efectivo += montoP;
                 });
             } else {
-                const montoTotal = ventaNeta + propina;
                 const metodo = (v.metodoPago || 'efectivo').toLowerCase();
-                if (metodo.includes('tarjeta')) metodosPago.tarjeta += montoTotal;
-                else if (metodo.includes('nequi') || metodo.includes('daviplata') || metodo.includes('digital') || metodo.includes('transferencia')) metodosPago.digital += montoTotal;
-                else metodosPago.efectivo += montoTotal;
+                if (metodo.includes('tarjeta')) metodosPago.tarjeta += ventaNeta;
+                else if (metodo.includes('nequi') || metodo.includes('daviplata') || metodo.includes('digital') || metodo.includes('transferencia')) metodosPago.digital += ventaNeta;
+                else metodosPago.efectivo += ventaNeta;
             }
 
-            // 🥩 RANKING DE VENTAS (Kilos y Unidades)
-            v.platosVendidosV2?.forEach(p => {
-                const nombre = p.nombrePlato || "Desconocido";
-                const cantidadReal = Number(p.cantidad || 0);
-                rankingPlatos[nombre] = (rankingPlatos[nombre] || 0) + cantidadReal;
-            });
+           // ✅ CÓDIGO NUEVO BLINDADO (Cirugía Senior):
+v.platosVendidosV2?.forEach(p => {
+    const nombre = (p.nombrePlato || p.nombre || "Desconocido").toUpperCase().trim();
+    const cantidadReal = Number(p.cantidad || 0);
+    const precioU = Number(p.precioUnitario || p.precioNum || p.precio || 0);
+    
+    // Extraemos el subtotal real cobrado en el ticket, si no viene lo calculamos limpio
+    const subtotalReal = Number(p.subtotal || (precioU * cantidadReal));
+
+    // 🛡️ BISTURÍ: Estructuramos la clave combinada única por variación de precio
+    const claveUnica = `${nombre}_${precioU}`;
+
+    if (!rankingPlatos[claveUnica]) {
+        rankingPlatos[claveUnica] = {
+            nombre: nombre,
+            precioUnitario: precioU,
+            cantidad: 0,
+            subtotal: 0
+        };
+    }
+
+    rankingPlatos[claveUnica].cantidad += cantidadReal;
+    rankingPlatos[claveUnica].subtotal += subtotalReal;
+});
         });
 
         const totalVentasSumadas = ventas.reduce((acc, v) => acc + Number(v.totalPagado || 0), 0);
@@ -153,17 +170,20 @@ export async function POST(request) {
             estadisticas: {
                 metodosPago,
                 totalPropinas,
-                topPlatos: Object.entries(rankingPlatos)
-                    .filter(([nombre]) => {
-                        const n = nombre.toUpperCase();
-                        return !n.includes('MERMA') && !n.includes('DESPERDICIO');
-                    })
-                    .sort((a, b) => b[1] - a[1])
-                    .slice(0, 5)
-                    .map(([nombre, cant]) => ({
-                        nombre,
-                        cantidad: Number(cant) % 1 !== 0 ? cant.toFixed(3) : cant
-                    }))
+                topPlatos: Object.values(rankingPlatos)
+    .filter((plato) => {
+        const n = plato.nombre.toUpperCase();
+        return !n.includes('MERMA') && !n.includes('DESPERDICIO');
+    })
+    // Ordenamos de mayor a menor por el subtotal real de dinero que ingresó
+    .sort((a, b) => b.subtotal - a.subtotal)
+    .slice(0, 5)
+    .map((plato) => ({
+        nombre: plato.nombre,
+        precioUnitario: plato.precioUnitario,
+        subtotal: plato.subtotal,
+        cantidad: Number(plato.cantidad) % 1 !== 0 ? Number(plato.cantidad).toFixed(3) : Number(plato.cantidad)
+    }))
             }
         });
 

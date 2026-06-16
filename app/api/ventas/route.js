@@ -34,7 +34,7 @@ export async function POST(req) {
         const seed = transaccionId ? transaccionId.slice(-4).toUpperCase() : (crypto.randomBytes(2).toString('hex')).toUpperCase();
         const prefix = tenantId.slice(0, 3).toUpperCase(); 
         const folioGenerado = `${prefix}-${datePart}-${seed}`;
-        const ventaId = transaccionId ? `venta-${transaccionId}` : `venta-${Date.now()}`;
+        const ventaId = transaccionId ? `venta-${transaccionId}` : `venta-${Date.now()}-${seed}`;
         
         // --- 3. 🛡️ ESCUDO ANTI-FANTASMAS (EL BLOQUEO MAESTRO) ---
         if (ordenId && ordenId !== "undefined" && ordenId !== "null") {
@@ -62,35 +62,54 @@ export async function POST(req) {
             }
         }
 
-        // --- 4. 🚀 BÚSQUEDA DE IDS Y RECETAS EN SANITY (CORREGIDA SIN ERRORES DE SINTAXIS) ---
-        // --- 4. 🚀 BÚSQUEDA DE IDS Y RECETAS DESDE EL BÚNKER DE SUPABASE ---
+        // --- 4. 🚀 BÚSQUEDA DE IDS Y RECETAS DESDE EL BÚNKER DE SUPABASE (CON CONTINGENCIA REAL) ---
         const nombresPlatos = (payload.platosVendidosV2 || []).map(item => item.nombrePlato || item.nombre);
         let mapeoSanity = [];
+        let usoContingenciaSanity = false;
         
         try {
-            const { data: cacheRow } = await supabaseServer
+            // Buscamos el catálogo en la caché en piedra de Supabase
+            const { data: cacheRow, error: errCache } = await supabaseServer
                 .from('catalog_cache')
                 .select('payload_json')
                 .eq('tenant_host', tenantId.toLowerCase().trim())
-                .single();
+                .maybeSingle(); // 🛡️ Evita lanzar excepciones ruidosas si la tabla está vacía
 
-            const platosBunker = cacheRow?.payload_json?.plato || cacheRow?.payload_json?.platos || [];
+            // Si hay un error en Supabase o el registro no existe, forzamos la caída al catch de contingencia
+            if (errCache || !cacheRow || !cacheRow.payload_json) {
+                throw new Error("Cache miss o error de lectura en Supabase");
+            }
+
+            const platosBunker = cacheRow.payload_json.plato || cacheRow.payload_json.platos || [];
             
+            // Si el búnker existe pero no tiene platos indexados, también es una alerta para usar Sanity
+            if (!Array.isArray(platosBunker) || platosBunker.length === 0) {
+                throw new Error("El búnker no contiene un arreglo de platos válido");
+            }
+
             // Filtramos en memoria local solo los platos involucrados en esta venta
             mapeoSanity = platosBunker.filter(p => nombresPlatos.includes(p.nombre)).map(p => ({
                 nombre: p.nombre,
                 _id: p._id,
                 controlaInventario: p.controlaInventario || false,
-                insumoVinculadoRef: p.insumoVinculado?._ref || p.insumoVinculadoRef || null,
+                insumoVinculadoRef: p.insumoVinculadoRef || p.insumoVinculado?._ref || null,
                 cantidadADescontar: p.cantidadADescontar || 0,
                 recetaInsumos: (p.recetaInsumos || []).map(r => ({
                     insumoId: r.insumo?._ref || r.insumoId || null,
                     cantidad: r.cantidad || 0
                 }))
             }));
+
+            // Si por alguna razón el filtro en memoria nos deja vacíos pero la venta sí trae platos, paracaídas inmediato
+            if (mapeoSanity.length === 0 && nombresPlatos.length > 0) {
+                throw new Error("Platos vendidos no encontrados en la caché de Supabase");
+            }
+
         } catch (cacheError) {
-            console.warn("⚠️ Falló lectura de recetas desde el búnker, activando contingencia en Sanity...");
-            mapeoSanity = await sanityClientServer.fetch(
+            console.warn(`⚠️ Contingencia activada: [${cacheError.message}]. Extrayendo recetas directo de Sanity en caliente...`);
+            usoContingenciaSanity = true;
+
+            const dataFreshSanity = await sanityClientServer.fetch(
                `*[_type == "plato" && tenant == $tenantId && nombre in $nombres]{
                     nombre, _id, controlaInventario,
                     "insumoVinculadoRef": insumoVinculado._ref,
@@ -98,8 +117,21 @@ export async function POST(req) {
                     recetaInsumos[]{ "insumoId": insumo._ref, cantidad }
                 }`,
                 { nombres: nombresPlatos, tenantId },
-                { useCdn: false }
+                { useCdn: false } // 🔌 En caliente directo al búnker central sin CDN
             );
+
+            // Homologamos la respuesta de Sanity para que ensamble de forma idéntica con tu lógica del paso D
+            mapeoSanity = (dataFreshSanity || []).map(p => ({
+                nombre: p.nombre,
+                _id: p._id,
+                controlaInventario: p.controlaInventario || false,
+                insumoVinculadoRef: p.insumoVinculadoRef || null,
+                cantidadADescontar: p.cantidadADescontar || 0,
+                recetaInsumos: (p.recetaInsumos || []).map(r => ({
+                    insumoId: r.insumoId || null,
+                    cantidad: r.cantidad || 0
+                }))
+            }));
         }
 
         // --- 5. MAPEO DE PLATOS PARA LA VENTA ---
@@ -145,7 +177,7 @@ export async function POST(req) {
 
         // B. CREAR TICKET VENTA PARA APK
         transaction = transaction.create({
-            _id: `venta-pulso-${Date.now()}`, 
+            _id: `venta-pulso-${Date.now()}-${seed}`,
             _type: 'venta',
             tenant: tenantId,
             metodoPago: abrirCajon ? 'EFECTIVO_MIXTO' : metodoPago 
@@ -268,18 +300,6 @@ export async function POST(req) {
             );
         }
           
-        // 🎉 PASO C: Éxito absoluto y retorno limpio al frontend
-       // 🪓 GUILLOTINA SÍNCRONA: Como mutamos la popularidad de los platos, destruimos la caché del catálogo
-        try {
-            await supabaseServer
-                .from('catalog_cache')
-                .delete()
-                .eq('tenant_host', tenantId.toLowerCase().trim());
-            console.log(`🗑️ Caché del catálogo purgado tras venta para: ${tenantId}`);
-        } catch (cacheError) {
-            console.warn("⚠️ Falla no-bloqueante al purgar búnker desde API ventas:", cacheError.message);
-        }
-
         // 🎉 PASO C: Éxito absoluto y retorno limpio al frontend
         return NextResponse.json({ 
             ok: true, 

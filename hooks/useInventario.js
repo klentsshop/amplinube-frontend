@@ -31,7 +31,7 @@ export function useInventario(tenantId, search = '') {
             actualizarCacheStockMasivo(data);
         }
     }, [data, actualizarCacheStockMasivo]);
-    const cargarStock = async (insumoId, cantidad) => {
+    const cargarStock = async (insumoId, cantidad, tenantId) => {
         try {
             // 🧠 ACTUALIZACIÓN OPTIMISTA (Nivel Súper Senior):
             // Modificamos el estado local en React al instante para que el cajero vea reflejado 

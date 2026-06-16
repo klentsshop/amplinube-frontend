@@ -32,11 +32,21 @@ export async function POST(req) {
                 .eq('tenant_host', idComercio.toLowerCase().trim())
                 .single();
 
-            if (configNegocio?.payload_json) {
+           if (configNegocio?.payload_json) {
                 const p = configNegocio.payload_json;
-                // Mapeo multiruta senior para blindar cualquier variante estructural del JSON clonado
-                pinAdminReal = p?.seguridad?.pinAdmin || p?.configSeguridad?.pinAdmin || p?.pinAdmin;
-                pinCajeroReal = p?.seguridad?.pinCajero || p?.configSeguridad?.pinCajero || p?.pinCajero;
+
+                // 🛡️ BISTURÍ SENIOR: Si el búnker cayó en contingencia y es un Array, buscamos el documento de tipo 'seguridad'
+                if (Array.isArray(p)) {
+                    const docSeguridad = p.find(item => item?._type === 'seguridad' || item?.id?.includes('seguridad') || item?._id?.includes('seguridad'));
+                    if (docSeguridad) {
+                        pinAdminReal = docSeguridad?.pinAdmin;
+                        pinCajeroReal = docSeguridad?.pinCajero;
+                    }
+                } else {
+                    // Si viene como objeto estructurado estándar
+                    pinAdminReal = p?.seguridad?.pinAdmin || p?.configSeguridad?.pinAdmin || p?.pinAdmin;
+                    pinCajeroReal = p?.seguridad?.pinCajero || p?.configSeguridad?.pinCajero || p?.pinCajero;
+                }
             }
         } catch (dbError) {
             console.warn("⚠️ Error leyendo credenciales del Escudo, usando variables de entorno de respaldo.");

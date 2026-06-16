@@ -212,16 +212,16 @@ onClick={() => {
     }
 }}
 >
-                        {/* 1. Área de Imagen */}
-                       <div 
-                       className={styles.cardImage} 
-                       style={{ 
-                       backgroundImage: plato.imagen 
-                       ? `url(${getSanityImageUrl(plato.imagen)})` 
-                       : 'none',
+                       {/* 1. Área de Imagen */}
+                     <div 
+                     className={styles.cardImage} 
+                    style={{ 
+                    backgroundImage: plato.imagenUrl 
+                    ? `url(${plato.imagenUrl})` 
+                    : 'none',
                      backgroundColor: '#f3f4f6'
-                       }}
-                      />
+                    }}
+                   />
                         
                         {/* 2. Área de Información */}
                         <div className={styles.cardInfo}>

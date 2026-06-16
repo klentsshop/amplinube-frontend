@@ -39,23 +39,6 @@ export default function InventarioModal({ isOpen, onClose, tenantId }) {
                 return;
             }
 
-            // 🔥 PLAN B DE RESCATE (Nivel Senior): Si el producto es nuevo en Supabase,
-            // lo buscamos en el catálogo de Sanity para recuperar su ID y crearlo al vuelo.
-            if (busqueda.length >= 4) { // Evita consultas en falso mientras escriben
-                try {
-                    const rescateSanity = await sanityClientServer.fetch(
-                        `*[_type == "inventario" && tenant == $tenantId && (barcode == $busqueda || codigoBalanza == $busqueda)][0]{ _id }`,
-                        { tenantId, busqueda }
-                    );
-
-                    if (rescateSanity?._id) {
-                        handleCargar(rescateSanity._id, 1);
-                        setBusqueda('');
-                    }
-                } catch (err) {
-                    console.error("⚠️ Error en ráfaga de rescate de código:", err);
-                }
-            }
         };
 
         procesarEscaneoGuns();
@@ -139,14 +122,18 @@ export default function InventarioModal({ isOpen, onClose, tenantId }) {
             handleCargar(insumo.id || insumo._id, 1);
             setBusqueda('');
         } else {
-            // Tu plan B de rescate en Sanity
-            const rescate = await sanityClientServer.fetch(
-                `*[_type == "inventario" && tenant == $tenantId && (barcode == $busqueda || codigoBalanza == $busqueda)][0]{ _id }`,
-                { tenantId, busqueda }
-            );
-            if (rescate?._id) {
-                handleCargar(rescate._id, 1);
-                setBusqueda('');
+            // 🔥 PLAN B DE RESCATE: Solo consulta a Sanity al presionar Enter controlado
+            try {
+                const rescate = await sanityClientServer.fetch(
+                    `*[_type == "inventario" && tenant == $tenantId && (barcode == $busqueda || codigoBalanza == $busqueda)][0]{ _id }`,
+                    { tenantId, busqueda: busqueda.trim() }
+                );
+                if (rescate?._id) {
+                    handleCargar(rescate._id, 1);
+                    setBusqueda('');
+                }
+            } catch (err) {
+                console.error("⚠️ Error en rescate de código por Enter:", err);
             }
         }
     }

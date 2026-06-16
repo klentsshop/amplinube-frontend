@@ -77,11 +77,15 @@ export async function PUT(request) {
         if (codigoBalanza !== undefined) camposSanity.codigoBalanza = codigoBalanza ? codigoBalanza.trim() : null;
         if (stockMinimo !== undefined) camposSanity.stockMinimo = Number(stockMinimo);
 
-        const resultSanity = await sanityClientServer
-            .patch(itemId)
-            .set(camposSanity)
-            .commit();
-
+        let resultSanityId = itemId;
+        // 🛡️ Solo golpeamos a Sanity si hay cambios estructurales reales (nombre, barcode, etc.)
+        if (Object.keys(camposSanity).length > 0) {
+            const resultSanity = await sanityClientServer
+                .patch(itemId)
+                .set(camposSanity)
+                .commit();
+            resultSanityId = resultSanity._id;
+        }
         // B. Actualización en Supabase para el Stock Numérico Vivo
         const camposSupabase = {};
         if (nombre !== undefined) camposSupabase.nombre = nombre.trim().toUpperCase();
@@ -97,14 +101,16 @@ export async function PUT(request) {
 
             if (supabaseError) throw new Error(`SUPABASE_UPDATE_FAILED: ${supabaseError.message}`);
         }
-        try {
-            const { supabaseServer } = await import('@/lib/supabase');
-            await supabaseServer.from('catalog_cache').delete().eq('tenant_host', tenantId.toLowerCase().trim());
-            console.log(`🗑️ Caché del catálogo purgado síncronamente en PUT inventario para: ${tenantId}`);
-        } catch (cacheError) {
-            console.warn("⚠️ Falla no-bloqueante al purgar el catálogo desde PUT inventario:", cacheError.message);
+       if (nombre !== undefined || barcode !== undefined || codigoBalanza !== undefined) {
+            try {
+                const { supabaseServer } = await import('@/lib/supabase');
+                await supabaseServer.from('catalog_cache').delete().eq('tenant_host', tenantId.toLowerCase().trim());
+                console.log(`🗑️ Caché del catálogo purgado síncronamente en PUT inventario estructural para: ${tenantId}`);
+            } catch (cacheError) {
+                console.warn("⚠️ Falla no-bloqueante al purgar el catálogo desde PUT inventario:", cacheError.message);
+            }
         }
-        return NextResponse.json({ ok: true, id: resultSanity._id });
+        return NextResponse.json({ ok: true, id: resultSanityId });
     } catch (error) {
         console.error('🔥 [API_PUT_INVENTARIO_ERROR]:', error.message);
         return NextResponse.json({ error: error.message }, { status: 500 });

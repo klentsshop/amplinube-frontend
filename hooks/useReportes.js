@@ -40,17 +40,17 @@ export function useReportes(getFechaBogota, tenantId) {
             const inicio = `${fechaInicioReporte} 00:00:00`;
             const fin = `${fechaFinReporte} 23:59:59`;
 
-            const [resVentas, resGastos] = await Promise.all([
-            fetch(`/api/ventas/historial`, { 
-                method: 'POST', 
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ fechaSeleccionada: fechaInicioReporte, 
-                fechaFin: fechaFinReporte, tenantId }) 
-            }),
-           fetch(`/api/gastos?tenantId=${tenantId}&inicio=${encodeURIComponent(inicio)}&fin=${encodeURIComponent(fin)}`, { 
-        method: 'GET'
-    })
-        ]);
+           const [resVentas, resGastos] = await Promise.all([
+                fetch(`/api/ventas/historial`, { 
+                    method: 'POST', 
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ fechaSeleccionada: fechaInicioReporte, fechaFin: fechaFinReporte, tenantId }) 
+                }),
+                // ↩️ Volvemos a tu ruta original con el tenantId en la URL
+                fetch(`/api/gastos?tenantId=${tenantId}&inicio=${encodeURIComponent(inicio)}&fin=${encodeURIComponent(fin)}`, { 
+                    method: 'GET'
+                })
+            ]);
 
             if (!resVentas.ok || !resGastos.ok) {
                 throw new Error("No se pudo obtener la información financiera de Supabase.");
@@ -77,11 +77,36 @@ export function useReportes(getFechaBogota, tenantId) {
                 // ================================================================
                 // 🛡️ REGLA CONTABLE RE-BLINDADA: SUMATORIA DIRECTA POR COLUMNAS
                 // Prioridad absoluta a pagoEfectivo, pagoTarjeta y pagoDigital que vienen de Supabase
+                // Se descuenta la propina para que el desglose coincida exactamente con las Ventas Netas
                 // ================================================================
                 if (v.pagoEfectivo > 0 || v.pagoTarjeta > 0 || v.pagoDigital > 0) {
-                    metodos.efectivo += (v.pagoEfectivo || 0);
-                    metodos.tarjeta += (v.pagoTarjeta || 0);
-                    metodos.digital += (v.pagoDigital || 0);
+                    let ef = v.pagoEfectivo || 0;
+                    let tj = v.pagoTarjeta || 0;
+                    let dg = v.pagoDigital || 0;
+                    let propinaRestante = propina;
+
+                    // Descontamos la propina del efectivo si existe
+                    if (propinaRestante > 0 && ef > 0) {
+                        const descuento = Math.min(ef, propinaRestante);
+                        ef -= descuento;
+                        propinaRestante -= descuento;
+                    }
+                    // Si aún queda propina por descontar, la quitamos de tarjeta
+                    if (propinaRestante > 0 && tj > 0) {
+                        const descuento = Math.min(tj, propinaRestante);
+                        tj -= descuento;
+                        propinaRestante -= descuento;
+                    }
+                    // Si aún queda, la quitamos de digital
+                    if (propinaRestante > 0 && dg > 0) {
+                        const descuento = Math.min(dg, propinaRestante);
+                        dg -= descuento;
+                        propinaRestante -= descuento;
+                    }
+
+                    metodos.efectivo += ef;
+                    metodos.tarjeta += tj;
+                    metodos.digital += dg;
                 } else {
                     // Fallback seguro de retrocompatibilidad por si hay registros viejos sin columnas planas
                     let procesado = false;
@@ -105,21 +130,24 @@ export function useReportes(getFechaBogota, tenantId) {
                 }
 
                 // 🥩 CONTEO DE PRODUCTOS (Lógica original idéntica)
-                v.platosVendidosV2?.forEach(p => {
-                    const nombre = p.nombrePlato || "Desconocido";
-                    const cant = Number(p.cantidad || 0);
-                    productos[nombre] = (productos[nombre] || 0) + cant;
-                    preciosParaExcel[nombre] = Number(p.precioUnitario || 0);
+               v.platosVendidosV2?.forEach(p => {
+    const nombre = (p.nombrePlato || p.nombre || "Desconocido").toUpperCase().trim();
+    const cant = Number(p.cantidad || 0);
+    const precioU = Number(p.precioUnitario || p.precioNum || p.precio || 0);
+    const costoU = Number(p.precioCosto || 0);
 
-                     if (Number(p.precioCosto) > 0) {
-                     preciosCostoParaExcel[nombre] = Number(p.precioCosto);
-                     } else if (!preciosCostoParaExcel[nombre]) {
-                     preciosCostoParaExcel[nombre] = 0;
-                     }
-                    if (cant % 1 !== 0) {
-                        unidadesMedida[nombre] = 'kg';
-                    }
-                }); 
+    // 🛡️ BISTURÍ: Creamos la clave única combinada
+    const claveUnica = `${nombre}_${precioU}`;
+
+    // Almacenamos la información indexada por la variación de precio
+    productos[claveUnica] = (productos[claveUnica] || 0) + cant;
+    preciosParaExcel[claveUnica] = precioU;
+    preciosCostoParaExcel[claveUnica] = costoU;
+
+    if (cant % 1 !== 0) {
+        unidadesMedida[claveUnica] = 'kg';
+    }
+}); 
             });
 
             const totalGastos = gastos.reduce((acc, g) => acc + Number(g.monto || 0), 0);

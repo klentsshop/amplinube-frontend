@@ -15,28 +15,28 @@ export default function ReporteModal({
         const gastosParaExcel = Array.from(listaGastos || []);
 
         // A. Preparar datos de Ventas con lógica de peso/unidades
-        const datosVentas = Object.entries(datos.productos || {})
-            .sort(([a], [b]) => a.localeCompare(b))
-            .map(([nombre, cantidad]) => {
-                const precioUnit = datos.precios?.[nombre] || 0;
-                // 🥩 Blindaje: Identificamos si es peso por el flag de Sanity o por decimales
-                const esPeso = datos.unidadesMedida?.[nombre] === 'kg' || Number(cantidad) % 1 !== 0;
+        // 🔨 REEMPLAZO (Líneas 17-27):
+const datosVentas = Object.entries(datos.productos || {})
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([clave, cantidad]) => {
+        // 🛡️ BISTURÍ: Separamos la clave compuesta Nombre_Precio
+        const [nombre, precioUnit] = clave.split('_');
+        const esPeso = datos.unidadesMedida?.[clave] === 'kg' || Number(cantidad) % 1 !== 0;
 
-                return {
-                    "PRODUCTO / ARTÍCULO": nombre.toUpperCase(),
-                    "CANTIDAD": esPeso ? Number(cantidad).toFixed(3) : Math.floor(cantidad),
-                    "U. MEDIDA": esPeso ? "KG" : "UND",
-                    "VALOR UNITARIO ($)": precioUnit,
-                    "TOTAL RECAUDADO ($)": Math.round(precioUnit * cantidad)
-                };
-            });
-
+        return {
+            "PRODUCTO / ARTÍCULO": nombre.toUpperCase(),
+            "PRECIO UNITARIO ($)": Number(precioUnit),
+            "CANTIDAD": esPeso ? Number(cantidad).toFixed(3) : Math.floor(cantidad),
+            "U. MEDIDA": esPeso ? "KG" : "UND",
+            "TOTAL RECAUDADO ($)": Math.round(Number(precioUnit) * cantidad)
+        };
+    });
         // Agregamos fila de total al final de la hoja de productos
-        datosVentas.push({
+       datosVentas.push({
             "PRODUCTO / ARTÍCULO": ">>> TOTAL RECAUDADO EN VENTAS",
+            "PRECIO UNITARIO ($)": "",
             "CANTIDAD": "",
             "U. MEDIDA": "",
-            "VALOR UNITARIO ($)": "",
             "TOTAL RECAUDADO ($)": datos.ventas
         });
 
@@ -57,40 +57,59 @@ export default function ReporteModal({
             { "CONCEPTO": "Digital (Nequi/Davi/Transf)", "VALOR": datos.metodosPago?.digital || datos.metodos?.digital || 0 }
            ]);
 
-           const datosRentabilidad = Object.entries(datos.productos || {})
-          .sort(([a], [b]) => a.localeCompare(b))
-          .map(([nombre, cantidad]) => {
+           let totalUtilidadGlobal = 0;
+        const datosRentabilidad = Object.entries(datos.productos || {})
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(([clave, cantidad]) => {
+                // 🛡️ BISTURÍ SENIOR: Desestructuramos para limpiar el nombre y el precio unitario
+                const [nombreReal] = clave.split('_');
+                const precioVenta = datos.precios?.[clave] || 0;
+                const precioCosto = datos.preciosCosto?.[clave] || 0;
 
-           const precioVenta = datos.precios?.[nombre] || 0;
-           const precioCosto = datos.preciosCosto?.[nombre] || 0;
+                const totalVenta = precioVenta * cantidad;
+                const totalCosto = precioCosto * cantidad;
+                const utilidad = totalVenta - totalCosto;
+                totalUtilidadGlobal += utilidad;
 
-           const totalVenta = precioVenta * cantidad;
-           const totalCosto = precioCosto * cantidad;
-           const utilidad = totalVenta - totalCosto;
+                return {
+                    "PRODUCTO": nombreReal.toUpperCase(),
+                    "UNIDADES VENDIDAS": Number(cantidad) % 1 !== 0 ? Number(cantidad) : Math.floor(cantidad),
+                    "PRECIO COSTO": precioCosto,
+                    "PRECIO VENTA": precioVenta,
+                    "UTILIDAD": utilidad
+                };
+            });
 
-          return {
-          "PRODUCTO": nombre.toUpperCase(),
-          "UNIDADES VENDIDAS": cantidad,
-          "PRECIO COSTO": precioCosto,
-          "PRECIO VENTA": precioVenta,
-          "UTILIDAD": utilidad
-         };
+        // Inyectamos fila de cierre de utilidad totalizada
+        datosRentabilidad.push({
+            "PRODUCTO": ">>> TOTAL UTILIDAD BRUTA DEL PERIODO",
+            "UNIDADES VENDIDAS": "",
+            "PRECIO COSTO": "",
+            "PRECIO VENTA": "",
+            "UTILIDAD": totalUtilidadGlobal
         });
         const hojaVentas = XLSX.utils.json_to_sheet(datosVentas);
         const hojaRentabilidad = XLSX.utils.json_to_sheet(datosRentabilidad);
-        const hojaGastos = XLSX.utils.json_to_sheet(gastosParaExcel.map(g => {
-        const descReal = g.descripcion || g.descripcionGasto || "Gasto sin nombre";
-        const fechaReal = g.fecha || g.fechaRegistro || "Sin fecha";
-         // 🛡️ Limpieza de fechas ISO completas de Supabase para que el Excel sea legible (AAAA-MM-DD)
-        const fechaCorta = String(fechaReal).substring(0, 10);
+        const filasGastos = gastosParaExcel.map(g => {
+            const descReal = g.descripcion || g.descripcionGasto || "Gasto sin nombre";
+            const fechaReal = g.fecha || g.fechaRegistro || "Sin fecha";
+            const fechaCorta = String(fechaReal).substring(0, 10);
 
-        return {
-        "FECHA REGISTRO": fechaCorta,
-        "PROVEEDOR / CONCEPTO": String(descReal).toUpperCase().trim(),
-        "MONTO PAGADO ($)": Number(g.monto || g.montoGasto || 0)
-         };
-        }));
-        
+            return {
+                "FECHA REGISTRO": fechaCorta,
+                "PROVEEDOR / CONCEPTO": String(descReal).toUpperCase().trim(),
+                "MONTO PAGADO ($)": Number(g.monto || g.montoGasto || 0)
+            };
+        });
+
+        // 🛡️ Insertamos el renglón final con el total de gastos acumulado de SocioPOS
+        filasGastos.push({
+            "FECHA REGISTRO": ">>> TOTAL EGRESOS EN GASTOS",
+            "PROVEEDOR / CONCEPTO": "",
+            "MONTO PAGADO ($)": datos.gastos
+        });
+
+        const hojaGastos = XLSX.utils.json_to_sheet(filasGastos);
         // Configuración de anchos de columna
         hojaResumen['!cols'] = [{ wch: 45 }, { wch: 20 }];
         hojaVentas['!cols'] = [{ wch: 40 }, { wch: 15 }, { wch: 10 }, { wch: 20 }, { wch: 20 }];
@@ -161,28 +180,34 @@ export default function ReporteModal({
                             {/* 🥩 SECCIÓN: PESADOS (KG) */}
                             <p style={{ fontSize: '0.7rem', fontWeight: 'bold', color: '#2563EB', marginBottom: '5px' }}>PRODUCTOS POR PESO (KG)</p>
                             {Object.entries(datos.productos || {})
-                                .filter(([nombre, cant]) => datos.unidadesMedida?.[nombre] === 'kg' || Number(cant) % 1 !== 0)
-                                .sort(([a], [b]) => a.localeCompare(b))
-                                .map(([nombre, cant]) => (
-                                    <div key={nombre} style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #E5E7EB', padding: '5px 0' }}>
-                                        <span style={{ fontSize: '0.85rem' }}>{nombre.toUpperCase()}</span>
-                                        <strong style={{ color: '#2563EB' }}>{Number(cant).toFixed(3)} Kg</strong>
-                                    </div>
-                                ))
-                            }
+                            .filter(([clave, cant]) => datos.unidadesMedida?.[clave] === 'kg' || Number(cant) % 1 !== 0)
+                            .sort(([a], [b]) => a.localeCompare(b))
+                            .map(([clave, cant]) => {
+                             const [nombre, precio] = clave.split('_'); // 🛡️ BISTURÍ
+                             return (
+                              <div key={clave} style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #E5E7EB', padding: '5px 0' }}>
+                               <span style={{ fontSize: '0.85rem' }}>{nombre.toUpperCase()} <small>(${Number(precio).toLocaleString()})</small></span>
+                               <strong style={{ color: '#2563EB' }}>{Number(cant).toFixed(3)} Kg</strong>
+                             </div>
+                              );
+                             })
+                             }
 
                             {/* 🍺 SECCIÓN: UNIDADES (UND) */}
                             <p style={{ fontSize: '0.7rem', fontWeight: 'bold', color: '#4B5563', marginTop: '15px', marginBottom: '5px' }}>PRODUCTOS POR UNIDAD (UND)</p>
                             {Object.entries(datos.productos || {})
-                                .filter(([nombre, cant]) => datos.unidadesMedida?.[nombre] !== 'kg' && Number(cant) % 1 === 0)
-                                .sort(([a], [b]) => a.localeCompare(b))
-                                .map(([nombre, cant]) => (
-                                    <div key={nombre} style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #E5E7EB', padding: '5px 0' }}>
-                                        <span style={{ fontSize: '0.85rem' }}>{nombre.toUpperCase()}</span>
-                                        <strong style={{ color: '#1F2937' }}>x{cant} Und</strong>
-                                    </div>
-                                ))
-                            }
+                             .filter(([clave, cant]) => datos.unidadesMedida?.[clave] !== 'kg' && Number(cant) % 1 === 0)
+                             .sort(([a], [b]) => a.localeCompare(b))
+                              .map(([clave, cant]) => {
+                              const [nombre, precio] = clave.split('_'); // 🛡️ BISTURÍ
+                             return (
+                             <div key={clave} style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #E5E7EB', padding: '5px 0' }}>
+                             <span style={{ fontSize: '0.85rem' }}>{nombre.toUpperCase()} <small>(${Number(precio).toLocaleString()})</small></span>
+                              <strong style={{ color: '#1F2937' }}>x{cant} Und</strong>
+                              </div>
+                              );
+                              })
+                              }
                         </div>
 
                         <h3 style={{ marginTop: '20px', fontSize: '1rem', borderBottom: '2px solid #FEE2E2', paddingBottom: '5px' }}>💸 Gastos</h3>
