@@ -91,6 +91,7 @@ export async function POST(req) {
             mapeoSanity = platosBunker.filter(p => nombresPlatos.includes(p.nombre)).map(p => ({
                 nombre: p.nombre,
                 _id: p._id,
+                precioCosto: Number(p.precioCosto || 0),
                 controlaInventario: p.controlaInventario || false,
                 insumoVinculadoRef: p.insumoVinculadoRef || p.insumoVinculado?._ref || null,
                 cantidadADescontar: p.cantidadADescontar || 0,
@@ -138,14 +139,19 @@ export async function POST(req) {
         const platosVenta = (payload.platosVendidosV2 || []).map(item => {
             const precioFinal = Number(item.precioUnitario || item.precioNum || item.precio) || 0;
             const cantidadFinal = Number(item.cantidad) || 1;
+            const nombreLimpio = item.nombrePlato || item.nombre;
             
+            // 🧠 Cruzamos el nombre vendido con la caché recuperada en el paso 4
+            const platoMatch = (mapeoSanity || []).find(m => m.nombre === nombreLimpio);
+            const costoReal = platoMatch && platoMatch.precioCosto ? platoMatch.precioCosto : Number(item.precioCosto || 0);
+
             return {
                 _key: crypto.randomUUID(),
                 _type: 'platoVendidoV2',
-                nombrePlato: item.nombrePlato || item.nombre,
+                nombrePlato: nombreLimpio,
                 cantidad: cantidadFinal,
                 precioUnitario: precioFinal,
-                precioCosto: Number(item.precioCosto || 0),
+                precioCosto: Number(costoReal), // 👈 🛡️ ESCUDO MAESTRO: Costo garantizado del Búnker
                 subtotal: Number(item.subtotal) || (precioFinal * cantidadFinal),
                 comentario: item.comentario || ""
             };

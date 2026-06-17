@@ -25,17 +25,36 @@ export async function POST(request) {
                 .single();
 
             // 🔍 LUPA SENIOR: Validamos las 2 rutas posibles del JSON clonado para asegurar compatibilidad total
-            const pinDesdeEscudo = configNegocio?.payload_json?.seguridad?.pinAdmin || 
-                                   configNegocio?.payload_json?.configSeguridad?.pinAdmin ||
-                                   configNegocio?.payload_json?.pinAdmin;
+            // 🔍 LUPA SENIOR: Desestructuración elástica inmune a formatos en el Escudo de Supabase
+            const rawPayload = configNegocio?.payload_json;
+            let pinDesdeEscudo = null;
 
+            if (Array.isArray(rawPayload)) {
+                // Caso A: La caché se empaquetó como un Array crudo de Sanity
+                globalThis.catalogoBunker = rawPayload.filter(item => item?._type === 'plato');
+                
+                // Buscamos el documento de seguridad específico dentro de la lista
+                const docSeguridad = rawPayload.find(item => item?._type === 'seguridad');
+                if (docSeguridad) {
+                    pinDesdeEscudo = docSeguridad.pinAdmin;
+                }
+            } else if (rawPayload) {
+                // Caso B: La caché se empaquetó como un Objeto estructurado
+                globalThis.catalogoBunker = rawPayload.plato || rawPayload.platos || [];
+                
+                pinDesdeEscudo = rawPayload.seguridad?.pinAdmin || 
+                                 rawPayload.configSeguridad?.pinAdmin || 
+                                 rawPayload.pinAdmin;
+            }
+
+            // Si se recuperó un PIN válido desde cualquiera de las estructuras, se asigna al validador
             if (pinDesdeEscudo) {
                 PIN_ADMIN_REAL = String(pinDesdeEscudo).trim();
             }
         } catch (dbError) {
+            globalThis.catalogoBunker = [];
             console.warn("⚠️ No se pudo leer el PIN desde el Escudo, usando variable de entorno de respaldo.");
         }
-
         if (!pinAdmin || pinAdmin !== PIN_ADMIN_REAL) {
             return NextResponse.json(
                 { error: '⚠️ No autorizado. PIN administrativo incorrecto.' },
@@ -51,19 +70,24 @@ export async function POST(request) {
         }
 
         // 2. 📡 CONSULTA PARALELA DE ALTA VELOCIDAD EN SUPABASE
+       // 2. 📡 CONSULTA PARALELA DE ALTA VELOCIDAD EN SUPABASE
+        // 🛡️ LUPA SENIOR: Limpiamos los posibles remanentes de horas duplicadas para evitar romper el formato TIMESTAMPTZ de Postgres
+        const stringInicioLimpio = String(fechaInicio).split(' ')[0].trim(); // Extrae solo "YYYY-MM-DD"
+        const stringFinLimpio = String(fechaFin).split(' ')[0].trim();
+
         const [resVentas, resGastos] = await Promise.all([
             supabaseServer
                 .from('ventas')
                 .select('*')
                 .eq('tenant_id', tenantId)
-                .gte('fecha_local', fechaInicio)
-                .lte('fecha_local', fechaFin),
+                .gte('fecha_local', `${stringInicioLimpio} 00:00:00`)
+                .lte('fecha_local', `${stringFinLimpio} 23:59:59`),
             supabaseServer
                 .from('gastos')
                 .select('*')
                 .eq('tenant_id', tenantId)
-                .gte('created_at', `${fechaInicio}T00:00:00.000Z`)
-                .lte('created_at', `${fechaFin}T23:59:59.999Z`)
+                .gte('created_at', `${stringInicioLimpio}T00:00:00.000Z`)
+                .lte('created_at', `${stringFinLimpio}T23:59:59.999Z`)
         ]);
 
         if (resVentas.error) throw new Error(`Ventas db error: ${resVentas.error.message}`);
@@ -96,7 +120,11 @@ export async function POST(request) {
         const rankingPlatos = {}; 
         const porMesero = {}; 
         const porTipoOrden = { mesa: 0, domicilio: 0, llevar: 0 };
+        const precios = {};
+        const preciosCosto = {};
         let totalPropinas = 0;
+
+        const catalogoPlatos = globalThis.catalogoBunker || [];
 
         ventas.forEach(v => {
             const ventaNeta = Number(v.totalPagado || 0);
@@ -152,38 +180,53 @@ v.platosVendidosV2?.forEach(p => {
         };
     }
 
-    rankingPlatos[claveUnica].cantidad += cantidadReal;
-    rankingPlatos[claveUnica].subtotal += subtotalReal;
-});
+     rankingPlatos[claveUnica].cantidad += cantidadReal;
+            rankingPlatos[claveUnica].subtotal += subtotalReal;
+
+            // 🧠 ACOPLAMIENTO DE COSTOS (Respetando opcionalidad limpia)
+            if (!precios[claveUnica]) {
+                precios[claveUnica] = precioU;
+                const matchPlato = catalogoPlatos.find(item => (item.nombre || "").toUpperCase().trim() === nombre);
+                if (matchPlato && matchPlato.precioCosto && Number(matchPlato.precioCosto) > 0) {
+                    preciosCosto[claveUnica] = Number(matchPlato.precioCosto);
+                }
+            }
+        })
         });
 
         const totalVentasSumadas = ventas.reduce((acc, v) => acc + Number(v.totalPagado || 0), 0);
         const totalGastosSumados = gastos.reduce((acc, g) => acc + Number(g.monto || 0), 0);
 
         return NextResponse.json({ 
-            ventas, 
-            gastos,
+            ventas: ventas, // 👈 🛡️ BISTURÍ: Mapeamos el array de objetos procesados para el .forEach del frontend
+            gastos: gastos, // 👈 🛡️ BISTURÍ: Mapeamos el array de objetos procesados de gastos
             ventasTotales: totalVentasSumadas,
             gastosTotales: totalGastosSumados,
+            totalPropinas,
             porMesero,
             porTipoOrden,
+            precios,
+            preciosCosto,
+            productos: Object.keys(rankingPlatos).reduce((acc, key) => {
+                acc[key] = rankingPlatos[key].cantidad;
+                return acc;
+            }, {}),
             estadisticas: {
                 metodosPago,
                 totalPropinas,
                 topPlatos: Object.values(rankingPlatos)
-    .filter((plato) => {
-        const n = plato.nombre.toUpperCase();
-        return !n.includes('MERMA') && !n.includes('DESPERDICIO');
-    })
-    // Ordenamos de mayor a menor por el subtotal real de dinero que ingresó
-    .sort((a, b) => b.subtotal - a.subtotal)
-    .slice(0, 5)
-    .map((plato) => ({
-        nombre: plato.nombre,
-        precioUnitario: plato.precioUnitario,
-        subtotal: plato.subtotal,
-        cantidad: Number(plato.cantidad) % 1 !== 0 ? Number(plato.cantidad).toFixed(3) : Number(plato.cantidad)
-    }))
+                    .filter((plato) => {
+                        const n = plato.nombre.toUpperCase();
+                        return !n.includes('MERMA') && !n.includes('DESPERDICIO');
+                    })
+                    .sort((a, b) => b.subtotal - a.subtotal)
+                    .slice(0, 5)
+                    .map((plato) => ({
+                        nombre: plato.nombre,
+                        precioUnitario: plato.precioUnitario,
+                        subtotal: plato.subtotal,
+                        cantidad: Number(plato.cantidad) % 1 !== 0 ? Number(plato.cantidad).toFixed(3) : Number(plato.cantidad)
+                    }))
             }
         });
 

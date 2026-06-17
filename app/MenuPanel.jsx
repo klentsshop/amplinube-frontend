@@ -81,15 +81,15 @@ export default function MenuPanel({ configNegocio: configInyectada }) {
     const rep = useReportes(getFechaBogota, tenantId);
     const gst = useGastos(tenantId);
 
-    const acc = useAccesos(RESTAURANTE_CONFIG, setNombreMesero, {
-        // ✅ Mantenemos tu lógica original de éxito administrativo
-        onAdminSuccess: (pin) => { 
-            rep.setMostrarAdmin(true); 
-            setTimeout(() => {
-                rep.cargarReporteAdmin(pin);
-            }, 100);
+   const acc = useAccesos(RESTAURANTE_CONFIG, setNombreMesero, {
+        // 🛡️ ENLACE DE ALTA INGENIERÍA: Carga los datos primero, abre la ventana solo al confirmar validez
+        onAdminSuccess: async (pin) => { 
+            const exito = await rep.cargarReporteAdmin(pin);
+            if (exito) {
+                rep.setMostrarAdmin(true);
+            }
         }
-    }, tenantId); // 👈 El tenantId entra como cuarto parámetro limpio
+    }, tenantId);
 
     const ord = useOrdenHandlers({
         cart, total, clearCart, clearWithStockReturn, setCartFromOrden, eliminarLineaConStock, apiGuardar, apiEliminar, 

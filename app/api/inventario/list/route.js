@@ -10,12 +10,13 @@ export async function GET(request) {
         const tenantId = searchParams.get('tenantId') || searchParams.get('tenant');
         const buscar = searchParams.get('search') || '';
 
-        if (!tenantId || tenantId === 'undefined') {
-            return NextResponse.json({ error: "Tenant ID es requerido" }, { status: 400 });
+        // 🛡️ CONTROL PERIMETRAL: Bloqueo inmediato contra bots de escaneo o strings corruptos
+        if (!tenantId || tenantId === 'undefined' || tenantId === 'null' || tenantId.includes('wp-')) {
+            return NextResponse.json({ error: "Acceso no autorizado o Tenant ID inválido" }, { status: 400 });
         }
 
-        console.log(`🔍 Listando inventario maestro desde Supabase para el Tenant: ${tenantId}`);
-
+        const tenantLimpio = tenantId.toLowerCase().trim();
+        console.log(`🔍 Listando inventario maestro desde Supabase para el Tenant: ${tenantLimpio}`);
         // 1. Inicializamos la query con la selección de campos exacta
         let query = supabaseServer
             .from('inventarios')
@@ -29,7 +30,7 @@ export async function GET(request) {
                 barcode,
                 codigoBalanza:codigo_balanza
             `)
-            .eq('tenant_id', tenantId);
+            .eq('tenant_id', tenantLimpio);
 
         // ⚡ Aplicamos el filtro de búsqueda de manera directa sobre la query viva
         if (buscar.trim() !== '') {
@@ -59,8 +60,8 @@ export async function GET(request) {
                 const { data: cacheRow } = await supabaseServer
                     .from('catalog_cache')
                     .select('payload_json')
-                    .eq('tenant_host', tenantId.toLowerCase().trim())
-                    .single();
+                    .eq('tenant_host', tenantLimpio) // 👈 Cambiado a tenantLimpio
+                    .maybeSingle(); 
 
                 // Extraemos la colección estática de inventarios guardada en el payload
                 const p = cacheRow?.payload_json;
@@ -68,15 +69,16 @@ export async function GET(request) {
 
                 if (catalogoInsumosBunker && catalogoInsumosBunker.length > 0) {
                     // Preparamos los registros masivos para inyectar en la tabla viva de stock
+                   // Preparamos los registros masivos para inyectar en la tabla viva de stock
                     const filasParaInyectar = catalogoInsumosBunker.map(insumo => ({
-                        tenant_id: tenantId,
+                        tenant_id: tenantLimpio, // 👈 Cambiado a tenantLimpio
                         insumo_id: insumo._id,
                         nombre: (insumo.nombre || "Insumo sin nombre").toUpperCase().trim(),
                         barcode: insumo.barcode || "",
                         codigo_balanza: insumo.codigoBalanza || insumo.codigo_balanza || "",
                         unidad_medida: insumo.unidadMedida || insumo.unidad_medida || "unidades",
                         stock_minimo: Number(insumo.stockMinimo || insumo.stock_minimo || 5),
-                        stock_actual: 0.000 // Arrancan limpios listos para cargas de inventario
+                        stock_actual: 0.000 
                     }));
 
                     // Inserción masiva veloz
@@ -98,7 +100,7 @@ export async function GET(request) {
                                 barcode,
                                 codigoBalanza:codigo_balanza
                             `)
-                            .eq('tenant_id', tenantId)
+                            .eq('tenant_id', tenantLimpio) // 👈 Cambiado a tenantLimpio
                             .order('nombre', { ascending: true });
                         
                         insumos = recarga;

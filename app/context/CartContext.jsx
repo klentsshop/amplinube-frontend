@@ -192,6 +192,7 @@ export function CartProvider({ children, tenantId }) {
       _id: p._id || p.id || p.nombrePlato,
       nombre: p.nombrePlato,
       precio: cleanPrice(p.precioUnitario),
+      precioCosto: Number(p.precioCosto || 0),
       cantidad: Number(p.cantidad) || 1,
       precioNum: cleanPrice(p.precioUnitario),
       subtotalNum: cleanPrice(p.precioUnitario) * (Number(p.cantidad) || 1),

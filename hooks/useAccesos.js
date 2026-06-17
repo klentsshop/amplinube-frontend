@@ -65,13 +65,14 @@ export function useAccesos(config, setNombreMesero, { onAdminSuccess } = {}, ten
             });
             const data = await res.json();
 
-            if (data.autorizado) {
-                if (onAdminSuccess) onAdminSuccess(pin);
+            if (res.ok && data.autorizado) {
+                // Executamos el callback pasando el PIN verificado de manera síncrona
+                if (onAdminSuccess) await onAdminSuccess(pin);
             } else {
                 alert("❌ PIN administrativo incorrecto.");
             }
         } catch (error) {
-            alert("❌ Error de seguridad.");
+            alert("❌ Error de seguridad o conexión.");
         }
     };
 

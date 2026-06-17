@@ -136,20 +136,10 @@ export default function ConfigImpresionModal({ isOpen, onClose, categorias, tena
             cargarSeguridadNegocio();
         }
 
-        // 2. 🛡️ CONTROL DE INTEGRIDAD Y CONSUMO PARA LOS 1,721 INSUMOS
-        if (pestanaActiva === 'inventario' || pestanaActiva === 'productos') {
-            // Si el buscador está vacío, cargamos la lista inicial de inmediato sin esperas
-            if (!busquedaInv.trim()) {
-                cargarInventarioAdmin();
-            } else {
-                // Si el cajero está digitando, cancelamos la petición anterior en ráfaga
-                if (timerInventarioRef.current) clearTimeout(timerInventarioRef.current);
-
-                // Esperamos 400ms de calma antes de ir a la base de datos a buscar el insumo para editar
-                timerInventarioRef.current = setTimeout(() => {
-                    cargarInventarioAdmin();
-                }, 400);
-            }
+        // 2. 🛡️ CONTROL DE INTEGRIDAD: Solo cargamos el inventario maestro al entrar a la pestaña.
+        // Las búsquedas en caliente e inserciones se manejan por demanda interna sin ráfagas.
+        if (pestanaActiva === 'inventario' && !busquedaInv.trim()) {
+            cargarInventarioAdmin();
         }
 
         return () => {

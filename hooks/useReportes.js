@@ -73,40 +73,14 @@ export function useReportes(getFechaBogota, tenantId) {
 
                 totalVentasNetas += ventaNeta;
                 totalPropinas += propina;
-
-                // ================================================================
+                   // ================================================================
                 // 🛡️ REGLA CONTABLE RE-BLINDADA: SUMATORIA DIRECTA POR COLUMNAS
                 // Prioridad absoluta a pagoEfectivo, pagoTarjeta y pagoDigital que vienen de Supabase
-                // Se descuenta la propina para que el desglose coincida exactamente con las Ventas Netas
                 // ================================================================
                 if (v.pagoEfectivo > 0 || v.pagoTarjeta > 0 || v.pagoDigital > 0) {
-                    let ef = v.pagoEfectivo || 0;
-                    let tj = v.pagoTarjeta || 0;
-                    let dg = v.pagoDigital || 0;
-                    let propinaRestante = propina;
-
-                    // Descontamos la propina del efectivo si existe
-                    if (propinaRestante > 0 && ef > 0) {
-                        const descuento = Math.min(ef, propinaRestante);
-                        ef -= descuento;
-                        propinaRestante -= descuento;
-                    }
-                    // Si aún queda propina por descontar, la quitamos de tarjeta
-                    if (propinaRestante > 0 && tj > 0) {
-                        const descuento = Math.min(tj, propinaRestante);
-                        tj -= descuento;
-                        propinaRestante -= descuento;
-                    }
-                    // Si aún queda, la quitamos de digital
-                    if (propinaRestante > 0 && dg > 0) {
-                        const descuento = Math.min(dg, propinaRestante);
-                        dg -= descuento;
-                        propinaRestante -= descuento;
-                    }
-
-                    metodos.efectivo += ef;
-                    metodos.tarjeta += tj;
-                    metodos.digital += dg;
+                    metodos.efectivo += (v.pagoEfectivo || 0);
+                    metodos.tarjeta += (v.pagoTarjeta || 0);
+                    metodos.digital += (v.pagoDigital || 0);
                 } else {
                     // Fallback seguro de retrocompatibilidad por si hay registros viejos sin columnas planas
                     let procesado = false;
@@ -233,10 +207,12 @@ setReporteAdmin({
     estadisticas: estadisticasSaneadas
 });
 
-            setMostrarAdmin(true);
+       setMostrarAdmin(true);
+            return true; // 👈 🛡️ Retornamos éxito al padre
         } catch (error) {
             console.error("🔥 Error admin:", error);
             alert(error.message || "Error al cargar reporte administrativo.");
+            return false; // 👈 🛡️ Retornamos falla al padre para bloquear UI
         } finally {
             setCargandoAdmin(false);
         }
