@@ -20,16 +20,52 @@ export async function POST(request) {
 
         const result = await sanityClientServer.create(nuevoMeseroDoc);
 
-        // 🪓 GUILLOTINA SÍNCRONA: Purgamos la caché para que el nuevo mesero aparezca en el select del POS
         try {
             const { supabaseServer } = await import('@/lib/supabase');
-            await supabaseServer
+            const tenantKey = tenantId.toLowerCase().trim();
+
+            // 1. Traemos el documento de caché actual
+            const { data: registroActual } = await supabaseServer
                 .from('catalog_cache')
-                .delete()
-                .eq('tenant_host', tenantId.toLowerCase().trim());
-            console.log(`🗑️ Caché invalidado síncronamente tras crear mesero para: ${tenantId}`);
+                .select('payload_json')
+                .eq('tenant_host', tenantKey)
+                .single();
+
+            if (registroActual && Array.isArray(registroActual.payload_json)) {
+                // 2. Preparamos el nuevo objeto simulando la respuesta exacta de Sanity
+                const nuevoMeseroCache = {
+                    _id: result._id,
+                    _type: 'mesero',
+                    nombre: nombre.trim().toUpperCase(),
+                    tenant: tenantId,
+                    activo: activo !== false
+                };
+
+                // 3. Lo inyectamos al inicio del array plano en memoria
+                const nuevoPayload = [nuevoMeseroCache, ...registroActual.payload_json];
+
+                // 4. Escribimos encima de la fila sin dejarla vacía en ningún milisegundo
+                await supabaseServer
+                    .from('catalog_cache')
+                    .upsert({ 
+                        tenant_host: tenantKey, 
+                        payload_json: nuevoPayload, 
+                        updated_at: new Date().toISOString() 
+                    }, { onConflict: 'tenant_host' });
+                
+                console.log(`⚡ Caché actualizado en caliente tras creación de mesero para: ${tenantId}`);
+            } else {
+                // 🔥 Inicializa el array plano directamente con el primer mesero si la caché venía vacía
+                await supabaseServer
+                    .from('catalog_cache')
+                    .upsert({ 
+                        tenant_host: tenantKey, 
+                        payload_json: [nuevoMeseroCache], 
+                        updated_at: new Date().toISOString() 
+                    }, { onConflict: 'tenant_host' });
+            }
         } catch (cacheError) {
-            console.warn("⚠️ Falla no-bloqueante al purgar el catálogo desde POST meseros:", cacheError.message);
+            console.warn("⚠️ Falla no-bloqueante al actualizar la caché en POST meseros:", cacheError.message);
         }
 
         return NextResponse.json({ ok: true, item: result });
@@ -57,17 +93,44 @@ export async function PUT(request) {
             .patch(itemId)
             .set(camposAActualizar)
             .commit();
-
-        // 🪓 GUILLOTINA SÍNCRONA: Si se suspende o edita al mesero, la terminal debe enterarse al instante
-        try {
+try {
             const { supabaseServer } = await import('@/lib/supabase');
-            await supabaseServer
+            const tenantKey = tenantId.toLowerCase().trim();
+
+            const { data: registroActual } = await supabaseServer
                 .from('catalog_cache')
-                .delete()
-                .eq('tenant_host', tenantId.toLowerCase().trim());
-            console.log(`🗑️ Caché invalidado síncronamente tras actualizar mesero para: ${tenantId}`);
+                .select('payload_json')
+                .eq('tenant_host', tenantKey)
+                .single();
+
+            if (registroActual && Array.isArray(registroActual.payload_json)) {
+                // 1. Mapeamos el array plano reemplazando únicamente las propiedades editadas del mesero coincidente
+                const nuevoPayload = registroActual.payload_json.map(item => {
+                    if (item?._id === itemId) {
+                        return {
+                            ...item,
+                            ...(nombre !== undefined && { nombre: nombre.trim().toUpperCase() }),
+                            ...(activo !== undefined && { activo: Boolean(activo) })
+                        };
+                    }
+                    return item;
+                });
+
+                // 2. Guardamos la nueva lista en Supabase mediante upsert atómico
+                await supabaseServer
+                    .from('catalog_cache')
+                    .upsert({ 
+                        tenant_host: tenantKey, 
+                        payload_json: nuevoPayload, 
+                        updated_at: new Date().toISOString() 
+                    }, { onConflict: 'tenant_host' });
+
+                console.log(`⚡ Caché actualizado en caliente tras modificación de mesero para: ${tenantId}`);
+            } else {
+                console.warn(`⚠️ No se pudo actualizar mesero en caliente: la caché de ${tenantKey} no existe.`);
+            }
         } catch (cacheError) {
-            console.warn("⚠️ Falla no-bloqueante al purgar el catálogo desde PUT meseros:", cacheError.message);
+            console.warn("⚠️ Falla no-bloqueante al actualizar la caché en PUT meseros:", cacheError.message);
         }
 
         return NextResponse.json({ ok: true, id: result._id });
@@ -89,16 +152,35 @@ export async function DELETE(request) {
 
           await sanityClientServer.delete(itemId);
 
-        // 🪓 GUILLOTINA SÍNCRONA: Sacamos de circulación al mesero eliminado eliminando la caché
         try {
             const { supabaseServer } = await import('@/lib/supabase');
-            await supabaseServer
+            const tenantKey = tenantId.toLowerCase().trim();
+
+            const { data: registroActual } = await supabaseServer
                 .from('catalog_cache')
-                .delete()
-                .eq('tenant_host', tenantId.toLowerCase().trim());
-            console.log(`🗑️ Caché invalidado síncronamente tras eliminar mesero para: ${tenantId}`);
+                .select('payload_json')
+                .eq('tenant_host', tenantKey)
+                .single();
+
+            if (registroActual && Array.isArray(registroActual.payload_json)) {
+                // 1. Filtramos el array para remover al vendedor eliminado sin tocar el resto del catálogo
+                const nuevoPayload = registroActual.payload_json.filter(item => item?._id !== itemId);
+
+                // 2. Consolidamos el array resultante directamente en Supabase
+                await supabaseServer
+                    .from('catalog_cache')
+                    .upsert({ 
+                        tenant_host: tenantKey, 
+                        payload_json: nuevoPayload, 
+                        updated_at: new Date().toISOString() 
+                    }, { onConflict: 'tenant_host' });
+
+                console.log(`⚡ Mesero removido de la caché en caliente para: ${tenantId}`);
+            } else {
+                console.log(`ℹ️ Remoción omitida: la caché de ${tenantKey} ya se encontraba limpia.`);
+            }
         } catch (cacheError) {
-            console.warn("⚠️ Falla no-bloqueante al purgar el catálogo desde DELETE meseros:", cacheError.message);
+            console.warn("⚠️ Falla no-bloqueante al actualizar la caché en DELETE meseros:", cacheError.message);
         }
 
         return NextResponse.json({ ok: true });

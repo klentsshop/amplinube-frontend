@@ -25,18 +25,51 @@ export async function POST(request) {
 
          const result = await sanityClientServer.create(nuevaCategoriaDoc);
 
-        // 🪓 GUILLOTINA SÍNCRONA LIMPIA (Ajustada a supabaseServer y sin fetch masivo)
+       // ⚡ ACTUALIZACIÓN EN CALIENTE DE LA CACHÉ EN EL ARRAY PLANO (MATCH 100% CON TU JSON)
         try {
             const { supabaseServer } = await import('@/lib/supabase');
-            await supabaseServer
-                .from('catalog_cache')
-                .delete()
-                .eq('tenant_host', tenantId.toLowerCase().trim());
-            console.log(`🗑️ Caché invalidado síncronamente tras inserción de categoría para: ${tenantId}`);
-        } catch (cacheError) {
-            console.warn("⚠️ Falla no-bloqueante al purgar el catálogo en Supabase:", cacheError.message);
-        }
+            const tenantKey = tenantId.toLowerCase().trim();
 
+            const { data: registroActual } = await supabaseServer
+                .from('catalog_cache')
+                .select('payload_json')
+                .eq('tenant_host', tenantKey)
+                .single();
+
+            const nuevaCategoriaCache = {
+                _id: result._id,
+                _type: 'categoria',
+                titulo: titulo,
+                slug: { _type: 'slug', current: slug },
+                seImprime: seImprime ?? true,
+                tenant: tenantId,
+                _createdAt: new Date().toISOString(),
+                _updatedAt: new Date().toISOString()
+            };
+
+            if (registroActual && Array.isArray(registroActual.payload_json)) {
+                const nuevoPayload = [nuevaCategoriaCache, ...registroActual.payload_json];
+
+                await supabaseServer
+                    .from('catalog_cache')
+                    .upsert({ 
+                        tenant_host: tenantKey, 
+                        payload_json: nuevoPayload, 
+                        updated_at: new Date().toISOString() 
+                    }, { onConflict: 'tenant_host' });
+            } else {
+                await supabaseServer
+                    .from('catalog_cache')
+                    .upsert({ 
+                        tenant_host: tenantKey, 
+                        payload_json: [nuevaCategoriaCache], 
+                        updated_at: new Date().toISOString() 
+                    }, { onConflict: 'tenant_host' });
+            }
+            console.log(`⚡ Categoría inyectada en caliente en el array plano para: ${tenantId}`);
+        } catch (cacheError) {
+            console.warn("⚠️ Falla no-bloqueante al actualizar la caché en POST categorías:", cacheError.message);
+        }
         return NextResponse.json({ ok: true, id: result._id });
 
     } catch (error) {
@@ -72,16 +105,45 @@ export async function PUT(request) {
             })
             .commit(); // Inyecta y consolida el cambio en la nube
 
-        // 🪓 GUILLOTINA SÍNCRONA LIMPIA: Purgamos la fila en Supabase para este restaurante
-       try {
+       // ⚡ ACTUALIZACIÓN EN CALIENTE DE LA CACHÉ EN ARRAY PLANO
+        try {
             const { supabaseServer } = await import('@/lib/supabase');
-            await supabaseServer
+            const tenantKey = tenantId.toLowerCase().trim();
+
+            const { data: registroActual } = await supabaseServer
                 .from('catalog_cache')
-                .delete()
-                .eq('tenant_host', tenantId.toLowerCase().trim());
-            console.log(`🗑️ Caché invalidado síncronamente tras actualización de categoría para: ${tenantId}`);
+                .select('payload_json')
+                .eq('tenant_host', tenantKey)
+                .single();
+
+            if (registroActual && Array.isArray(registroActual.payload_json)) {
+                const nuevoPayload = registroActual.payload_json.map(item => {
+                    if (item?._id === categoriaId) {
+                        return {
+                            ...item,
+                            titulo: titulo,
+                            slug: { _type: 'slug', current: slug },
+                            seImprime: seImprime === true,
+                            _updatedAt: new Date().toISOString()
+                        };
+                    }
+                    return item;
+                });
+
+                await supabaseServer
+                    .from('catalog_cache')
+                    .upsert({ 
+                        tenant_host: tenantKey, 
+                        payload_json: nuevoPayload, 
+                        updated_at: new Date().toISOString() 
+                    }, { onConflict: 'tenant_host' });
+
+                console.log(`⚡ Categoría actualizada en caliente en array plano para: ${tenantId}`);
+            } else {
+                console.warn(`⚠️ No se pudo actualizar categoría: la caché plana de ${tenantKey} no existe.`);
+            }
         } catch (cacheError) {
-            console.warn("⚠️ Falla no-bloqueante al purgar el catálogo en Supabase:", cacheError.message);
+            console.warn("⚠️ Falla no-bloqueante al actualizar el catálogo desde PUT categorías:", cacheError.message);
         }
 
         return NextResponse.json({ ok: true, id: result._id });
@@ -109,18 +171,36 @@ export async function DELETE(request) {
         // TU LÓGICA ORIGINAL INTACTA: Borrado atómico directo en Sanity
         await sanityClientServer.delete(categoriaId);
 
-        // 🪓 GUILLOTINA SÍNCRONA LIMPIA: Evitamos que el POS siga mostrando la categoría eliminada
+        // ⚡ REMOCIÓN EN CALIENTE DE LA CACHÉ (Evita peticiones masivas a Sanity)
+// ⚡ REMOCIÓN EN CALIENTE DE LA CACHÉ PLANA
         try {
             const { supabaseServer } = await import('@/lib/supabase');
-            await supabaseServer
-                .from('catalog_cache')
-                .delete()
-                .eq('tenant_host', tenantId.toLowerCase().trim());
-            console.log(`🗑️ Caché invalidado síncronamente tras eliminación de categoría para: ${tenantId}`);
-        } catch (cacheError) {
-            console.warn("⚠️ Falla no-bloqueante al purgar el catálogo en Supabase:", cacheError.message);
-        }
+            const tenantKey = tenantId.toLowerCase().trim();
 
+            const { data: registroActual } = await supabaseServer
+                .from('catalog_cache')
+                .select('payload_json')
+                .eq('tenant_host', tenantKey)
+                .single();
+
+            if (registroActual && Array.isArray(registroActual.payload_json)) {
+                const nuevoPayload = registroActual.payload_json.filter(item => item?._id !== categoriaId);
+
+                await supabaseServer
+                    .from('catalog_cache')
+                    .upsert({ 
+                        tenant_host: tenantKey, 
+                        payload_json: nuevoPayload, 
+                        updated_at: new Date().toISOString() 
+                    }, { onConflict: 'tenant_host' });
+
+                console.log(`⚡ Categoría removida del array plano de la caché para: ${tenantId}`);
+            } else {
+                console.log(`ℹ️ Remoción omitida: la caché plana de ${tenantKey} no existía.`);
+            }
+        } catch (cacheError) {
+            console.warn("⚠️ Falla no-bloqueante al remover la categoría de la caché plana:", cacheError.message);
+        }
         return NextResponse.json({ ok: true });
 
     } catch (error) {

@@ -11,10 +11,19 @@ export function useOrdenes(providedTenantId) {
     const tenantId = (!providedTenantId || providedTenantId === 'demo') ? CURRENT_TENANT : providedTenantId;
     const { data: ordenes = [], mutate, error } = useSWR(tenantId ? `/api/ordenes/list?tenantId=${tenantId}` : null, fetcher, {
         refreshInterval: 8000, 
-        revalidateOnFocus: false,
+        revalidateOnFocus: false, // Evita bombardeos al tocar la pantalla si ya está en bucle
         revalidateOnReconnect: true,
         dedupingInterval: 3000,       
-        revalidateIfStale: true     
+        revalidateIfStale: true,
+        
+        // 🛡️ GUILLOTINA SENIOR ANTI-CONSUMO FANTASMA:
+        // 1. Si la tablet se bloquea, se apaga o cambian de pestaña, detiene el bucle de 8s de inmediato.
+        isPaused: () => {
+            if (typeof document !== 'undefined' && document.hidden) {
+                return true; // Congela el pooling a cero requests
+            }
+            return false;
+        }
     });
 
     const [cargandoAccion, setCargandoAccion] = useState(false);

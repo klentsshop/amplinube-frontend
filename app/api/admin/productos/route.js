@@ -38,17 +38,64 @@ export async function POST(req) {
       // USAMOS EL CLIENTE CON PERMISOS
         const resultado = await sanityClientServer.create(docProducto);
 
-        // 🪓 GUILLOTINA SÍNCRONA: El nuevo producto debe forzar la actualización inmediata de la rejilla
+        // ⚡ ACTUALIZACIÓN EN CALIENTE DE LA CACHÉ EN EL ARRAY PLANO (MATCH 100% CON TU JSON)
         if (data.tenantId) {
             try {
                 const { supabaseServer } = await import('@/lib/supabase');
-                await supabaseServer
+                const tenantKey = data.tenantId.toLowerCase().trim();
+
+                // 1. Traemos la caché real desde payload_json
+                const { data: registroActual } = await supabaseServer
                     .from('catalog_cache')
-                    .delete()
-                    .eq('tenant_host', data.tenantId.toLowerCase().trim());
-                console.log(`🗑️ Caché invalidado síncronamente tras crear producto para: ${data.tenantId}`);
+                    .select('payload_json')
+                    .eq('tenant_host', tenantKey)
+                    .single();
+
+                // 2. Armamos el objeto clonando la respuesta nativa de Sanity
+                const nuevoProductoCache = {
+                    _id: resultado._id,
+                    _type: 'plato',
+                    nombre: data.nombre.trim(),
+                    precio: Number(data.precio),
+                    precioCosto: Number(data.precioCosto || 0),
+                    tenant: data.tenantId,
+                    barcode: data.barcode || null,
+                    categoria: { _type: 'reference', _ref: data.categoria },
+                    ...(resultado.imagenUrl ? { imagenUrl: resultado.imagenUrl } : {}), // Si el cliente ya resolvió la URL
+                    ...(data.imagen ? { imagen: data.imagen } : {}),
+                    _createdAt: new Date().toISOString(),
+                    _updatedAt: new Date().toISOString(),
+                    disponible: data.disponible !== false,
+                    totalVentas: 0,
+                    codigoBalanza: data.codigoBalanza || null,
+                    recetaInsumos: docProducto.recetaInsumos,
+                    controlaInventario: data.controlaInventario || false
+                };
+
+                if (registroActual && Array.isArray(registroActual.payload_json)) {
+                    // 3. Lo inyectamos directo en la raíz del array plano
+                    const nuevoPayload = [nuevoProductoCache, ...registroActual.payload_json];
+
+                    await supabaseServer
+                        .from('catalog_cache')
+                        .upsert({ 
+                            tenant_host: tenantKey, 
+                            payload_json: nuevoPayload, 
+                            updated_at: new Date().toISOString() 
+                        }, { onConflict: 'tenant_host' });
+                } else {
+                    // Paracaídas si el negocio es completamente nuevo
+                    await supabaseServer
+                        .from('catalog_cache')
+                        .upsert({ 
+                            tenant_host: tenantKey, 
+                            payload_json: [nuevoProductoCache], 
+                            updated_at: new Date().toISOString() 
+                        }, { onConflict: 'tenant_host' });
+                }
+                console.log(`⚡ Producto inyectado en caliente en el array plano para: ${data.tenantId}`);
             } catch (cacheError) {
-                console.warn("⚠️ Falla no-bloqueante al purgar catálogo desde POST productos:", cacheError.message);
+                console.warn("⚠️ Falla no-bloqueante al actualizar el catálogo desde POST productos:", cacheError.message);
             }
         }
 
@@ -90,26 +137,63 @@ export async function PUT(req) {
         // 🚀 LÍNEA CORREGIDA MINUCIOSAMENTE:
         // Solo si el usuario seleccionó una imagen nueva, se añade al objeto de actualización.
         // Si no se tocó la imagen, preservamos intacta la que ya estaba guardada en Sanity.
-        if (data.imagen) {
-            camposAActualizar.imagen = data.imagen;
-        }
+        if (data.hasOwnProperty('imagen')) {
+    camposAActualizar.imagen = data.imagen ? data.imagen : null;
+}
 
         // USAMOS EL CLIENTE CON PERMISOS PARA CONFIRMAR EL CAMBIO
         await sanityClientServer.patch(data.productoId)
             .set(camposAActualizar)
             .commit();
 
-        // 🪓 GUILLOTINA SÍNCRONA: Si cambia el precio o nombre, el búnker viejo del POS se destruye
+        // ⚡ ACTUALIZACIÓN EN CALIENTE DE LA CACHÉ EN ARRAY PLANO
         if (data.tenantId) {
             try {
                 const { supabaseServer } = await import('@/lib/supabase');
-                await supabaseServer
+                const tenantKey = data.tenantId.toLowerCase().trim();
+
+                const { data: registroActual } = await supabaseServer
                     .from('catalog_cache')
-                    .delete()
-                    .eq('tenant_host', data.tenantId.toLowerCase().trim());
-                console.log(`🗑️ Caché invalidado síncronamente tras actualizar producto para: ${data.tenantId}`);
+                    .select('payload_json')
+                    .eq('tenant_host', tenantKey)
+                    .single();
+
+                if (registroActual && Array.isArray(registroActual.payload_json)) {
+                    // Mapeamos el array plano buscando por _id directo en la raíz del array
+                    const nuevoPayload = registroActual.payload_json.map(item => {
+                        if (item?._id === data.productoId) {
+                            return {
+                                ...item,
+                                nombre: data.nombre.trim(),
+                                precio: Number(data.precio),
+                                precioCosto: Number(data.precioCosto || 0),
+                                categoria: { _type: 'reference', _ref: data.categoria },
+                                disponible: data.disponible,
+                                controlaInventario: data.controlaInventario,
+                                barcode: data.barcode,
+                                codigoBalanza: data.codigoBalanza,
+                                ...(data.imagen && { imagen: data.imagen }),
+                                recetaInsumos: camposAActualizar.recetaInsumos,
+                                _updatedAt: new Date().toISOString()
+                            };
+                        }
+                        return item;
+                    });
+
+                    await supabaseServer
+                        .from('catalog_cache')
+                        .upsert({ 
+                            tenant_host: tenantKey, 
+                            payload_json: nuevoPayload, 
+                            updated_at: new Date().toISOString() 
+                        }, { onConflict: 'tenant_host' });
+                    
+                    console.log(`⚡ Producto actualizado en caliente en array plano para: ${data.tenantId}`);
+                } else {
+                    console.warn(`⚠️ No se pudo actualizar producto: la caché plana de ${tenantKey} no existe.`);
+                }
             } catch (cacheError) {
-                console.warn("⚠️ Falla no-bloqueante al purgar catálogo desde PUT productos:", cacheError.message);
+                console.warn("⚠️ Falla no-bloqueante al actualizar el catálogo desde PUT productos:", cacheError.message);
             }
         }
 
@@ -130,20 +214,38 @@ export async function DELETE(req) {
         // 🛡️ Conexión directa a Sanity usando el token con permisos plenos de escritura
         await sanityClientServer.delete(data.productoId);
 
-        // 🪓 GUILLOTINA SÍNCRONA: Sacamos el plato del menú del restaurante purgando la caché
+        // ⚡ REMOCIÓN EN CALIENTE DE LA CACHÉ PLANA
         if (data.tenantId) {
             try {
                 const { supabaseServer } = await import('@/lib/supabase');
-                await supabaseServer
+                const tenantKey = data.tenantId.toLowerCase().trim();
+
+                const { data: registroActual } = await supabaseServer
                     .from('catalog_cache')
-                    .delete()
-                    .eq('tenant_host', data.tenantId.toLowerCase().trim());
-                console.log(`🗑️ Caché invalidado síncronamente tras eliminar producto para: ${data.tenantId}`);
+                    .select('payload_json')
+                    .eq('tenant_host', tenantKey)
+                    .single();
+
+                if (registroActual && Array.isArray(registroActual.payload_json)) {
+                    // Filtramos directamente sobre la raíz del array plano para remover el _id del plato
+                    const nuevoPayload = registroActual.payload_json.filter(item => item?._id !== data.productoId);
+
+                    await supabaseServer
+                        .from('catalog_cache')
+                        .upsert({ 
+                            tenant_host: tenantKey, 
+                            payload_json: nuevoPayload, 
+                            updated_at: new Date().toISOString() 
+                        }, { onConflict: 'tenant_host' });
+                    
+                    console.log(`⚡ Producto removido del array plano de la caché para: ${data.tenantId}`);
+                } else {
+                    console.log(`ℹ️ Remoción omitida: la caché plana de ${tenantKey} no existía.`);
+                }
             } catch (cacheError) {
-                console.warn("⚠️ Falla no-bloqueante al purgar catálogo desde DELETE productos:", cacheError.message);
+                console.warn("⚠️ Falla no-bloqueante al remover el producto de la caché plana:", cacheError.message);
             }
         }
-
         return NextResponse.json({ ok: true });
     } catch (error) {
         console.error("🔥 Error en DELETE de productos:", error);
