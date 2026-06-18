@@ -63,17 +63,8 @@ export async function POST(request) {
             clienteProcesado._id
         );
 
-        // 🪓 GUILLOTINA SÍNCRONA: Si la lista de clientes elegibles del POS vive en la caché, la destruimos
-        try {
-            await supabaseServer
-                .from('catalog_cache')
-                .delete()
-                .eq('tenant_host', tenantId.toLowerCase().trim());
-            console.log(`🗑️ Caché del catálogo purgado síncronamente en guardado de cliente para: ${tenantId}`);
-        } catch (cacheError) {
-            console.warn("⚠️ Falla no-bloqueante al purgar búnker desde save clientes:", cacheError.message);
-        }
-
+       // 🛡️ LUPA SENIOR: Se eliminó el borrado de la caché. 
+        // No destruimos la configuración global del búnker por la inserción o edición de un cliente.
         console.log("===============================================");
 
         // 4. Retornamos el objeto clonando la estructura limpia que el POS necesita leer

@@ -58,7 +58,15 @@ export async function POST(request) {
             );
         }
 
-        return NextResponse.json({ ...orden, exists: true });
+        return new NextResponse(JSON.stringify({ ...orden, exists: true }), {
+            status: 200,
+            headers: {
+                'Content-Type': 'application/json',
+                'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0',
+                'Pragma': 'no-cache',
+                'Expires': '0',
+            },
+        });
 
     } catch (error) {
         console.error('[API_GET_ORDEN_ERROR]:', error);

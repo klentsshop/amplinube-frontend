@@ -44,14 +44,47 @@ export async function POST(request) {
     throw new Error(`SUPABASE_INSERT_FAILED: ${supabaseError.message}`);
 }
 
-// 🪓 DESTRUCCIÓN DE CACHÉ: Asegura que el nuevo ítem aparezca inmediatamente en el ProductGrid
-try {
-    const { supabaseServer } = await import('@/lib/supabase');
-    await supabaseServer.from('catalog_cache').delete().eq('tenant_host', tenantId.toLowerCase().trim());
-    console.log(`🗑️ Caché del catálogo purgado síncronamente en POST inventario para: ${tenantId}`);
-} catch (e) {
-    console.error("⚠️ Error purgando búnker en inserción de inventario:", e);
-}
+// ⚡ ACTUALIZACIÓN EN CALIENTE DE LA CACHÉ EN EL ARRAY PLANO (MATCH 100% CON TU JSON)
+        try {
+            const tenantKey = tenantId.toLowerCase().trim();
+
+            // 1. Traemos el escudo plano actual
+            const { data: registroActual } = await supabaseServer
+                .from('catalog_cache')
+                .select('payload_json')
+                .eq('tenant_host', tenantKey)
+                .single();
+
+            // 2. Simulamos el objeto exacto de inventario según tu JSON real
+            const nuevoInventarioCache = {
+                _id: idGenerado,
+                _type: 'inventario',
+                nombre: nombre.trim(),
+                tenant: tenantId,
+                barcode: barcode ? barcode.trim() : null,
+                _createdAt: resultSanity._createdAt || new Date().toISOString(),
+                _updatedAt: resultSanity._updatedAt || new Date().toISOString(),
+                stockActual: Number(stockActual) || 0,
+                stockMinimo: Number(stockMinimo) || 5,
+                codigoBalanza: codigoBalanza ? codigoBalanza.trim() : null
+            };
+
+            if (registroActual && Array.isArray(registroActual.payload_json)) {
+                // 3. Lo inyectamos al principio de la raíz del array plano
+                const nuevoPayload = [nuevoInventarioCache, ...registroActual.payload_json];
+
+                await supabaseServer
+                    .from('catalog_cache')
+                    .upsert({ 
+                        tenant_host: tenantKey, 
+                        payload_json: nuevoPayload, 
+                        updated_at: new Date().toISOString() 
+                    }, { onConflict: 'tenant_host' });
+            }
+            console.log(`⚡ Insumo inyectado en caliente en el array plano de caché para: ${tenantId}`);
+        } catch (cacheError) {
+            console.warn("⚠️ Falla no-bloqueante al inyectar el insumo en la caché plana:", cacheError.message);
+        }
 
 return NextResponse.json({ ok: true, item: resultSanity });
     } catch (error) {
@@ -101,14 +134,45 @@ export async function PUT(request) {
 
             if (supabaseError) throw new Error(`SUPABASE_UPDATE_FAILED: ${supabaseError.message}`);
         }
-       if (nombre !== undefined || barcode !== undefined || codigoBalanza !== undefined) {
-            try {
-                const { supabaseServer } = await import('@/lib/supabase');
-                await supabaseServer.from('catalog_cache').delete().eq('tenant_host', tenantId.toLowerCase().trim());
-                console.log(`🗑️ Caché del catálogo purgado síncronamente en PUT inventario estructural para: ${tenantId}`);
-            } catch (cacheError) {
-                console.warn("⚠️ Falla no-bloqueante al purgar el catálogo desde PUT inventario:", cacheError.message);
+       // ⚡ ACTUALIZACIÓN EN CALIENTE DE LOS INSUMOS EN EL ARRAY PLANO
+        try {
+            const tenantKey = tenantId.toLowerCase().trim();
+
+            const { data: registroActual } = await supabaseServer
+                .from('catalog_cache')
+                .select('payload_json')
+                .eq('tenant_host', tenantKey)
+                .single();
+
+            if (registroActual && Array.isArray(registroActual.payload_json)) {
+                // Mapeamos directo en la raíz del array plano buscando el itemId del insumo
+                const nuevoPayload = registroActual.payload_json.map(item => {
+                    if (item?._id === itemId && item?._type === 'inventario') {
+                        return {
+                            ...item,
+                            ...(nombre !== undefined && { nombre: nombre.trim() }),
+                            ...(barcode !== undefined && { barcode: barcode ? barcode.trim() : null }),
+                            ...(codigoBalanza !== undefined && { codigoBalanza: codigoBalanza ? codigoBalanza.trim() : null }),
+                            ...(stockMinimo !== undefined && { stockMinimo: Number(stockMinimo) }),
+                            ...(stockActual !== undefined && { stockActual: Number(stockActual) }),
+                            _updatedAt: new Date().toISOString()
+                        };
+                    }
+                    return item;
+                });
+
+                await supabaseServer
+                    .from('catalog_cache')
+                    .upsert({ 
+                        tenant_host: tenantKey, 
+                        payload_json: nuevoPayload, 
+                        updated_at: new Date().toISOString() 
+                    }, { onConflict: 'tenant_host' });
+                
+                console.log(`⚡ Insumo actualizado en caliente en array plano para: ${tenantId}`);
             }
+        } catch (cacheError) {
+            console.warn("⚠️ Falla no-bloqueante al actualizar el insumo en la caché plana:", cacheError.message);
         }
         return NextResponse.json({ ok: true, id: resultSanityId });
     } catch (error) {
@@ -170,12 +234,32 @@ export async function DELETE(request) {
                 .set({ productosCriticos: nuevasAlertas, ultimaSincronizacion: new Date().toISOString() })
                 .commit();
         }
-         try {
-            const { supabaseServer } = await import('@/lib/supabase');
-            await supabaseServer.from('catalog_cache').delete().eq('tenant_host', tenantId.toLowerCase().trim());
-            console.log(`🗑️ Caché del catálogo purgado síncronamente en DELETE inventario para: ${tenantId}`);
+         // ⚡ REMOCIÓN EN CALIENTE DEL INSUMO DENTRO DEL ARRAY PLANO
+        try {
+            const tenantKey = tenantId.toLowerCase().trim();
+
+            const { data: registroActual } = await supabaseServer
+                .from('catalog_cache')
+                .select('payload_json')
+                .eq('tenant_host', tenantKey)
+                .single();
+
+            if (registroActual && Array.isArray(registroActual.payload_json)) {
+                // Filtramos sobre la raíz del array plano para sacar el itemId del insumo borrado
+                const nuevoPayload = registroActual.payload_json.filter(item => !(item?._id === itemId && item?._type === 'inventario'));
+
+                await supabaseServer
+                    .from('catalog_cache')
+                    .upsert({ 
+                        tenant_host: tenantKey, 
+                        payload_json: nuevoPayload, 
+                        updated_at: new Date().toISOString() 
+                    }, { onConflict: 'tenant_host' });
+
+                console.log(`⚡ Insumo removido del array plano de la caché para: ${tenantId}`);
+            }
         } catch (cacheError) {
-            console.warn("⚠️ Falla no-bloqueante al purgar el catálogo desde DELETE inventario:", cacheError.message);
+            console.warn("⚠️ Falla no-bloqueante al remover el insumo de la caché plana:", cacheError.message);
         }
         return NextResponse.json({ ok: true });
     } catch (error) {

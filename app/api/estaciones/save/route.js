@@ -23,17 +23,8 @@ export async function POST(request) {
             categoriasVinculadas: Array.isArray(categorias) && categorias.length > 0 ? categorias : []
         });
 
-        // 🪓 GUILLOTINA SÍNCRONA: Si cambia el ruteo de impresión, el búnker del POS debe caer inmediatamente
-        try {
-            const { supabaseServer } = await import('@/lib/supabase');
-            await supabaseServer
-                .from('catalog_cache')
-                .delete()
-                .eq('tenant_host', tenantId.toLowerCase().trim());
-            console.log(`🗑️ Caché del catálogo purgado síncronamente en mutación de estaciones para: ${tenantId}`);
-        } catch (cacheError) {
-            console.warn("⚠️ Falla no-bloqueante al purgar búnker desde API estaciones:", cacheError.message);
-        }
+        // 🛡️ LUPA SENIOR: Se eliminó el borrado de la caché.
+        // No destruimos la configuración global del búnker por el registro de una estación de trabajo.
 
         return NextResponse.json({ success: true, result });
     } catch (error) {

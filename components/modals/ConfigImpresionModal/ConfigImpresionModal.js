@@ -12,6 +12,7 @@ import VistaProductos from './pestanas/VistaProductos';
 import VistaGastos from './pestanas/VistaGastos';
 import VistaMeseros from './pestanas/VistaMeseros';
 import VistaSeguridad from './pestanas/VistaSeguridad';
+import VistaVentas from './pestanas/VistaVentas';
 
 export default function ConfigImpresionModal({ isOpen, onClose, categorias, tenantId }) {
     // --- 1. CONTROL DE NAVEGACIÓN (Pestañas) ---
@@ -134,6 +135,9 @@ export default function ConfigImpresionModal({ isOpen, onClose, categorias, tena
         }
         if (pestanaActiva === 'seguridad') { 
             cargarSeguridadNegocio();
+        }
+        if (pestanaActiva === 'historial_ventas') {
+            // Se refresca de forma automática por el useEffect interno de la pestaña
         }
 
         // 2. 🛡️ CONTROL DE INTEGRIDAD: Solo cargamos el inventario maestro al entrar a la pestaña.
@@ -767,6 +771,7 @@ export default function ConfigImpresionModal({ isOpen, onClose, categorias, tena
                         <button onClick={() => setPestanaActiva('gastos')} style={{ flex: 1, padding: '8px 4px', border: 'none', fontSize: '0.7rem', fontWeight: 'bold', borderRadius: '6px', cursor: 'pointer', backgroundColor: pestanaActiva === 'gastos' ? 'white' : 'transparent', color: pestanaActiva === 'gastos' ? '#111827' : '#6b7280', boxShadow: pestanaActiva === 'gastos' ? '0 1px 2px rgba(0,0,0,0.05)' : 'none' }}>💸 GASTOS</button>
                         <button onClick={() => setPestanaActiva('meseros')} style={{ flex: 1, padding: '8px 4px', border: 'none', fontSize: '0.7rem', fontWeight: 'bold', borderRadius: '6px', cursor: 'pointer', backgroundColor: pestanaActiva === 'meseros' ? 'white' : 'transparent', color: pestanaActiva === 'meseros' ? '#111827' : '#6b7280', boxShadow: pestanaActiva === 'meseros' ? '0 1px 2px rgba(0,0,0,0.05)' : 'none' }}>👥 VENDEDORES</button>
                         <button onClick={() => setPestanaActiva('seguridad')} style={{ flex: 1, padding: '8px 4px', border: 'none', fontSize: '0.7rem', fontWeight: 'bold', borderRadius: '6px', cursor: 'pointer', backgroundColor: pestanaActiva === 'seguridad' ? 'white' : 'transparent', color: pestanaActiva === 'seguridad' ? '#111827' : '#6b7280', boxShadow: pestanaActiva === 'seguridad' ? '0 1px 2px rgba(0,0,0,0.05)' : 'none' }}>🔒 PINES</button>
+                        <button onClick={() => setPestanaActiva('historial_ventas')} style={{ flex: 1, padding: '8px 4px', border: 'none', fontSize: '0.7rem', fontWeight: 'bold', borderRadius: '6px', cursor: 'pointer', backgroundColor: pestanaActiva === 'historial_ventas' ? 'white' : 'transparent', color: pestanaActiva === 'historial_ventas' ? '#111827' : '#6b7280', boxShadow: pestanaActiva === 'historial_ventas' ? '0 1px 2px rgba(0,0,0,0.05)' : 'none' }}>📊 HISTORIAL VENTAS</button>
                     </div>
                 </div>
 
@@ -863,6 +868,9 @@ export default function ConfigImpresionModal({ isOpen, onClose, categorias, tena
                             guardando={guardando}
                             itemIdSeguridad={itemIdSeguridad}
                         />
+                    )}
+                    {pestanaActiva === 'historial_ventas' && (
+                        <VistaVentas tenantId={tenantId} />
                     )}
                 </div>
             </div>

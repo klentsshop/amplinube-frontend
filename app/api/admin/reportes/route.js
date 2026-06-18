@@ -12,47 +12,32 @@ export async function POST(request) {
         if (!tenantId) {
             return NextResponse.json({ error: 'Tenant ID no identificado' }, { status: 400 });
         }
-       // 🛡️ 1. VALIDACIÓN DESDE EL ESCUDO DE SUPABASE (Zero llamadas a Sanity)
         // 🛡️ 1. VALIDACIÓN DESDE EL ESCUDO DE SUPABASE (Zero llamadas a Sanity)
         let PIN_ADMIN_REAL = process.env.PIN_ADMIN;
 
+        let catalogoPlatosLocal = []; // 🛡️ Variable local segura por petición
+
         try {
-            // Buscamos el PIN en la tabla de configuración ya clonada en el búnker
             const { data: configNegocio } = await supabaseServer
                 .from('catalog_cache')
                 .select('payload_json')
                 .eq('tenant_host', tenantId.toLowerCase().trim())
                 .single();
 
-            // 🔍 LUPA SENIOR: Validamos las 2 rutas posibles del JSON clonado para asegurar compatibilidad total
-            // 🔍 LUPA SENIOR: Desestructuración elástica inmune a formatos en el Escudo de Supabase
             const rawPayload = configNegocio?.payload_json;
             let pinDesdeEscudo = null;
 
             if (Array.isArray(rawPayload)) {
-                // Caso A: La caché se empaquetó como un Array crudo de Sanity
-                globalThis.catalogoBunker = rawPayload.filter(item => item?._type === 'plato');
-                
-                // Buscamos el documento de seguridad específico dentro de la lista
+                catalogoPlatosLocal = rawPayload.filter(item => item?._type === 'plato');
                 const docSeguridad = rawPayload.find(item => item?._type === 'seguridad');
-                if (docSeguridad) {
-                    pinDesdeEscudo = docSeguridad.pinAdmin;
-                }
+                if (docSeguridad) pinDesdeEscudo = docSeguridad.pinAdmin;
             } else if (rawPayload) {
-                // Caso B: La caché se empaquetó como un Objeto estructurado
-                globalThis.catalogoBunker = rawPayload.plato || rawPayload.platos || [];
-                
-                pinDesdeEscudo = rawPayload.seguridad?.pinAdmin || 
-                                 rawPayload.configSeguridad?.pinAdmin || 
-                                 rawPayload.pinAdmin;
+                catalogoPlatosLocal = rawPayload.plato || rawPayload.platos || [];
+                pinDesdeEscudo = rawPayload.seguridad?.pinAdmin || rawPayload.configSeguridad?.pinAdmin || rawPayload.pinAdmin;
             }
 
-            // Si se recuperó un PIN válido desde cualquiera de las estructuras, se asigna al validador
-            if (pinDesdeEscudo) {
-                PIN_ADMIN_REAL = String(pinDesdeEscudo).trim();
-            }
+            if (pinDesdeEscudo) PIN_ADMIN_REAL = String(pinDesdeEscudo).trim();
         } catch (dbError) {
-            globalThis.catalogoBunker = [];
             console.warn("⚠️ No se pudo leer el PIN desde el Escudo, usando variable de entorno de respaldo.");
         }
         if (!pinAdmin || pinAdmin !== PIN_ADMIN_REAL) {
@@ -124,7 +109,7 @@ export async function POST(request) {
         const preciosCosto = {};
         let totalPropinas = 0;
 
-        const catalogoPlatos = globalThis.catalogoBunker || [];
+        const catalogoPlatos = catalogoPlatosLocal;
 
         ventas.forEach(v => {
             const ventaNeta = Number(v.totalPagado || 0);

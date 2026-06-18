@@ -7,6 +7,7 @@ export default function ModalPesaje({ plato, isOpen, onClose, onConfirm }) {
     const [input, setInput] = useState(""); 
     const [precioCalculado, setPrecioCalculado] = useState(0);
     const [pesoMostrado, setPesoMostrado] = useState(0);
+    const [esMovil, setEsMovil] = useState(false);
     const inputRef = useRef(null);
 
     // 🛡️ Refs para control absoluto del hardware
@@ -15,12 +16,16 @@ export default function ModalPesaje({ plato, isOpen, onClose, onConfirm }) {
     const timeoutIdRef = useRef(null);
     const autoCleanIntervalRef = useRef(null);
 
-    // 🎯 Foco y limpieza al abrir
     useEffect(() => {
         if (isOpen) {
             setInput(""); 
             setPesoMostrado(0);
             setPrecioCalculado(0);
+            
+            // 🛡️ Filtro estricto: Solo móviles reales con touch. Las pantallas POS COM1 pasan de largo.
+            const checkMovil = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) && ('ontouchstart' in window);
+            setEsMovil(checkMovil);
+
             setTimeout(() => inputRef.current?.focus(), 100);
         }
     }, [isOpen]);
@@ -50,7 +55,7 @@ export default function ModalPesaje({ plato, isOpen, onClose, onConfirm }) {
     // ⚖️ Función de conexión principal
     // ⚖️ Función de conexión principal - BLINDADA CONTRA BOMBARDEO DE DATOS Y RE-RENDERS
     const conectarBascula = async () => {
-        if (!isOpen || !navigator.serial) return;
+        if (!isOpen || !navigator.serial || esMovil) return;
         try {
             let ports = await navigator.serial.getPorts();
             let port = ports[0];
@@ -215,9 +220,10 @@ export default function ModalPesaje({ plato, isOpen, onClose, onConfirm }) {
                     </div>
 
                     <div className="input-box">
-                        <input 
+                    <input 
                             ref={inputRef}
                             type="text"
+                            inputMode="decimal" // ⌨️ Abre teclado de números y punto en celular
                             placeholder="0"
                             value={input}
                             onChange={(e) => setInput(e.target.value)}

@@ -66,16 +66,8 @@ export async function POST(request) {
             throw new Error(`SUPABASE_DELETE_FAILED: ${errorDelete.message}`);
         }
 
-        // 🪓 GUILLOTINA SÍNCRONA: Si el POS guarda la lista de clientes elegibles en la caché, la destruimos
-        try {
-            await supabaseServer
-                .from('catalog_cache')
-                .delete()
-                .eq('tenant_host', tenant.toLowerCase().trim());
-            console.log(`🗑️ Caché del catálogo purgado síncronamente en eliminación de cliente para: ${tenant}`);
-        } catch (cacheError) {
-            console.warn("⚠️ Falla no-bloqueante al purgar búnker desde API clientes:", cacheError.message);
-        }
+        // 🛡️ LUPA SENIOR: Se eliminó el borrado de la caché. 
+        // Preservamos el búnker de configuración del negocio intacto.
 
         return NextResponse.json({
             success: true,

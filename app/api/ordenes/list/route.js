@@ -152,9 +152,10 @@ const estacionesPendientes = Array.from(estacionesSet);
         if (idDestino) {
             // ACTUALIZAR MESA EXISTENTE
             transaction = transaction.patch(idDestino, {
-                setIfMissing: { estacionesPendientes: [],
-                                mesero
-                 },
+                setIfMissing: { 
+                estacionesPendientes: [],
+                mesero: mesero || 'Caja'
+                },
                 insert: {
                     after: 'estacionesPendientes[-1]',
                     items: estacionesPendientes

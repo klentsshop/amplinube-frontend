@@ -2,7 +2,8 @@
 
 import { NextResponse } from 'next/server';
 import { sanityClientServer } from '@/lib/sanity';
-
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
 // Handler para GET (Obtener el detalle de una orden por ID)
 // La URL se verá así: /api/ordenes/qwer-1234-abcd
 export async function GET(request, { params }) {
@@ -55,7 +56,15 @@ if (!tenantId || tenantId === 'undefined') {
             );
         }
 
-        return NextResponse.json(orden);
+        return new NextResponse(JSON.stringify(orden), {
+            status: 200,
+            headers: {
+                'Content-Type': 'application/json',
+                'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0',
+                'Pragma': 'no-cache',
+                'Expires': '0',
+            },
+        });
     } catch (err) {
         console.error('Error obteniendo detalle de orden:', err);
         return NextResponse.json(

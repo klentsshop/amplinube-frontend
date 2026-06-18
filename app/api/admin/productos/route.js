@@ -68,7 +68,7 @@ export async function POST(req) {
                     disponible: data.disponible !== false,
                     totalVentas: 0,
                     codigoBalanza: data.codigoBalanza || null,
-                    recetaInsumos: docProducto.recetaInsumos,
+                    recetaInsumos: resultado.recetaInsumos || docProducto.recetaInsumos,
                     controlaInventario: data.controlaInventario || false
                 };
 

@@ -21,25 +21,20 @@ export async function GET(request) {
             .eq('tenant_host', tenantId.toLowerCase().trim())
             .single();
 
-        // Mapeamos el payload al formato exacto que espera recibir el frontend para no romper nada
+       // 🛡️ BISTURÍ: Buscamos el objeto plano de seguridad dentro del array payload_json
         let configuracion = null;
-        
-        if (configNegocio?.payload_json) {
-            const p = configNegocio.payload_json;
-            // Evaluamos las rutas dinámicas en las que el escudo clona la seguridad
-            const pinAdmin = p?.seguridad?.pinAdmin || p?.configSeguridad?.pinAdmin || p?.pinAdmin;
-            const pinCajero = p?.seguridad?.pinCajero || p?.configSeguridad?.pinCajero || p?.pinCajero;
-            const id = p?.seguridad?._id || p?.configSeguridad?._id || p?._id || 'seguridad_cache';
 
-            if (pinAdmin || pinCajero) {
+        if (configNegocio?.payload_json && Array.isArray(configNegocio.payload_json)) {
+            const docSeguridad = configNegocio.payload_json.find(item => item?._type === 'seguridad');
+            
+            if (docSeguridad) {
                 configuracion = {
-                    _id: id,
-                    pinCajero: pinCajero ? String(pinCajero).trim() : "",
-                    pinAdmin: pinAdmin ? String(pinAdmin).trim() : ""
+                    _id: docSeguridad._id,
+                    pinCajero: docSeguridad.pinCajero ? String(docSeguridad.pinCajero).trim() : "",
+                    pinAdmin: docSeguridad.pinAdmin ? String(docSeguridad.pinAdmin).trim() : ""
                 };
             }
         }
-
         return NextResponse.json({ ok: true, data: configuracion });
     } catch (error) {
         console.error('🔥 [API_GET_SEGURIDAD_ERROR]:', error.message);
@@ -82,17 +77,63 @@ export async function PUT(request) {
             resultId = result._id;
         }
 
-        // 🪓 GUILLOTINA SÍNCRONA: Destruimos la caché en Supabase para que los nuevos PINs entren en vigencia de inmediato
+        // ⚡ ACTUALIZACIÓN EN CALIENTE DE LA CONFIGURACIÓN DE SEGURIDAD (Cero borrados destructivos)
         try {
-            await supabaseServer
-                .from('catalog_cache')
-                .delete()
-                .eq('tenant_host', tenantId.toLowerCase().trim());
-            console.log(`🗑️ Caché invalidado síncronamente tras actualización de seguridad para: ${tenantId}`);
-        } catch (cacheError) {
-            console.warn("⚠️ Falla no-bloqueante al purgar caché desde PUT seguridad:", cacheError.message);
-        }
+            const tenantKey = tenantId.toLowerCase().trim();
 
+            // 1. Traemos el array plano actual
+            const { data: registroActual } = await supabaseServer
+                .from('catalog_cache')
+                .select('payload_json')
+                .eq('tenant_host', tenantKey)
+                .single();
+
+            if (registroActual && Array.isArray(registroActual.payload_json)) {
+                let existeSeguridad = false;
+
+                // 2. Mapeamos si ya existía el objeto seguridad dentro del array plano
+                let nuevoPayload = registroActual.payload_json.map(item => {
+                    if (item?._type === 'seguridad') {
+                        existeSeguridad = true;
+                        return {
+                            ...item,
+                            _id: resultId,
+                            pinCajero: pinCajero.trim(),
+                            pinAdmin: pinAdmin.trim(),
+                            _updatedAt: new Date().toISOString()
+                        };
+                    }
+                    return item;
+                });
+
+                // 3. Si no existía el objeto seguridad en el array, lo inyectamos de primero
+                if (!existeSeguridad) {
+                    const nuevoDocSeguridadCache = {
+                        _id: resultId,
+                        _type: 'seguridad',
+                        tenant: tenantId,
+                        pinAdmin: pinAdmin.trim(),
+                        pinCajero: pinCajero.trim(),
+                        _createdAt: new Date().toISOString(),
+                        _updatedAt: new Date().toISOString()
+                    };
+                    nuevoPayload = [nuevoDocSeguridadCache, ...registroActual.payload_json];
+                }
+
+                // 4. Hacemos upsert atómico de la fila manteniendo vivo el escudo plano
+                await supabaseServer
+                    .from('catalog_cache')
+                    .upsert({ 
+                        tenant_host: tenantKey, 
+                        payload_json: nuevoPayload, 
+                        updated_at: new Date().toISOString() 
+                    }, { onConflict: 'tenant_host' });
+
+                console.log(`⚡ Seguridad actualizada en caliente dentro del array plano para: ${tenantId}`);
+            }
+        } catch (cacheError) {
+            console.warn("⚠️ Falla no-bloqueante al actualizar la seguridad en la caché plana:", cacheError.message);
+        }
         return NextResponse.json({ ok: true, id: resultId });
     } catch (error) {
         console.error('🔥 [API_PUT_SEGURIDAD_ERROR]:', error.message);
