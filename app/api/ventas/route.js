@@ -18,6 +18,23 @@ export async function POST(req) {
         // --- 1. VARIABLES ORIGINALES ---
         const mesa = payload.mesa || 'General';
         const mesero = payload.mesero || 'Personal General';
+
+        // 🛡️ CANDADO DE SEGURIDAD MÁXIMA: Validar permiso de cobro en Sanity
+        if (mesero !== 'Caja' && mesero !== 'Personal General') {
+            const permisoReal = await sanityClientServer.fetch(
+                `*[_type == "mesero" && nombre == $nombre && tenant == $tenantId][0].puedeCobrar`,
+                { nombre: mesero, tenantId }
+            );
+            
+            if (permisoReal === false) {
+                console.warn(`🚨 INTENTO DE COBRO NO AUTORIZADO: El mesero [${mesero}] intentó cobrar sin permisos en el tenant [${tenantId}].`);
+                return NextResponse.json({ 
+                    ok: false, 
+                    error: 'UNAUTHORIZED_ACTION', 
+                    message: 'Tu usuario no tiene autorización en el sistema para procesar cobros de dinero.' 
+                }, { status: 403 });
+            }
+        }
         const metodoPagoRaw = payload.metodoPago || 'efectivo';
         const metodoPago = metodoPagoRaw.toLowerCase().trim();
         const totalPagado = Number(payload.totalPagado) || 0;

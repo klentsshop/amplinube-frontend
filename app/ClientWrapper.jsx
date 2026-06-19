@@ -26,7 +26,8 @@ if (typeof window !== 'undefined' && window.location.hostname === 'localhost') {
             nit,
             direccion,
             telefono,
-            colordark
+            colordark,
+            columnasGrid
           }`,
           { tenantId },
           { useCdn: false } // Siempre fresco para cambios de marca en vivo
@@ -45,6 +46,9 @@ if (typeof window !== 'undefined' && window.location.hostname === 'localhost') {
           SITE_CONFIG.brand.nit = data.nit || SITE_CONFIG.brand.nit;
           SITE_CONFIG.brand.address = data.direccion || SITE_CONFIG.brand.address;
           SITE_CONFIG.brand.phone = data.telefono || SITE_CONFIG.brand.phone;
+          if (data.columnasGrid) {
+          SITE_CONFIG.theme.columnasGrid = Number(data.columnasGrid);
+          }
           
           setConfig(data);
         }

@@ -201,7 +201,8 @@ export function CartProvider({ children, tenantId }) {
       controlaInventario: p.controlaInventario || false,
       insumoVinculado: p.insumoVinculado || null,
       seImprime: p.seImprime === true,
-      cantidadADescontar: p.cantidadADescontar || 0
+      cantidadADescontar: p.cantidadADescontar || 0,
+      esVentaPorPeso: p.esVentaPorPeso === true
     }));
 
     // Actualizamos el estado. El "Amortiguador" del useEffect de arriba 

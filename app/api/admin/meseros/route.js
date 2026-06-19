@@ -5,7 +5,10 @@ import { sanityClientServer } from '@/lib/sanity';
 export async function POST(request) {
     try {
         const body = await request.json();
-        const { nombre, activo, tenantId } = body;
+        const { 
+            nombre, activo, tenantId,
+            verReporte, verAdmin, puedeCargarGasto, verVentas, verInventario, puedeCobrar 
+        } = body;
 
         if (!tenantId) {
             return NextResponse.json({ error: 'Identificador de negocio ausente.' }, { status: 400 });
@@ -13,9 +16,15 @@ export async function POST(request) {
 
         const nuevoMeseroDoc = {
             _type: 'mesero',
-            nombre: nombre.trim().toUpperCase(), // Lo guardamos limpio y en mayúsculas
+            nombre: nombre.trim().toUpperCase(),
             tenant: tenantId,
-            activo: activo !== false
+            activo: activo !== false,
+            verReporte: Boolean(verReporte),
+            verAdmin: Boolean(verAdmin),
+            puedeCargarGasto: Boolean(puedeCargarGasto),
+            verVentas: Boolean(verVentas),
+            verInventario: Boolean(verInventario),
+            puedeCobrar: Boolean(puedeCobrar)
         };
 
         const result = await sanityClientServer.create(nuevoMeseroDoc);
@@ -38,7 +47,13 @@ export async function POST(request) {
                     _type: 'mesero',
                     nombre: nombre.trim().toUpperCase(),
                     tenant: tenantId,
-                    activo: activo !== false
+                    activo: activo !== false,
+                    verReporte: Boolean(verReporte),
+                    verAdmin: Boolean(verAdmin),
+                    puedeCargarGasto: Boolean(puedeCargarGasto),
+                    verVentas: Boolean(verVentas),
+                    verInventario: Boolean(verInventario),
+                    puedeCobrar: Boolean(puedeCobrar)
                 };
 
                 // 3. Lo inyectamos al inicio del array plano en memoria
@@ -79,7 +94,10 @@ export async function POST(request) {
 export async function PUT(request) {
     try {
         const body = await request.json();
-        const { itemId, nombre, activo, tenantId } = body;
+        const { 
+            itemId, nombre, activo, tenantId,
+            verReporte, verAdmin, puedeCargarGasto, verVentas, verInventario, puedeCobrar 
+        } = body;
 
         if (!tenantId || !itemId) {
             return NextResponse.json({ error: 'Faltan parámetros críticos (tenantId o itemId).' }, { status: 400 });
@@ -88,6 +106,12 @@ export async function PUT(request) {
         const camposAActualizar = {};
         if (nombre !== undefined) camposAActualizar.nombre = nombre.trim().toUpperCase();
         if (activo !== undefined) camposAActualizar.activo = Boolean(activo);
+        if (verReporte !== undefined) camposAActualizar.verReporte = Boolean(verReporte);
+        if (verAdmin !== undefined) camposAActualizar.verAdmin = Boolean(verAdmin);
+        if (puedeCargarGasto !== undefined) camposAActualizar.puedeCargarGasto = Boolean(puedeCargarGasto);
+        if (verVentas !== undefined) camposAActualizar.verVentas = Boolean(verVentas);
+        if (verInventario !== undefined) camposAActualizar.verInventario = Boolean(verInventario);
+        if (puedeCobrar !== undefined) camposAActualizar.puedeCobrar = Boolean(puedeCobrar);
 
         const result = await sanityClientServer
             .patch(itemId)
@@ -110,7 +134,13 @@ try {
                         return {
                             ...item,
                             ...(nombre !== undefined && { nombre: nombre.trim().toUpperCase() }),
-                            ...(activo !== undefined && { activo: Boolean(activo) })
+                            ...(activo !== undefined && { activo: Boolean(activo) }),
+                            ...(verReporte !== undefined && { verReporte: Boolean(verReporte) }),
+                            ...(verAdmin !== undefined && { verAdmin: Boolean(verAdmin) }),
+                            ...(puedeCargarGasto !== undefined && { puedeCargarGasto: Boolean(puedeCargarGasto) }),
+                            ...(verVentas !== undefined && { verVentas: Boolean(verVentas) }),
+                            ...(verInventario !== undefined && { verInventario: Boolean(verInventario) }),
+                            ...(puedeCobrar !== undefined && { puedeCobrar: Boolean(puedeCobrar) })
                         };
                     }
                     return item;

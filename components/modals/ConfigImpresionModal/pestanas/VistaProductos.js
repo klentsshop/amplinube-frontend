@@ -151,15 +151,19 @@ export default function VistaProductos({
                     </span>
                 )}
 
-                {/* 📐 FILA 3: CONFIGURACIONES ADICIONALES (Checkboxes en línea) */}
-                <div style={{ display: 'flex', gap: '20px', alignItems: 'center', padding: '4px 0' }}>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.8rem', fontWeight: 'bold', color: '#374151', cursor: 'pointer' }}>
-                        <input type="checkbox" checked={nuevoPlato.controlaInventario} onChange={(e) => setNuevoPlato({...nuevoPlato, controlaInventario: e.target.checked})} style={{ cursor: 'pointer' }} />
-                        ¿Controla Inventario?
+                {/* 📐 FILA 3: CONFIGURACIONES ADICIONALES (Checkboxes estilizados compactos) */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '4px', alignItems: 'center', padding: '2px 0', backgroundColor: '#fff', borderRadius: '6px', border: '1px solid #e5e7eb' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', fontSize: '0.68rem', fontWeight: 'bold', color: '#374151', cursor: 'pointer', textAlign: 'center', padding: '4px 2px' }}>
+                        <input type="checkbox" checked={nuevoPlato.controlaInventario} onChange={(e) => setNuevoPlato({...nuevoPlato, controlaInventario: e.target.checked})} style={{ cursor: 'pointer', width: '13px', height: '13px' }} />
+                        ¿INVENTARIO?
                     </label>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.8rem', fontWeight: 'bold', color: '#374151', cursor: 'pointer' }}>
-                        <input type="checkbox" checked={nuevoPlato.disponible !== false} onChange={(e) => setNuevoPlato({...nuevoPlato, disponible: e.target.checked})} style={{ cursor: 'pointer' }} />
-                        ¿Producto Disponible en POS?
+                    <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', fontSize: '0.68rem', fontWeight: 'bold', color: '#374151', cursor: 'pointer', textAlign: 'center', padding: '4px 2px', borderLeft: '1px solid #e5e7eb', borderRight: '1px solid #e5e7eb' }}>
+                        <input type="checkbox" checked={nuevoPlato.disponible !== false} onChange={(e) => setNuevoPlato({...nuevoPlato, disponible: e.target.checked})} style={{ cursor: 'pointer', width: '13px', height: '13px' }} />
+                        ¿DISPONIBLE?
+                    </label>
+                    <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', fontSize: '0.68rem', fontWeight: 'bold', color: '#dc2626', cursor: 'pointer', textAlign: 'center', padding: '4px 2px' }}>
+                        <input type="checkbox" checked={nuevoPlato.esVentaPorPeso === true} onChange={(e) => setNuevoPlato({...nuevoPlato, esVentaPorPeso: e.target.checked})} style={{ cursor: 'pointer', width: '13px', height: '13px', accentColor: '#dc2626' }} />
+                        ¿POR PESO/KG?
                     </label>
                 </div>
 {/* ========================================== */}

@@ -16,6 +16,7 @@ export async function POST(req) {
             barcode: data.barcode || null,
             codigoBalanza: data.codigoBalanza || null,
             tenant: data.tenantId,
+            esVentaPorPeso: data.esVentaPorPeso === true,
             categoria: { _type: 'reference', _ref: data.categoria },
             
             // 🚀 LÍNEA CORREGIDA MINUCIOSAMENTE: 
@@ -69,7 +70,8 @@ export async function POST(req) {
                     totalVentas: 0,
                     codigoBalanza: data.codigoBalanza || null,
                     recetaInsumos: resultado.recetaInsumos || docProducto.recetaInsumos,
-                    controlaInventario: data.controlaInventario || false
+                    controlaInventario: data.controlaInventario || false,
+                    esVentaPorPeso: data.esVentaPorPeso === true
                 };
 
                 if (registroActual && Array.isArray(registroActual.payload_json)) {
@@ -122,6 +124,7 @@ export async function PUT(req) {
             controlaInventario: data.controlaInventario,
             barcode: data.barcode,
             codigoBalanza: data.codigoBalanza,
+            esVentaPorPeso: data.esVentaPorPeso === true,
             recetaInsumos: data.controlaInventario && Array.isArray(data.insumosReceta)
             ? data.insumosReceta.map((ins, index) => ({
            // 🚀 LLAVE ULTRA ÚNICA TAMBIÉN AL ACTUALIZAR
@@ -174,7 +177,8 @@ export async function PUT(req) {
                                 codigoBalanza: data.codigoBalanza,
                                 ...(data.imagen && { imagen: data.imagen }),
                                 recetaInsumos: camposAActualizar.recetaInsumos,
-                                _updatedAt: new Date().toISOString()
+                                _updatedAt: new Date().toISOString(),
+                                esVentaPorPeso: data.esVentaPorPeso === true
                             };
                         }
                         return item;

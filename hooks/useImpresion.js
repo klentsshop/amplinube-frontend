@@ -16,7 +16,13 @@ export function useImpresion(cart, config, ordenMesa, nombreMesero, tenantId) {
             propina: datosExtras.propina || 0,
             montoManual: datosExtras.montoManual || 0,
             fecha: new Date().toISOString(),
-            autoPrint: false
+            autoPrint: false,
+            brand: {
+                name: config?.nombre || null,
+                nit: config?.nit || null,
+                address: config?.direccion || null,
+                phone: config?.telefono || null
+            }
         };
 
         const esMovil = /iPhone|Android/i.test(navigator.userAgent);

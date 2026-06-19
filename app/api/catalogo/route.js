@@ -72,8 +72,11 @@ export async function GET(request) {
 
         // 📡 CACHE MISS: Una sola consulta masiva y estructurada a Sanity
         const dataFresh = await sanityClient.fetch(
-            `*[(_type in ["plato", "categoria", "inventario", "estacionPC", "mesero", "seguridad"]) && tenant == $tenantAlias]`, 
-            { tenantAlias }
+    `*[
+        (_type in ["plato", "categoria", "inventario", "estacionPC", "mesero", "seguridad"] && tenant == $tenantAlias) ||
+        (_type == "negocio" && slug.current == $tenantAlias)
+    ]`, 
+    { tenantAlias }
         );
 
         // 🛡️ BLINDAJE ANTI-CAMPOS BLANCOS / ARREGLOS VACÍOS

@@ -1,5 +1,5 @@
 'use client';
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 
 export default function VistaMeseros({
     handleGuardarMesero,
@@ -16,6 +16,35 @@ export default function VistaMeseros({
     seleccionarMeseroParaEditar,
     handleBorrarMesero
 }) {
+    // 🛡️ Estados internos de control para el mapa completo de permisos granulares
+    const [verReporte, setVerReporte] = useState(false);
+    const [verAdmin, setVerAdmin] = useState(false);
+    const [puedeCargarGasto, setPuedeCargarGasto] = useState(false);
+    const [verVentas, setVerVentas] = useState(false);
+    const [verInventario, setVerInventario] = useState(false);
+    const [puedeCobrar, setPuedeCobrar] = useState(false);
+
+    // Sincroniza todos los interruptores al alternar la edición o limpiar el formulario
+    useEffect(() => {
+        if (!editandoMeseroId) {
+            setVerReporte(false);
+            setVerAdmin(false);
+            setPuedeCargarGasto(false);
+            setVerVentas(false);
+            setVerInventario(false);
+            setPuedeCobrar(false);
+        } else {
+            const meseroMatch = meserosFiltrados.find(m => m._id === editandoMeseroId);
+            if (meseroMatch) {
+                setVerReporte(meseroMatch.verReporte || false);
+                setVerAdmin(meseroMatch.verAdmin || false);
+                setPuedeCargarGasto(meseroMatch.puedeCargarGasto || false);
+                setVerVentas(meseroMatch.verVentas || false);
+                setVerInventario(meseroMatch.verInventario || false);
+                setPuedeCobrar(meseroMatch.puedeCobrar || false);
+            }
+        }
+    }, [editandoMeseroId, meserosFiltrados]);
     return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
             {/* FORMULARIO DINÁMICO SUPERIOR */}
@@ -43,51 +72,101 @@ export default function VistaMeseros({
                         </button>
                     )}
                 </div>
-                
-                <div style={{ display: 'grid', gridTemplateColumns: '2fr 1.2fr 0.8fr', gap: '8px', alignItems: 'end' }}>
-    <div>
-        <label style={{ fontSize: '0.7rem', fontWeight: 'bold', color: '#6b7280', display: 'block', marginBottom: '4px' }}>Nombre del Vendedor(a)</label>
-        <input 
-            type="text" 
-            placeholder="Ej: MARÍA ANTONIA o CARLOS PINZÓN" 
-            value={meseroNombre} 
-            onChange={e => setMeseroNombre(e.target.value)} 
-            required 
-            style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #d1d5db', outline: 'none', textTransform: 'uppercase' }} 
-        />
+               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+    <div style={{ display: 'grid', gridTemplateColumns: '2.5fr 1.5fr', gap: '8px', alignItems: 'end' }}>
+        <div>
+            <label style={{ fontSize: '0.7rem', fontWeight: 'bold', color: '#6b7280', display: 'block', marginBottom: '4px' }}>Nombre del Vendedor(a)</label>
+            <input 
+                type="text" 
+                placeholder="Ej: MARÍA ANTONIA o CARLOS PINZÓN" 
+                value={meseroNombre} 
+                onChange={e => setMeseroNombre(e.target.value)} 
+                required 
+                style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #d1d5db', outline: 'none', textTransform: 'uppercase' }} 
+            />
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', backgroundColor: '#fff', border: '1px solid #d1d5db', borderRadius: '6px', padding: '9px 8px', height: '37px' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.75rem', fontWeight: 'bold', color: '#374151', cursor: 'pointer', width: '100%' }}>
+                <input 
+                    type="checkbox" 
+                    checked={meseroActivo} 
+                    onChange={e => setMeseroActivo(e.target.checked)} 
+                    style={{ cursor: 'pointer', width: '15px', height: '15px' }} 
+                />
+                ¿Usuario Activo?
+            </label>
+        </div>
     </div>
 
-    {/* 🚀 NUEVO CONTROL CHECKBOX PARA ESTADO ACTIVO */}
-    <div style={{ display: 'flex', alignItems: 'center', backgroundColor: '#fff', border: '1px solid #d1d5db', borderRadius: '6px', padding: '9px 8px', height: '37px' }}>
-        <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.75rem', fontWeight: 'bold', color: '#374151', cursor: 'pointer', width: '100%' }}>
-            <input 
-                type="checkbox" 
-                checked={meseroActivo} 
-                onChange={e => setMeseroActivo(e.target.checked)} 
-                style={{ cursor: 'pointer', width: '15px', height: '15px' }} 
-            />
-            ¿Usuario Activo?
-        </label>
+    {/* SECCIÓN INTERRUPTORES DE RESTRICCIÓN DE ROLES GRANULARES */}
+    <div style={{ background: '#fff', padding: '12px', borderRadius: '8px', border: '1px solid #e5e7eb', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+        <span style={{ fontSize: '0.65rem', fontWeight: '900', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.5px' }}>🛡️ Permisos autorizados para este usuario</span>
+        
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '10px' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.7rem', fontWeight: 'bold', color: '#374151', cursor: 'pointer' }}>
+                <input type="checkbox" checked={verReporte} onChange={e => setVerReporte(e.target.checked)} style={{ width: '14px', height: '14px' }} />
+                🚨 REPORTE
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.7rem', fontWeight: 'bold', color: '#374151', cursor: 'pointer' }}>
+                <input type="checkbox" checked={verAdmin} onChange={e => setVerAdmin(e.target.checked)} style={{ width: '14px', height: '14px' }} />
+                ⚙️ ADMIN
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.7rem', fontWeight: 'bold', color: '#374151', cursor: 'pointer' }}>
+                <input type="checkbox" checked={puedeCargarGasto} onChange={e => setPuedeCargarGasto(e.target.checked)} style={{ width: '14px', height: '14px' }} />
+                🔸 GASTOS
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.7rem', fontWeight: 'bold', color: '#374151', cursor: 'pointer' }}>
+                <input type="checkbox" checked={verVentas} onChange={e => setVerVentas(e.target.checked)} style={{ width: '14px', height: '14px' }} />
+                📊 VENTAS
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.7rem', fontWeight: 'bold', color: '#374151', cursor: 'pointer' }}>
+                <input type="checkbox" checked={verInventario} onChange={e => setVerInventario(e.target.checked)} style={{ width: '14px', height: '14px' }} />
+                📦 STOCK
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.7rem', fontWeight: 'bold', color: '#374151', cursor: 'pointer' }}>
+                <input type="checkbox" checked={puedeCobrar} onChange={e => setPuedeCobrar(e.target.checked)} style={{ width: '14px', height: '14px' }} />
+                💵 COBRAR
+            </label>
+        </div>
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '4px', borderTop: '1px dashed #f3f4f6', paddingTop: '8px' }}>
+            <button 
+                type="button" 
+                disabled={guardando} 
+                onClick={(e) => {
+                    e.preventDefault();
+                    // Interceptor atómico de payload completo para inyectar al manejador padre
+                    const pseudoEvento = {
+                        preventDefault: () => {},
+                        target: {
+                            verReporte,
+                            verAdmin,
+                            puedeCargarGasto,
+                            verVentas,
+                            verInventario,
+                            puedeCobrar
+                        }
+                    };
+                    handleGuardarMesero(pseudoEvento);
+                }}
+                style={{ 
+                    padding: '8px 24px', 
+                    backgroundColor: editandoMeseroId ? '#2563eb' : '#10b981', 
+                    color: 'white', 
+                    border: 'none', 
+                    borderRadius: '6px', 
+                    fontWeight: 'bold', 
+                    cursor: 'pointer', 
+                    fontSize: '0.75rem', 
+                    textTransform: 'uppercase',
+                    boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+                }}
+            >
+                {editandoMeseroId ? '💾 GUARDAR CAMBIOS' : '🚀 REGISTRAR VENDEDOR'}
+            </button>
+        </div>
     </div>
-    
-    <button 
-        type="submit" 
-        disabled={guardando} 
-        style={{ 
-            padding: '9px', 
-            backgroundColor: editandoMeseroId ? '#2563eb' : '#10b981', 
-            color: 'white', 
-            border: 'none', 
-            borderRadius: '6px', 
-            fontWeight: 'bold', 
-            cursor: 'pointer', 
-            fontSize: '0.8rem', 
-            textTransform: 'uppercase',
-            height: '37px'
-        }}
-    >
-        {editandoMeseroId ? '💾 GUARDAR' : '🚀 AGREGAR'}
-    </button>
 </div>
             </form>
 

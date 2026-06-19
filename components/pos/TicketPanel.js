@@ -80,7 +80,7 @@ export default function TicketPanel({
     mensajeExito,
     clearWithStockReturn, eliminarLineaConStock,
     solicitarEliminacionAdmin,
-    propina = 0, setPropina, // 👈 Props para propina
+    propina = 0, setPropina, 
     montoManual = 0, setMontoManual,
     setMostrarModalHistorial,
     setMostrarInventario,
@@ -88,6 +88,16 @@ export default function TicketPanel({
     tenantId,
     setMostrarModalClientes,
 }) {
+    // 🛡️ EXTRACTOR SENIOR: Busca el mesero activo en la lista para leer sus permisos individuales en tiempo real
+    const meseroActualObj = listaMeseros?.find(m => m.nombre === nombreMesero);
+    const permisos = {
+        verReporte: meseroActualObj?.verReporte || false,
+        verAdmin: meseroActualObj?.verAdmin || false,
+        puedeCargarGasto: meseroActualObj?.puedeCargarGasto || false,
+        verVentas: meseroActualObj?.verVentas || false,
+        verInventario: meseroActualObj?.verInventario || false,
+        puedeCobrar: meseroActualObj?.puedeCobrar || false,
+    };
     // 🔍 Mejora: Función para limpiar el emoji del título y evitar el doble icono
     const limpiarIconoDeTexto = (texto) => {
         const partes = texto.split(' ');
@@ -230,7 +240,8 @@ export default function TicketPanel({
     <button 
         onClick={() => { refreshOrdenes(); setMostrarListaOrdenes(true); }} 
         style={{
-            flex: '0 0 31%',
+            flex: '1 1 30%', // 👈 Cambiado a elástico
+            minWidth: '80px',
             padding: 'clamp(8px, 2.4vw, 7px) 2px',
             backgroundColor: '#9CA3AF',
             color: 'white',
@@ -244,98 +255,108 @@ export default function TicketPanel({
         ÓRDENES ({numOrdenesActivas})
     </button>
     {/* 5. + GASTO */}
-    <button 
-        onClick={registrarGasto} 
-        style={{
-            flex: '0 0 31%',
-            padding: 'clamp(14px, 3.5vw, 10px) 2px',
-            fontSize: 'clamp(0.85rem, 2.5vw, 0.75rem)',
-            backgroundColor: SITE_CONFIG.theme.accent,
-            color: 'white',
-            border: 'none',
-            borderRadius: '6px',
-            fontWeight: '900',
-            cursor: 'pointer'
-        }}
-    >
-        + GASTO
-    </button>
-    {/* 6. VENTAS */}
-    <button 
-        onClick={() => setMostrarModalHistorial(true)} 
-        style={{
-            flex: '0 0 31%',
-            padding: 'clamp(14px, 3.5vw, 10px) 2px',
-            fontSize: 'clamp(0.85rem, 2.5vw, 0.75rem)',
-            backgroundColor: '#228B22', 
-            color: 'white',
-            border: 'none',
-            borderRadius: '6px',
-            fontWeight: '900',
-            cursor: 'pointer'
-        }}
-    >
-        VENTAS
-    </button>
-   {/* 🛡️ RESTRICCIÓN DE AUDITORÍA: Los siguientes botones críticos solo abren si es Modo Cajero AND (Es Caja central o es Mesero Autorizado con '*') */}
-    {esModoCajero && (nombreMesero === 'Caja' || nombreMesero === '' || nombreMesero === null || nombreMesero?.includes('*')) && (
-        <>
-            {/* 3. REPORTE */}
-            <button
-        onClick={() => esModoCajero ? generarCierreDia() : alert("🔒 Solo el cajero puede ver reportes")} 
-        style={{ 
-            flex: '0 0 31%',
-            padding: 'clamp(8px, 2.4vw, 7px) 2px',
-            fontSize: 'clamp(0.85rem, 2.5vw, 0.75rem)', 
-            backgroundColor: esModoCajero ? SITE_CONFIG.theme.danger : '#4B5563', 
-            color: 'white',
-            border: 'none',
-            borderRadius: '6px',
-            fontWeight: '900', 
-            cursor: esModoCajero ? 'pointer' : 'not-allowed',
-            opacity: esModoCajero ? 1 : 0.6
-        }}
-    >
-        REPORTE
-    </button>
-
-    {/* 3. ADMIN */}
-    <button 
-        onClick={solicitarAccesoAdmin} 
-        style={{
-            flex: '0 0 31%',
-            padding: 'clamp(10px, 2.8vw, 8px) 2px',
-            fontSize: 'clamp(0.85rem, 2.5vw, 0.75rem)',
-            backgroundColor: '#374151',
-            color: 'white',
-            border: 'none',
-            borderRadius: '6px',
-            fontWeight: '900',
-            cursor: 'pointer'
-        }}
-    >
-        ADMIN
-    </button>
-
-    {/* 4. INVENTARIO */}
-    <button 
-    onClick={() => setMostrarInventario(true)} // 👈 Solo cambiamos esto
-    style={{
-        flex: '0 0 31%',
-        padding: 'clamp(14px, 3.5vw, 10px) 2px',
-        fontSize: 'clamp(0.85rem, 2.5vw, 0.75rem)',
-        backgroundColor: '#2563eb', // Tu azul de inventario
-        color: 'white',
-        border: 'none',
-        borderRadius: '6px',
-        fontWeight: '900',
-        cursor: 'pointer'
-    }}
->
-    INVENTARIO
-</button>
-    </>
+    {(esModoCajero || permisos.puedeCargarGasto) && (
+        <button 
+            onClick={registrarGasto} 
+            style={{
+                flex: '0 0 31%',
+                padding: 'clamp(14px, 3.5vw, 10px) 2px',
+                fontSize: 'clamp(0.85rem, 2.5vw, 0.75rem)',
+                backgroundColor: SITE_CONFIG.theme.accent,
+                color: 'white',
+                border: 'none',
+                borderRadius: '6px',
+                fontWeight: '900',
+                cursor: 'pointer'
+            }}
+        >
+            + GASTO
+        </button>
     )}
+    {/* 6. VENTAS */}
+    {(esModoCajero || permisos.verVentas) && (
+        <button 
+            onClick={() => setMostrarModalHistorial(true)} 
+            style={{
+                flex: '0 0 31%',
+                padding: 'clamp(14px, 3.5vw, 10px) 2px',
+                fontSize: 'clamp(0.85rem, 2.5vw, 0.75rem)',
+                backgroundColor: '#228B22', 
+                color: 'white',
+                border: 'none',
+                borderRadius: '6px',
+                fontWeight: '900',
+                cursor: 'pointer'
+            }}
+        >
+            VENTAS
+        </button>
+    )}
+   {/* 🛡️ CONTROL DE ACCESO: Se muestra el bloque de administración si está en Modo Cajero o el usuario tiene algún permiso activo */}
+{(esModoCajero || permisos?.verReporte || permisos?.verAdmin || permisos?.verInventario) && (
+    <>
+        {/* 1. REPORTE */}
+        {(esModoCajero || permisos?.verReporte) ? (
+            <button
+                onClick={generarCierreDia} 
+                style={{
+            flex: '1 1 30%', // 👈 Cambiado a elástico
+            minWidth: '80px',
+            padding: 'clamp(8px, 2.4vw, 7px) 2px',
+                    fontSize: 'clamp(0.85rem, 2.5vw, 0.75rem)', 
+                    backgroundColor: SITE_CONFIG.theme.danger, 
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '6px',
+                    fontWeight: '900', 
+                    cursor: 'pointer'
+                }}
+            >
+                REPORTE
+            </button>
+        ) : <div style={{ flex: '0 0 31%' }} />} {/* Espaciador opcional para mantener la rejilla de 3 columnas perfecta */}
+
+        {/* 2. ADMIN */}
+        {(esModoCajero || permisos?.verAdmin) ? (
+            <button 
+                onClick={solicitarAccesoAdmin} 
+                style={{
+                    flex: '0 0 31%',
+                    padding: 'clamp(10px, 2.8vw, 8px) 2px',
+                    fontSize: 'clamp(0.85rem, 2.5vw, 0.75rem)',
+                    backgroundColor: '#374151',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '6px',
+                    fontWeight: '900',
+                    cursor: 'pointer'
+                }}
+            >
+                ADMIN
+            </button>
+        ) : <div style={{ flex: '0 0 31%' }} />}
+
+        {/* 3. INVENTARIO */}
+        {(esModoCajero || permisos?.verInventario) ? (
+            <button 
+                onClick={() => setMostrarInventario(true)} 
+                style={{
+                    flex: '0 0 31%',
+                    padding: 'clamp(14px, 3.5vw, 10px) 2px',
+                    fontSize: 'clamp(0.85rem, 2.5vw, 0.75rem)',
+                    backgroundColor: '#2563eb', 
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '6px',
+                    fontWeight: '900',
+                    cursor: 'pointer'
+                }}
+            >
+                INVENTARIO
+            </button>
+        ) : <div style={{ flex: '0 0 31%' }} />}
+    </>
+)}
 </div>
 </div>
 
@@ -663,9 +684,8 @@ export default function TicketPanel({
                 }} />
             )}
         </button>
-
-        {/* 🛡️ El Pago Mixto sí se queda bloqueado solo para el cajero */}
-        {esModoCajero && (
+{/* 🛡️ El Pago Mixto se abre si es cajero o si tiene permiso explícito */}
+        {(esModoCajero || permisos.puedeCobrar) && (
             <button 
                 type="button"
                 onClick={() => setVerModalMixto(true)}
@@ -777,7 +797,7 @@ export default function TicketPanel({
         {ordenActivaId ? 'ACTUALIZAR' : 'GUARDAR'}
     </button>
     {/* 4. BOTÓN COBRAR: Solo si es cajero y la orden ya está guardada */}
-{esModoCajero && cart.length > 0 && (
+    {(esModoCajero || permisos.puedeCobrar) && cart.length > 0 && (
    <button 
     onClick={async () => {
         // 1. CAPTURA DE DATOS (Congelamos los montos para que no se pierdan)

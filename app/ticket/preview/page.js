@@ -38,14 +38,23 @@ function TicketContent() {
     }, [typeParam, tenantIdParam]);
 
     useEffect(() => {
-        if (listoParaImprimir && typeof window !== 'undefined' && data?.autoPrint) {
-            window.print();
-            const closeTimer = setTimeout(() => {
-                window.close();
-            }, 2000);
-            return () => clearTimeout(closeTimer);
+        if (listoParaImprimir && typeof window !== 'undefined') {
+            const esCocinaAuto = typeParam === 'cocina' && data?.autoPrint;
+            const esClienteVentana = typeParam === 'cliente'; // 🔥 Fuerza el disparo para cuentas de clientes
+
+            if (esCocinaAuto || esClienteVentana) {
+                window.print();
+                
+                // Solo cerramos automáticamente si es cocina autorizada
+                if (esCocinaAuto) {
+                    const closeTimer = setTimeout(() => {
+                        window.close();
+                    }, 1500);
+                    return () => clearTimeout(closeTimer);
+                }
+            }
         }
-    }, [listoParaImprimir, data?.autoPrint]);
+    }, [listoParaImprimir, data?.autoPrint, typeParam]);
 
     if (!data) return <p style={{ textAlign: 'center', marginTop: '50px' }}>Cargando ticket...</p>;
 
@@ -134,24 +143,44 @@ function TicketContent() {
                     
                     // 2️⃣ RENDERIZADO SI ES CUENTA DE CLIENTE (IMAGEN 1 - image_b8853c.png)
                     <div>
-                        {/* ENCABEZADO FISCAL COMERCIAL */}
-                        <div style={{ textAlign: 'center', marginBottom: '8px' }}>
-                            <h2 style={{ margin: '0 0 2px 0', fontSize: '22px', fontWeight: 'bold', lineHeight: '1', letterSpacing: '-0.5px' }}>
-                                {(data.brand?.name || "AMPLINUBE").toUpperCase()}
-                            </h2>
-                            <div style={{ fontSize: '12px', lineHeight: '1.2', fontWeight: 'bold' }}>
-                                {data.brand?.nit && <p style={{ margin: 0 }}>NIT: {data.brand.nit}</p>}
-                                {data.brand?.address && <p style={{ margin: 0 }}>{String(data.brand.address).toUpperCase()}</p>}
-                                {data.brand?.phone && <p style={{ margin: 0 }}>TEL: {data.brand.phone}</p>}
-                            </div>
-                            
-                            <div style={{ borderTop: '1px dashed #000', margin: '8px 0' }}></div>
-                            
-                            <h2 style={{ margin: '4px 0', fontSize: '20px', fontWeight: 'bold' }}>**** CUENTA ****</h2>
-                            
-                            <div style={{ borderTop: '1px dashed #000', margin: '8px 0' }}></div>
-                        </div>
+                           {/* ENCABEZADO FISCAL COMERCIAL ULTRA-PROFESIONAL */}
+{(() => {
+    // 🛡️ Extraemos con absoluta tolerancia a fallos combinando inglés y español de tu esquema real
+    const negocioNombre = data.brand?.name || data.nombreNegocio || data.nombre || tenantIdParam;
+    const negocioNit = data.brand?.nit || data.nit || data.nitNegocio || null;
+    const negocioDireccion = data.brand?.address || data.direccion || data.direccionNegocio || null;
+    const negocioTelefono = data.brand?.phone || data.telefono || data.telefonoNegocio || null;
 
+    // 🕒 Parseamos la fecha y hora de impresión de forma limpia
+    const fechaImpresion = data.fecha ? new Date(data.fecha) : new Date();
+    const stringFecha = fechaImpresion.toLocaleDateString('es-CO', { year: 'numeric', month: '2-digit', day: '2-digit' });
+    const stringHora = fechaImpresion.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', hour12: true });
+
+    return (
+        <div style={{ textAlign: 'center', marginBottom: '8px' }}>
+            {/* Nombre Comercial Gigante */}
+            <h2 style={{ margin: '0 0 4px 0', fontSize: '24px', fontWeight: 'bold', lineHeight: '1', letterSpacing: '-0.5px' }}>
+                {String(negocioNombre).toUpperCase()}
+            </h2>
+            
+            {/* Datos Legales Compactos */}
+            <div style={{ fontSize: '11px', lineHeight: '1.3', fontWeight: 'bold', color: '#000' }}>
+                {negocioNit && <p style={{ margin: '2px 0' }}>NIT: {negocioNit}</p>}
+                {negocioDireccion && <p style={{ margin: '2px 0' }}>{String(negocioDireccion).toUpperCase()}</p>}
+                {negocioTelefono && <p style={{ margin: '2px 0' }}>TEL: {negocioTelefono}</p>}
+                
+                {/* 📅 Fila de Fecha y Hora de Impresión Comercial */}
+                <p style={{ margin: '4px 0 2px 0', fontSize: '10px', opacity: 0.85, fontWeight: 'normal' }}>
+                    FECHA: {stringFecha} - HORARIO: {stringHora}
+                </p>
+            </div>
+            
+            <div style={{ borderTop: '1px dashed #000', margin: '8px 0' }}></div>
+            <h2 style={{ margin: '4px 0', fontSize: '20px', fontWeight: 'bold' }}>**** CUENTA ****</h2>
+            <div style={{ borderTop: '1px dashed #000', margin: '8px 0' }}></div>
+        </div>
+    );
+})()}
                         {/* TABLA ULTRA COMPACTA DE PRODUCTOS EVITA DESFASE EN WINDOWS */}
                         <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: 'monospace', fontSize: '12px', fontWeight: 'bold', tableLayout: 'fixed' }}>
                             <tbody>
@@ -282,7 +311,6 @@ function TicketContent() {
                     }
 
                     * { 
-                        line-height: 1 !important; 
                         color-adjust: exact !important;
                         -webkit-print-color-adjust: exact !important;
                     }

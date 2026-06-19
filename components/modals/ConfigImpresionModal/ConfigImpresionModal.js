@@ -44,7 +44,8 @@ export default function ConfigImpresionModal({ isOpen, onClose, categorias, tena
         barcode: '',
         codigoBalanza: '',
         imagen: null,
-        insumosReceta: []
+        insumosReceta: [],
+        esVentaPorPeso: false
     });
 
     // --- 5. ESTADOS PESTAÑA 4: INVENTARIO / STOCK ---
@@ -110,7 +111,8 @@ export default function ConfigImpresionModal({ isOpen, onClose, categorias, tena
                 barcode, 
                 codigoBalanza,
                 controlaInventario,
-                recetaInsumos
+                recetaInsumos,
+                esVentaPorPeso
             }`;
             const data = await client.fetch(query, { tenantId }, { useCdn: false });
             setListaProductosCompletas(data || []);
@@ -417,6 +419,7 @@ export default function ConfigImpresionModal({ isOpen, onClose, categorias, tena
                 categoria: nuevoPlato.categoria, 
                 tenantId,
                 imagen: nuevoPlato.imagen,
+                esVentaPorPeso: nuevoPlato.esVentaPorPeso === true,
                 // Enviamos directamente el array plano de la receta unificada
                insumosReceta: nuevoPlato.controlaInventario ? (nuevoPlato.insumosReceta || []) : [],
                ...(editandoProductoId && { productoId: editandoProductoId })
@@ -457,7 +460,8 @@ export default function ConfigImpresionModal({ isOpen, onClose, categorias, tena
         barcode: prod.barcode || '',
         codigoBalanza: prod.codigoBalanza || '',
         imagen: prod.imagen || null,
-        insumosReceta: recetaNormalizada // 👈 PASAMOS LA RECETA PERFECTAMENTE TRADUCIDA
+        insumosReceta: recetaNormalizada,
+        esVentaPorPeso: prod.esVentaPorPeso === true
     });
 };
 
@@ -473,7 +477,8 @@ export default function ConfigImpresionModal({ isOpen, onClose, categorias, tena
             barcode: '',
             codigoBalanza: '',
             imagen: null,
-            insumosReceta: [] // 🧹 Limpiamos la receta al crear uno nuevo o cancelar
+            insumosReceta: [],
+            esVentaPorPeso: false 
         });
     };
 
@@ -599,7 +604,11 @@ export default function ConfigImpresionModal({ isOpen, onClose, categorias, tena
     const cargarMeserosNegocio = async () => {
         if (!tenantId) return;
         try {
-            const query = `*[_type == "mesero" && tenant == $tenantId] | order(nombre asc) { _id, nombre, activo }`; 
+            // 📊 Expandimos la proyección agregando las 6 nuevas banderas booleanas
+            const query = `*[_type == "mesero" && tenant == $tenantId] | order(nombre asc) { 
+                _id, nombre, activo,
+                verReporte, verAdmin, puedeCargarGasto, verVentas, verInventario, puedeCobrar
+            }`; 
             const data = await client.fetch(query, { tenantId }, { useCdn: false });
             setListaMeserosCompletas(data || []);
         } catch (e) { console.error("🔥 Error cargando vendedores:", e); }
@@ -641,11 +650,23 @@ export default function ConfigImpresionModal({ isOpen, onClose, categorias, tena
         return listaMeserosCompletas.filter(m => (m.nombre || "").toLowerCase().includes(busquedaMesero.toLowerCase()));
     }, [listaMeserosCompletas, busquedaMesero]);
 
-    // 🚀 OPERACIONES CRUD VENDEDORES
+    // 🚀 OPERACIONES CRUD VENDEDORES (PAYLOAD GRANULAR EXTRAÍDO)
     const handleGuardarMesero = async (e) => {
-        e.preventDefault();
+        if (e && typeof e.preventDefault === 'function') e.preventDefault();
         if (!meseroNombre.trim()) return alert("⚠️ El nombre es obligatorio.");
         setGuardando(true);
+        
+        // 🧠 DESESTRUCTURACIÓN AVANZADA: Extraemos los 6 interruptores empaquetados en el hijo
+        const targetPermisos = e?.target || {};
+        const permisosPayload = {
+            verReporte: targetPermisos.verReporte === true,
+            verAdmin: targetPermisos.verAdmin === true,
+            puedeCargarGasto: targetPermisos.puedeCargarGasto === true,
+            verVentas: targetPermisos.verVentas === true,
+            verInventario: targetPermisos.verInventario === true,
+            puedeCobrar: targetPermisos.puedeCobrar === true
+        };
+
         try {
             const metodo = editandoMeseroId ? 'PUT' : 'POST';
             const res = await fetch('/api/admin/meseros', {
@@ -655,10 +676,10 @@ export default function ConfigImpresionModal({ isOpen, onClose, categorias, tena
                     nombre: meseroNombre.trim(), 
                     activo: meseroActivo,
                     tenantId, 
+                    ...permisosPayload, // 🎯 INYECCIÓN ATÓMICA DE LOS 6 PERMISOS HACIA TU API
                     ...(editandoMeseroId && { itemId: editandoMeseroId }) 
                 })
             });
-            
             const data = await res.json();
             
             if (data.ok) {
@@ -686,6 +707,12 @@ export default function ConfigImpresionModal({ isOpen, onClose, categorias, tena
         setEditandoMeseroId(item._id);
         setMeseroNombre(item.nombre);
         setMeseroActivo(item.activo !== false);
+        
+        // 🛡️ Sincronización en piedra para el formulario al entrar en modo edición
+        // Esto previene que se queden marcados los permisos del mesero editado anteriormente.
+        setTimeout(() => {
+            window.dispatchEvent(new CustomEvent('sincronizarPermisosFormulario', { detail: item }));
+        }, 20);
     };
 
     const cancelarEdicionMesero = () => {

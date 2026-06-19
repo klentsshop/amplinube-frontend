@@ -17,10 +17,10 @@ const ProductGrid = memo(({
     mostrarCategoriasMobile, setMostrarCategoriasMobile, agregarAlCarrito, setPlatoAPesar, 
     setModalPesajeOpen,
     styles, mostrarCarritoMobile, setMostrarCarritoMobile, cart, total, mensajeExito, ordenesActivas, cargarOrden, ordenActivaId, setMostrarConfigImpresion,
-    tenantId
+    tenantId, columnasGrid = 6
 }) => {
     const listaCategorias = useMemo(() => ['todos', ...new Set(platos.map(p => p.categoria))], [platos]);
-
+    console.log("📊 Columnas vivas que recibe el ProductGrid desde el backend:", columnasGrid);
 // 🔥 2. LÓGICA DE ORDENAMIENTO INTELIGENTE (PROFESIONAL)
     // Usamos useMemo para ordenar los platos por popularidad (totalVentas) 
     // solo cuando estemos en la vista "todos" y no haya una búsqueda activa.
@@ -131,10 +131,20 @@ const platosFinales = useMemo(() => {
 </button>
                 </div>
 
-            {/* Cuadrícula de Platos con Diseño Split */}
-            {/* Cuadrícula de Platos con Diseño Split */}
-            <div className={styles.productsGrid}>
-                
+           {/* Cuadrícula de Platos con Diseño Split Autónomo y Adaptable */}
+           <div 
+    className={styles.productsGrid}
+    style={{
+        display: 'grid',
+        // 📐 Si es escritorio (PC / Tablet horizontal), inyectamos de forma pura las columnas de Sanity
+        gridTemplateColumns: typeof window !== 'undefined' && window.innerWidth > 1024 
+            ? `repeat(${columnasGrid}, minmax(0, 1fr))` 
+            : 'repeat(2, minmax(0, 1fr))', // Fallback seguro para móvil si el CSS no lo sobreescribe
+        
+        // 🛡️ CONTROL DE DENSIDAD: Si hay más de 8 columnas (Modo Fruver), achicamos el gap a 6px
+        gap: columnasGrid > 8 ? '6px' : '15px' 
+    }}
+> 
                 {/* 🚀 TARJETA COMODÍN: INTEGRACIÓN DE VALOR MANUAL */}
                 <div 
                     className={styles.productCard} 
@@ -190,19 +200,15 @@ const platosFinales = useMemo(() => {
     key={plato._id} 
     className={styles.productCard} 
 onClick={() => {
-    // 🛡️ Extraemos el precio directamente de tu Schema de Sanity
+    // 🛡️ Preparamos el objeto con su precio formateado para el multiplicador del Modal
     const valorPorKilo = Number(plato.precio) || 0;
-    
-    // Le pasamos al modal el plato con su precio listo para multiplicar
     const platoListo = { 
         ...plato, 
-        precioNum: valorPorKilo // Lo renombramos aquí para que el Modal lo entienda siempre
+        precioNum: valorPorKilo
     };
 
-    const categoriaNorm = (plato.categoria || "").toUpperCase().trim();
-    const requierePeso = categoriaNorm === 'CARNES' || 
-                         categoriaNorm === 'SALSAMENTARIA' || 
-                         plato.unidadMedida === 'kg';
+    // ⚖️ RADAR DINÁMICO: Evaluamos el interruptor de Sanity o el fallback por unidad de medida
+    const requierePeso = plato.esVentaPorPeso === true || plato.unidadMedida === 'kg';
 
     if (requierePeso) {
         setPlatoAPesar(platoListo);
@@ -210,8 +216,7 @@ onClick={() => {
     } else {
         agregarAlCarrito(plato);
     }
-}}
->
+}}>
                        {/* 1. Área de Imagen */}
                      <div 
                      className={styles.cardImage} 

@@ -61,6 +61,10 @@ export default function MenuPanel({ configNegocio: configInyectada }) {
     const [platosParaImprimir, setPlatosParaImprimir] = useState(null);
     const [modalPesajeOpen, setModalPesajeOpen] = useState(false);
     const [platoAPesar, setPlatoAPesar] = useState(null);
+    const [permisosActivos, setPermisosActivos] = useState({
+        verReporte: true, verAdmin: true, puedeCargarGasto: true, 
+        verVentas: true, verInventario: true, puedeCobrar: true
+    });
 
     // --- 2. CONTEXTOS ---
     const { 
@@ -143,11 +147,15 @@ useEffect(() => {
     const verificarSeguridadMesero = async () => {
         if (!tenantId) return;
 
-        // 1. Radar Prioritario: Rehidratación de permisos de Caja
+        // 1. Radar Prioritario: Rehidratación de permisos de Caja (Caja tiene súper poderes de administrador)
         const sesionCajeroActiva = localStorage.getItem(`${tenantId}_cajero_activa`) === 'true';
         if (sesionCajeroActiva) {
             setNombreMesero('Caja');
             setEstaActivo(true);
+            setPermisosActivos({
+                verReporte: true, verAdmin: true, puedeCargarGasto: true, 
+                verVentas: true, verInventario: true, puedeCobrar: true
+            });
             return;
         }
 
@@ -162,28 +170,36 @@ useEffect(() => {
         setNombreMesero(vendedorPersistido);
         const llaveSesion = `check_mesero_${vendedorPersistido}_${tenantId}`;
         const yaVerificado = sessionStorage.getItem(llaveSesion);
-        if (yaVerificado === 'true') {
-            setEstaActivo(true);
-            return;
-        }
 
-        // 🛡️ CIRUGÍA DEL ESCUDO: Evaluamos el estado usando la lista local cargada desde el búnker de Supabase
+        // 🛡️ CIRUGÍA DEL ESCUDO GRANULAR: Extraemos los campos vivos de la lista local
         if (listaMeseros.length > 0) {
             const coincidencia = listaMeseros.find(m => m.nombre === vendedorPersistido);
-            if (coincidencia && coincidencia.activo === false) {
-                setEstaActivo(false); // 🔒 Bloqueo fulminante si el administrador lo desactivó
+            if (coincidencia) {
+                if (coincidencia.activo === false) {
+                    setEstaActivo(false); // 🔒 Bloqueo fulminante si el administrador lo desactivó
+                } else {
+                    setEstaActivo(true);  // 🔓 Empleado al día
+                    sessionStorage.setItem(llaveSesion, 'true');
+                    
+                    // 🎯 SETEAMOS LOS PERMISOS REALES GUARDADOS EN SANITY PARA ESTE MESERO
+                   setPermisosActivos({
+                        verReporte: coincidencia.verReporte === true,
+                        verAdmin: coincidencia.verAdmin === true,
+                        puedeCargarGasto: coincidencia.puedeCargarGasto === true,
+                        verVentas: coincidencia.verVentas === true,
+                        verInventario: coincidencia.verInventario === true,
+                        puedeCobrar: coincidencia.puedeCobrar === true
+                    });
+                }
             } else {
-                setEstaActivo(true);  // 🔓 Empleado al día
-                if (coincidencia) sessionStorage.setItem(llaveSesion, 'true');
+                setEstaActivo(true);
             }
         } else {
-            // Si el escudo aún está viajando por la red, permitimos acceso temporal para evitar lag visual
             setEstaActivo(true);
         }
     };
     verificarSeguridadMesero();
-}, [tenantId, acc.esModoCajero, nombreMesero, listaMeseros]); // 🎯 Agregamos listaMeseros a las dependencias
-    const datosAgrupados = React.useMemo(() => {
+}, [tenantId, acc.esModoCajero, nombreMesero, listaMeseros]); const datosAgrupados = React.useMemo(() => {
         if (!cart?.length)return { cliente: [], cocina: [] };
         return {
             cliente: imp.agruparParaCliente(),
@@ -482,7 +498,7 @@ return (
         <div className={styles.mainWrapper}>
             <div className={styles.posLayout}>
                 <TicketPanel 
-                    cart={cart} total={total} metodoPago={metodoPago} setMetodoPago={setMetodoPago}
+                    cart={cart} total={total} metodoPago={metodoPago} setMetodoPago={setMetodoPago} permisos={permisosActivos}
                     quitarDelCarrito={quitarDelCarrito} agregarAlCarrito={agregarAlCarrito} guardarOrden={ord.guardarOrden} errorMesaOcupada={ord.errorMesaOcupada}
                     setErrorMesaOcupada={ord.setErrorMesaOcupada}cobrarOrden={ord.cobrarOrden}
                     generarCierreDia={rep.generarCierreDia} solicitarAccesoCajero={acc.solicitarAccesoCajero}
@@ -506,7 +522,7 @@ return (
 
                 <ProductGrid 
                     platos={platos} 
-                    platosFiltrados={platosFiltradosFinal} // ✅ Usamos la nueva lógica filtrada
+                    platosFiltrados={platosFiltradosFinal} permisos={permisosActivos}
                     busqueda={busqueda}                   // ✅ Pasamos el texto
                     setBusqueda={setBusqueda}
                     categoriaActiva={categoriaActiva} setCategoriaActiva={setCategoriaActiva}
@@ -523,7 +539,7 @@ return (
                     mensajeExito={ord.mensajeExito}
                     setMostrarConfigImpresion={setMostrarConfigImpresion}
                     config={configNegocio}
-                    tenantId={tenantId}
+                    tenantId={tenantId} columnasGrid={configNegocio?.columnasGrid || 6}
                 />
 
                 <PrintTemplates 
