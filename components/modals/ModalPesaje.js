@@ -15,6 +15,7 @@ export default function ModalPesaje({ plato, isOpen, onClose, onConfirm }) {
     const readerRef = useRef(null);
     const timeoutIdRef = useRef(null);
     const autoCleanIntervalRef = useRef(null);
+    const wsRef = useRef(null);
 
     useEffect(() => {
         if (isOpen) {
@@ -22,9 +23,7 @@ export default function ModalPesaje({ plato, isOpen, onClose, onConfirm }) {
             setPesoMostrado(0);
             setPrecioCalculado(0);
             
-            // 🛡️ Filtro estricto: Solo móviles reales con touch. Las pantallas POS COM1 pasan de largo.
-            const checkMovil = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) && ('ontouchstart' in window);
-            setEsMovil(checkMovil);
+            setEsMovil(false);
 
             setTimeout(() => inputRef.current?.focus(), 100);
         }
@@ -52,10 +51,9 @@ export default function ModalPesaje({ plato, isOpen, onClose, onConfirm }) {
         }
     };
 
-    // ⚖️ Función de conexión principal
-    // ⚖️ Función de conexión principal - BLINDADA CONTRA BOMBARDEO DE DATOS Y RE-RENDERS
     const conectarBascula = async () => {
-        if (!isOpen || !navigator.serial || esMovil) return;
+        // 🛡️ LUPA: Eliminamos la condición 'esMovil' para que el flujo de hardware intente conectar libremente
+        if (!isOpen || !navigator.serial) return;
         try {
             let ports = await navigator.serial.getPorts();
             let port = ports[0];
@@ -136,20 +134,29 @@ export default function ModalPesaje({ plato, isOpen, onClose, onConfirm }) {
     };
 
    useEffect(() => {
-        if (isOpen) {
-            conectarBascula();
+       if (isOpen) {
+            // 🔌 BISTURÍ: Primero intentamos buscar el .bat en red local de forma silenciosa
+            console.log("📡 Buscando Driver local (.bat)...");
+            const ws = new WebSocket('ws://localhost:8080');
+            wsRef.current = ws;
 
-            // ⏱️ RADAR DE RESCATE AUTOMÁTICO (Cada 30 Segundos):
-            // Si el búfer se congela por un Ctrl+Shift+R o lag de la interfaz,
-            // este ciclo limpia el rastro congelado en background y fuerza el flujo limpio de nuevo.
-            autoCleanIntervalRef.current = setInterval(async () => {
-                console.log("🧹 Mantenimiento cíclico: Refrescando canal serial virtual...");
-                await liberarPuerto();
-                setTimeout(() => conectarBascula(), 300);
-            }, 30000); // 30 segundos exactos
+            ws.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    if (data && data.peso) setInput(data.peso); // 🚀 Si el .bat responde, clava el peso de una
+                } catch (e) {}
+            };
+
+            ws.onerror = () => {
+                // 🔄 PLAN B: Si no encuentra el .bat (como en tus otros negocios), arranca tu WebSerial continuo original
+                console.log("ℹ️ Driver .bat no detectado. Activando WebSerial continuo directo...");
+                conectarBascula();
+            };
         }
 
         return () => {
+            // 🧹 Limpieza quirúrgica de ambos canales al cerrar el modal
+            if (wsRef.current) { wsRef.current.close(); wsRef.current = null; }
             if (autoCleanIntervalRef.current) clearInterval(autoCleanIntervalRef.current);
             if (timeoutIdRef.current) clearTimeout(timeoutIdRef.current);
             liberarPuerto(); 
