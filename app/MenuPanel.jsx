@@ -539,7 +539,7 @@ return (
                     mensajeExito={ord.mensajeExito}
                     setMostrarConfigImpresion={setMostrarConfigImpresion}
                     config={configNegocio}
-                    tenantId={tenantId} columnasGrid={configNegocio?.columnasGrid || 6}
+                    tenantId={tenantId} columnasGrid={Number(configInyectada?.columnasGrid || configNegocio?.columnasGrid || 6)}
                 />
 
                 <PrintTemplates 

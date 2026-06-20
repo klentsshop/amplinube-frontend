@@ -132,19 +132,17 @@ const platosFinales = useMemo(() => {
                 </div>
 
            {/* Cuadrícula de Platos con Diseño Split Autónomo y Adaptable */}
-           <div 
+    <div 
     className={styles.productsGrid}
     style={{
         display: 'grid',
-        // 📐 Si es escritorio (PC / Tablet horizontal), inyectamos de forma pura las columnas de Sanity
-        gridTemplateColumns: typeof window !== 'undefined' && window.innerWidth > 1024 
-            ? `repeat(${columnasGrid}, minmax(0, 1fr))` 
-            : 'repeat(2, minmax(0, 1fr))', // Fallback seguro para móvil si el CSS no lo sobreescribe
+        // 🔥 Pasamos el número de columnas como una variable CSS limpia
+        '--columnas-backend': columnasGrid || 6,
         
-        // 🛡️ CONTROL DE DENSIDAD: Si hay más de 8 columnas (Modo Fruver), achicamos el gap a 6px
+        // 🛡️ CONTROL DE DENSIDAD: Mantenemos el gap compacto si es Fruver (>8)
         gap: columnasGrid > 8 ? '6px' : '15px' 
     }}
-> 
+>
                 {/* 🚀 TARJETA COMODÍN: INTEGRACIÓN DE VALOR MANUAL */}
                 <div 
                     className={styles.productCard} 

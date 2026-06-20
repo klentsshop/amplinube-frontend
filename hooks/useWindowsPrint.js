@@ -38,27 +38,28 @@ export function useWindowsPrint(ordenesActivas, imprimirCocina, tenantId) {
         }
     }, [tenantId]);
 
-    // 2️⃣ EL "OÍDO" (WATCHER) REACTIVO
+   // 2️⃣ EL "OÍDO" (WATCHER) REACTIVO
     useEffect(() => {
-        // 🛡️ REGLA DE ORO MULTITENANT: Si la PC no tiene configuración o no tiene categorías vinculadas,
-        // matamos el Listener de inmediato. No importa si es Caja o Mesero; si imprime por Bluetooth, consume $0.
-        if (!miConfig || !miConfig.categoriasVinculadas?.length) {
+        // 🛡️ LUPA SENIOR: Serialización estricta para congelar re-suscripciones innecesarias
+        if (!miConfig) return;
+        
+        const categoriasRaw = miConfig.categoriasVinculadas || [];
+        if (!categoriasRaw.length) {
             if (!yaAvisoFaltaConfig.current) {
                 console.log("💤 Sin tiquetera por cable configurada. Listener DESACTIVADO de forma segura.");
                 yaAvisoFaltaConfig.current = true;
             }
-            return; // 🏁 Freno de mano total. Cierra el grifo de API requests aquí mismo.
+            return;
         }
 
         const meseroPersistido = localStorage.getItem('ultimoMesero');
         if (meseroPersistido && meseroPersistido !== 'Caja' && !meseroPersistido.includes('*')) {
-            return; // 🏁 Filtro secundario para meseros en tablets
+            return; 
         }
 
         yaAvisoFaltaConfig.current = false;
-        const misCats = miConfig.categoriasVinculadas.map(c => c.trim().toUpperCase());
-        // Limpiamos el nombre para crear el campo dinámico (ej: "CajaPrincipal")
-        const miIDLimpio = miConfig.nombre.replace(/\s+/g, ''); 
+        const misCats = categoriasRaw.map(c => c.trim().toUpperCase());
+        const miIDLimpio = String(miConfig.nombre || "").replace(/\s+/g, '');
 
         // Escuchamos órdenes que tengan la bandera de impresión activa
        const query = `*[_type == 'ordenActiva' && imprimirSolicitada == true && tenant == $tenantId]`;
@@ -85,9 +86,13 @@ export function useWindowsPrint(ordenesActivas, imprimirCocina, tenantId) {
             }
         });
 
-        // Limpieza al desmontar el hook o cambiar la config
-        return () => subscription.unsubscribe();
-    }, [miConfig]);
+        // 🛡️ BISTURÍ: Desuscripción garantizada y control de dependencias primitivas por ID único de revisión
+        return () => {
+            if (subscription && typeof subscription.unsubscribe === 'function') {
+                subscription.unsubscribe();
+            }
+        };
+    }, [miConfig?._id, miConfig?._rev, tenantId]);
 
     // 3️⃣ LÓGICA DE CURSOR HÍBRIDO Y DISPARO
     const ejecutarImpresionBlindada = async (orden, misCats, miID) => {

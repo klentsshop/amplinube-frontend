@@ -165,6 +165,17 @@ export async function PUT(req) {
                     // Mapeamos el array plano buscando por _id directo en la raíz del array
                     const nuevoPayload = registroActual.payload_json.map(item => {
                         if (item?._id === data.productoId) {
+                            let nuevaUrlDeImagen = item.imagenUrl;
+                            if (data.imagen?.asset?._ref) {
+            try {
+                // Parseamos el string del _ref de Sanity de forma estática y limpia
+                const ref = data.imagen.asset._ref;
+                const [,, id, dimensions, ext] = ref.split('-');
+                nuevaUrlDeImagen = `https://cdn.sanity.io/images/${process.env.NEXT_PUBLIC_SANITY_PROJECT_ID}/${process.env.NEXT_PUBLIC_SANITY_DATASET}/${id}-${dimensions}.${ext}`;
+            } catch (e) {
+                console.error("⚠️ Error al construir URL de imagen en caliente", e);
+            }
+        }
                             return {
                                 ...item,
                                 nombre: data.nombre.trim(),
@@ -175,10 +186,11 @@ export async function PUT(req) {
                                 controlaInventario: data.controlaInventario,
                                 barcode: data.barcode,
                                 codigoBalanza: data.codigoBalanza,
-                                ...(data.imagen && { imagen: data.imagen }),
                                 recetaInsumos: camposAActualizar.recetaInsumos,
-                                _updatedAt: new Date().toISOString(),
-                                esVentaPorPeso: data.esVentaPorPeso === true
+                                esVentaPorPeso: data.esVentaPorPeso === true,
+                                imagen: data.imagen ? data.imagen : null,
+                                imagenUrl: nuevaUrlDeImagen,
+                                 _updatedAt: new Date().toISOString(),
                             };
                         }
                         return item;
