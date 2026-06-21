@@ -199,20 +199,30 @@ function TicketContent() {
                                         return acc;
                                     }, {});
 
-                                    return Object.values(productosAgrupados).map((item, index) => {
+                                   return Object.values(productosAgrupados).map((item, index) => {
                                         const cantNum = Number(item.amount) || 0;
-                                        const esPeso = cantNum % 1 !== 0;
+                                        const esPeso = cantNum % 1 !== 0 || item.esVentaPorPeso === true;
                                         const cantidadTexto = esPeso ? cantNum.toFixed(3) : cantNum;
-                                        const precioLinea = Number(item.precioNum || item.precioUnitario || 0) * cantNum;
+                                        
+                                        // 🛡️ Captura el precio unitario exacto del esquema relacional híbrido
+                                        const precioUnitario = Number(item.precioNum || item.precioUnitario || item.precio || 0);
+                                        const precioLinea = precioUnitario * cantNum;
+                                        const sufijoUnidad = esPeso ? 'Kilo' : 'U';
 
                                         return (
-                                            <tr key={index} style={{ verticalAlign: 'top' }}>
-                                                {/* Celda de detalle con palabra acoplada de corrido */}
-                                                <td style={{ padding: '2px 0', textAlign: 'left', wordBreak: 'break-word', lineHeight: '1.2' }}>
-                                                    {item.nombre} <span style={{ paddingLeft: '4px' }}>X{cantidadTexto}</span>
+                                            <tr key={index} style={{ borderBottom: '1px dotted #e5e7eb', verticalAlign: 'top' }}>
+                                                {/* Celda de detalle con el nombre del producto y el desglose unitario abajo */}
+                                                <td style={{ padding: '4px 0', textAlign: 'left', wordBreak: 'break-word', lineHeight: '1.2' }}>
+                                                    <div style={{ fontSize: '12px', fontWeight: 'bold' }}>
+                                                        {item.nombre}
+                                                    </div>
+                                                    {/* 🔬 DESGLOSE INDUSTRIAL: Precio por kilo o unidad secundario */}
+                                                    <div style={{ fontSize: '10px', fontWeight: 'normal', color: '#333', opacity: 0.9, marginTop: '1px' }}>
+                                                        {cantidadTexto} {esPeso ? 'KG' : 'unid.'} x $ {precioUnitario.toLocaleString('es-CO')}/{sufijoUnidad}
+                                                    </div>
                                                 </td>
-                                                {/* Alineación forzada extrema derecha mediante pixeles */}
-                                                <td style={{ padding: '2px 0', textAlign: 'right', whiteSpace: 'nowrap', width: '85px', lineHeight: '1.2' }}>
+                                                {/* Alineación forzada extrema derecha para el total de la línea */}
+                                                <td style={{ padding: '4px 0', textAlign: 'right', whiteSpace: 'nowrap', width: '85px', fontSize: '12px', fontWeight: 'bold', lineHeight: '1.2' }}>
                                                     $ {precioLinea.toLocaleString('es-CO')}
                                                 </td>
                                             </tr>
