@@ -14,7 +14,6 @@ const sanityClient = createClient({
     apiVersion: '2026-03-01',
     token: process.env.SANITY_API_TOKEN
 });
-const builder = imageUrlBuilder(sanityClient);
 
 export async function POST(request) {
     try {
@@ -67,11 +66,19 @@ export async function POST(request) {
 
             // Si es un plato con imagen, le pre-procesamos la URL limpia antes de meterlo al array
             let itemProcesado = { ...documentoMutado };
+            // 🚀 CIRUGÍA SÉNIOR: Extractor estático nativo anti-undefined
             if (itemProcesado._type === 'plato' && itemProcesado.imagen?.asset?._ref) {
                 try {
-                    itemProcesado.imagenUrl = builder.image(itemProcesado.imagen).url();
+                    const ref = itemProcesado.imagen.asset._ref; // Formato: image-assetId-dimension-ext
+                    const parts = ref.split('-');
+                    if (parts.length >= 4) {
+                        const id = parts[1];
+                        const dimensions = parts[2];
+                        const ext = parts[3];
+                        itemProcesado.imagenUrl = `https://cdn.sanity.io/images/${process.env.NEXT_PUBLIC_SANITY_PROJECT_ID}/${process.env.NEXT_PUBLIC_SANITY_DATASET}/${id}-${dimensions}.${ext}`;
+                    }
                 } catch (imgError) {
-                    console.error("⚠️ Error procesando imagen en Webhook para:", itemProcesado.nombre);
+                    console.error("⚠️ Error extractor estático en Webhook para:", itemProcesado.nombre);
                 }
             }
 

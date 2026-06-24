@@ -171,14 +171,20 @@ export async function PUT(req) {
                             let nuevoNodoImagen = item.imagen;     // Por defecto hereda el nodo viejo
 
                             // Solo recalculamos si el cliente realmente envió un archivo nuevo de imagen
+                            // 🚀 PARCHE EN CALIENTE RESILIENTE (Evita descalces de destructuración)
                             if (data.imagen?.asset?._ref) {
                                 nuevoNodoImagen = data.imagen;
                                 try {
                                     const ref = data.imagen.asset._ref;
-                                    const [,, id, dimensions, ext] = ref.split('-');
-                                    nuevaUrlDeImagen = `https://cdn.sanity.io/images/${process.env.NEXT_PUBLIC_SANITY_PROJECT_ID}/${process.env.NEXT_PUBLIC_SANITY_DATASET}/${id}-${dimensions}.${ext}`;
+                                    const parts = ref.split('-');
+                                    if (parts.length >= 4) {
+                                        const id = parts[1];
+                                        const dimensions = parts[2];
+                                        const ext = parts[3];
+                                        nuevaUrlDeImagen = `https://cdn.sanity.io/images/${process.env.NEXT_PUBLIC_SANITY_PROJECT_ID}/${process.env.NEXT_PUBLIC_SANITY_DATASET}/${id}-${dimensions}.${ext}`;
+                                    }
                                 } catch (e) {
-                                    console.error("⚠️ Error al construir URL de imagen en caliente", e);
+                                    console.error("⚠️ Error extractor estático en PUT de productos", e);
                                 }
                             }
 
