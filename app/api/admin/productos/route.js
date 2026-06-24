@@ -140,9 +140,11 @@ export async function PUT(req) {
         // 🚀 LÍNEA CORREGIDA MINUCIOSAMENTE:
         // Solo si el usuario seleccionó una imagen nueva, se añade al objeto de actualización.
         // Si no se tocó la imagen, preservamos intacta la que ya estaba guardada en Sanity.
-        if (data.hasOwnProperty('imagen')) {
-    camposAActualizar.imagen = data.imagen ? data.imagen : null;
-}
+         if (data.imagen?.asset?._ref) {
+            camposAActualizar.imagen = data.imagen;
+        } else {
+            delete camposAActualizar.imagen; // 🔥 Remoción segura: Sanity no tocará la foto existente
+        }
 
         // USAMOS EL CLIENTE CON PERMISOS PARA CONFIRMAR EL CAMBIO
         await sanityClientServer.patch(data.productoId)
@@ -161,21 +163,25 @@ export async function PUT(req) {
                     .eq('tenant_host', tenantKey)
                     .single();
 
-                if (registroActual && Array.isArray(registroActual.payload_json)) {
+                     if (registroActual && Array.isArray(registroActual.payload_json)) {
                     // Mapeamos el array plano buscando por _id directo en la raíz del array
                     const nuevoPayload = registroActual.payload_json.map(item => {
                         if (item?._id === data.productoId) {
-                            let nuevaUrlDeImagen = item.imagenUrl;
+                            let nuevaUrlDeImagen = item.imagenUrl; // Por defecto hereda la URL vieja
+                            let nuevoNodoImagen = item.imagen;     // Por defecto hereda el nodo viejo
+
+                            // Solo recalculamos si el cliente realmente envió un archivo nuevo de imagen
                             if (data.imagen?.asset?._ref) {
-            try {
-                // Parseamos el string del _ref de Sanity de forma estática y limpia
-                const ref = data.imagen.asset._ref;
-                const [,, id, dimensions, ext] = ref.split('-');
-                nuevaUrlDeImagen = `https://cdn.sanity.io/images/${process.env.NEXT_PUBLIC_SANITY_PROJECT_ID}/${process.env.NEXT_PUBLIC_SANITY_DATASET}/${id}-${dimensions}.${ext}`;
-            } catch (e) {
-                console.error("⚠️ Error al construir URL de imagen en caliente", e);
-            }
-        }
+                                nuevoNodoImagen = data.imagen;
+                                try {
+                                    const ref = data.imagen.asset._ref;
+                                    const [,, id, dimensions, ext] = ref.split('-');
+                                    nuevaUrlDeImagen = `https://cdn.sanity.io/images/${process.env.NEXT_PUBLIC_SANITY_PROJECT_ID}/${process.env.NEXT_PUBLIC_SANITY_DATASET}/${id}-${dimensions}.${ext}`;
+                                } catch (e) {
+                                    console.error("⚠️ Error al construir URL de imagen en caliente", e);
+                                }
+                            }
+
                             return {
                                 ...item,
                                 nombre: data.nombre.trim(),
@@ -188,9 +194,9 @@ export async function PUT(req) {
                                 codigoBalanza: data.codigoBalanza,
                                 recetaInsumos: camposAActualizar.recetaInsumos,
                                 esVentaPorPeso: data.esVentaPorPeso === true,
-                                imagen: data.imagen ? data.imagen : null,
-                                imagenUrl: nuevaUrlDeImagen,
-                                 _updatedAt: new Date().toISOString(),
+                                imagen: nuevoNodoImagen, // 🛡️ Hidratado por arrastre (conserva o actualiza)
+                                imagenUrl: nuevaUrlDeImagen, // 🛡️ Hidratado por arrastre (conserva o actualiza)
+                                _updatedAt: new Date().toISOString(),
                             };
                         }
                         return item;

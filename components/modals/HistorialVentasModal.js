@@ -26,7 +26,59 @@ export default function HistorialVentasModal({ isOpen, onClose, onReimprimir, te
             setBuscando(false);
         }
     };
+    
+    // 🚀 CIRUGÍA SÉNIOR CORREGIDA: Extracción desde la caché del catálogo local del navegador
+    // 🚀 CIRUGÍA SÉNIOR INTEGRADA: Consumo directo del Escudo de Catálogo en Caliente
+    const abrirTicketCable = async (venta) => {
+        try {
+            // 1️⃣ Consultamos directamente al endpoint del Escudo de Velocidad (Impacto Sanity: $0)
+            const respuesta = await fetch(`/api/catalogo?tenantId=${tenantId}`);
+            let arrayCatalogo = [];
+            
+            if (respuesta.ok) {
+                arrayCatalogo = await respuesta.json();
+            }
 
+            // 2️⃣ Extraemos el objeto negocio del catálogo plano que nos devolvió Supabase
+            const docNegocio = (Array.isArray(arrayCatalogo) ? arrayCatalogo : []).find(item => item?._type === 'negocio') || {};
+
+            const estructuraTicket = {
+                ordenId: venta.folio || '01',
+                mesa: venta.mesa || 'CAJA',
+                mesero: venta.mesero || 'CAJA',
+                fecha: venta.created_at || new Date().toISOString(),
+                metodoPago: venta.metodoPago || 'EFECTIVO',
+                propina: 0, 
+                montoManual: Number(venta.propinaRecaudada) || 0,
+                tipoOrden: venta.datosEntrega ? 'domicilio' : 'mesa',
+                productos: (venta.platosVendidosV2 || []).map(plato => ({
+                    nombre: plato.nombrePlato || plato.nombre || 'PRODUCTO',
+                    cantidad: Number(plato.cantidad) || 1,
+                    precioUnitario: Number(plato.precioUnitario || 0),
+                    comentario: plato.comentario || null
+                })),
+                datosEntrega: venta.datosEntrega || null,
+                
+                // 🛡️ HIDRATACIÓN DEFINITIVA DESDE EL BÚNKER FLUIDO
+                brand: { 
+                    name: docNegocio.nombre || venta.nombreNegocio || tenantId, 
+                    nit: docNegocio.nit || venta.nit || venta.nitNegocio || 'N/A', 
+                    address: docNegocio.direccion || venta.direccion || venta.direccionNegocio || null, 
+                    phone: docNegocio.telefono || venta.telefono || venta.telefonoNegocio || null 
+                }
+            };
+
+            if (estructuraTicket.montoManual > 0) estructuraTicket.propina = -1;
+
+            // Hidratamos el LocalStorage con el prefijo exacto que busca la tiquetera
+            localStorage.setItem(`${tenantId}_ticket_preview_data`, JSON.stringify(estructuraTicket));
+            
+            // Abrimos la tiquetera en su subcarpeta correcta
+            window.open(`/ticket/preview?type=cliente&tenantId=${tenantId}`, '_blank', 'width=300,height=600');
+        } catch (err) {
+            console.error("⚠️ Error en el formateador de ticket nativo:", err);
+        }
+    };
     React.useEffect(() => {
         if (isOpen && tenantId) {
             obtenerVentas();
@@ -92,7 +144,16 @@ export default function HistorialVentasModal({ isOpen, onClose, onReimprimir, te
                                                     👁️
                                                 </button>
                                                 {/* 🖨️ FUNCIÓN DE REIMPRESIÓN ORIGINAL (INTACTA) */}
-                                                <button onClick={() => onReimprimir(v)} style={{ backgroundColor: '#334155', color: 'white', border: 'none', borderRadius: '6px', padding: '8px 15px', fontSize: '0.85rem', fontWeight: 'bold', cursor: 'pointer' }}>🖨️ Ticket</button>
+                                               {/* 🖨️ BOTÓN DUAL SÉNIOR: Canal Bluetooth + Canal Cable simultáneos */}
+                                                <button 
+                                                    onClick={() => {
+                                                        onReimprimir(v); // Ejecuta Bluetooth (Móvil)
+                                                        abrirTicketCable(v); // Ejecuta Ventana (Cable PC)
+                                                    }} 
+                                                    style={{ backgroundColor: '#334155', color: 'white', border: 'none', borderRadius: '6px', padding: '8px 15px', fontSize: '0.85rem', fontWeight: 'bold', cursor: 'pointer' }}
+                                                >
+                                                    🖨️ Ticket
+                                                </button>
                                             </div>
                                         </div>
 

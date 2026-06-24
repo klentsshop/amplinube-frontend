@@ -251,10 +251,10 @@ const platosParaGuardar = cart.map(i => {
     // ==============================
     // COBRAR ORDEN (VERSIÓN FINAL BLINDADA)
     // ==============================
-    const cobrarOrden = async (metodoPrimario, args = null) => {
+   const cobrarOrden = async (metodoPrimario, args = null, puedeCobrarMesero = false) => {
         if (mensajeExito) return;
         if (cart.length === 0) return alert("⚠️ El carrito está vacío.");
-        if (!esModoCajero) return alert("⚠️ Solo el cajero puede realizar cobros directos.");
+        if (!esModoCajero && !puedeCobrarMesero) return alert("⚠️ Solo el cajero o personal autorizado puede realizar cobros directos.");
 
         // ⚓ ANCLA DE IDENTIDAD (Protege contra el "Rebautizo" de mesa)
         const idParaCerrar = ordenActivaId; 

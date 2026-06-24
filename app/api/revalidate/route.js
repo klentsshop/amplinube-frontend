@@ -1,61 +1,119 @@
 import { NextResponse } from 'next/server';
-import { supabaseServer } from '@/lib/supabase'; // 🛡️ CIRUGÍA 1: Importación oficial corregida
+import { supabaseServer } from '@/lib/supabase';
 import { isValidSignature, SIGNATURE_HEADER_NAME } from '@sanity/webhook';
+import { createClient } from '@sanity/client';
+import imageUrlBuilder from '@sanity/image-url';
 
-// 🔑 Secreto del Webhook compartido entre Sanity y tu API (Defínelo en tus variables de entorno)
 const SANITY_WEBHOOK_SECRET = process.env.SANITY_WEBHOOK_SECRET;
+
+// Inicialización de Sanity para resolver imágenes si es necesario
+const sanityClient = createClient({
+    projectId: process.env.NEXT_PUBLIC_SANITY_PROJECT_ID,
+    dataset: process.env.NEXT_PUBLIC_SANITY_DATASET,
+    useCdn: false,
+    apiVersion: '2026-03-01',
+    token: process.env.SANITY_API_TOKEN
+});
+const builder = imageUrlBuilder(sanityClient);
 
 export async function POST(request) {
     try {
-        // 🛡️ REFUERZO DE SEGURIDAD ABSOLUTA: Validar firma del Webhook
+        let body;
+        
+        // 1. 🛡️ AUTENTICACIÓN: Validar firma del Webhook
         if (SANITY_WEBHOOK_SECRET) {
-            const bodyRaw = await request.text(); // Leemos el cuerpo crudo necesario para validar la firma
+            const bodyRaw = await request.text();
             const signature = request.headers.get(SIGNATURE_HEADER_NAME);
 
             if (!signature || !isValidSignature(bodyRaw, signature, SANITY_WEBHOOK_SECRET)) {
-                console.warn("⚠️ Intento de revalidación rechazado: Firma inválida o inexistente.");
+                console.warn("⚠️ Webhook rechazado: Firma inválida.");
                 return NextResponse.json({ error: "No autorizado" }, { status: 401 });
             }
-
-            // Si la firma es válida, parseamos el JSON para extraer los datos
-            var body = JSON.parse(bodyRaw);
+            body = JSON.parse(bodyRaw);
         } else {
-            // Fallback de desarrollo si no has configurado el secreto aún
-            var body = await request.json();
+            body = await request.json();
         }
 
-        /**
-         * 🎯 CAPTURA DINÁMICA DEL TENANT
-         * Sanity te enviará el documento mutado. Si tu webhook envía el documento completo,
-         * el alias vendrá en 'body.tenant'. Si configuraste una proyección personalizada,
-         * puede venir en 'body.tenantAlias'. Atrapamos ambas para máxima resiliencia.
-         */
+        // 2. 🎯 EXTRACCIÓN DEL TENANT Y DEL DOCUMENTO MUTADO
         const tenantAlias = body?.tenant || body?.tenantAlias;
+        const documentoMutado = body; // El body contiene el documento de Sanity que cambió
 
-        if (!tenantAlias) {
-            console.warn("⚠️ Webhook recibido pero no se encontró un identificador de Tenant en el payload:", body);
-            return NextResponse.json({ message: "Falta el identificador del negocio en el cuerpo" }, { status: 400 });
+        if (!tenantAlias || !documentoMutado?._id || !documentoMutado?._type) {
+            console.warn("⚠️ Webhook ignorado: Faltan datos estructurales (tenant, _id o _type).");
+            return NextResponse.json({ message: "Payload incompleto" }, { status: 400 });
         }
 
-        // Sanitizamos a minúsculas para mantener consistencia con el catálogo
         const cleanAlias = tenantAlias.toString().toLowerCase().trim();
+        console.log(`📡 [WEBHOOK SÉNIOR] Mutación detectada para [${cleanAlias}] en tipo: [${documentoMutado._type}]`);
 
-        // 🪓 GUILLOTINA SELECTIVA MULTI-TENANT: CIRUGÍA 2 -> Usamos supabaseServer
-        const { error } = await supabaseServer
+        // 3. 🛰️ LECTURA DEL BÚNKER: Traemos el caché actual de Supabase
+        const { data: cacheExistente, error: errFetch } = await supabaseServer
             .from('catalog_cache')
-            .delete()
-            .eq('tenant_host', cleanAlias);
+            .select('payload_json')
+            .eq('tenant_host', cleanAlias)
+            .maybeSingle();
 
-        if (error) {
-            console.error(`❌ Error al borrar fila en Supabase para [${cleanAlias}]:`, error);
-            throw error;
+        if (errFetch) {
+            console.error("❌ Error recuperando caché en Webhook:", errFetch);
+            throw errFetch;
         }
-        
-        console.log(`🗑️ [ESCUDO INFALIBLE] Caché destruido en Supabase para el restaurante: ${cleanAlias}`);
-        return NextResponse.json({ revalidated: true, tenant: cleanAlias, now: Date.now() });
+
+        let nuevoPayload = [];
+
+        if (cacheExistente?.payload_json && Array.isArray(cacheExistente.payload_json)) {
+            // 🔄 EL BÚNKER EXISTE: Mapeamos y parchamos quirúrgicamente
+            let itemEncontrado = false;
+            let arrayCopiado = [...cacheExistente.payload_json];
+
+            // Si es un plato con imagen, le pre-procesamos la URL limpia antes de meterlo al array
+            let itemProcesado = { ...documentoMutado };
+            if (itemProcesado._type === 'plato' && itemProcesado.imagen?.asset?._ref) {
+                try {
+                    itemProcesado.imagenUrl = builder.image(itemProcesado.imagen).url();
+                } catch (imgError) {
+                    console.error("⚠️ Error procesando imagen en Webhook para:", itemProcesado.nombre);
+                }
+            }
+
+            // Buscamos si el ítem ya existía en el array para sobreescribirlo
+            nuevoPayload = arrayCopiado.map(item => {
+                if (item._id === itemProcesado._id) {
+                    itemEncontrado = true;
+                    return itemProcesado;
+                }
+                return item;
+            });
+
+            // Si el documento es nuevo y no estaba en el array, lo inyectamos al final
+            if (!itemEncontrado) {
+                nuevoPayload.push(itemProcesado);
+            }
+        } else {
+            // 🚨 EL BÚNKER NO EXISTÍA: Si por alguna razón la fila está vacía, no arriesgamos data parcial.
+            // Dejamos que el POS lo regenere limpio desde Sanity en su próximo GET consultando la API de catálogo.
+            console.log(`⚠️ El búnker estaba vacío en Supabase para [${cleanAlias}]. Saltando parcheo para forzar inicialización limpia.`);
+            return NextResponse.json({ revalidated: false, message: "Caché vacío, requiere GET inicial" });
+        }
+
+        // 4. 💾 PERSISTENCIA EN PIEDRA INTELIGENTE: Guardamos el catálogo parchado
+        const { error: upsertError } = await supabaseServer
+            .from('catalog_cache')
+            .upsert({
+                tenant_host: cleanAlias,
+                payload_json: nuevoPayload,
+                updated_at: new Date().toISOString()
+            }, { onConflict: 'tenant_host' });
+
+        if (upsertError) {
+            console.error(`❌ Error al actualizar mutación en Supabase para [${cleanAlias}]:`, upsertError);
+            throw upsertError;
+        }
+
+        console.log(`💎 [ESCUDO INFALIBLE] Búnker actualizado quirúrgicamente para: ${cleanAlias} (ID: ${documentoMutado._id})`);
+        return NextResponse.json({ revalidated: true, mutatedId: documentoMutado._id });
 
     } catch (error) {
-        console.error("🔥 Error crítico en el receptor del Webhook de revalidación:", error);
-        return NextResponse.json({ error: "Error interno al procesar la revalidación" }, { status: 500 });
+        console.error("🔥 Error crítico en el Webhook de revalidación quirúrgica:", error);
+        return NextResponse.json({ error: "Error interno al mutar la caché" }, { status: 500 });
     }
 }

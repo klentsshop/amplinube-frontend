@@ -19,7 +19,17 @@ const ProductGrid = memo(({
     styles, mostrarCarritoMobile, setMostrarCarritoMobile, cart, total, mensajeExito, ordenesActivas, cargarOrden, ordenActivaId, setMostrarConfigImpresion,
     tenantId, columnasGrid = 6
 }) => {
-    const listaCategorias = useMemo(() => ['todos', ...new Set(platos.map(p => p.categoria))], [platos]);
+    // 🚀 AJUSTE VISUAL SÉNIOR: Categoría 'TODOS' fija al inicio y ordenamiento alfabético estricto
+    const listaCategorias = useMemo(() => {
+        // 1. Extraemos las categorías únicas de los platos usando el Set
+        const categoriasUnicas = [...new Set(platos.map(p => p.categoria || ""))];
+        
+        // 2. Ordenamos alfabéticamente las categorías del negocio de forma limpia
+        const ordenadas = categoriasUnicas.sort((a, b) => a.localeCompare(b));
+        
+        // 3. Retornamos 'TODOS' en mayúscula en la primera posición fija
+        return ['TODOS', ...ordenadas];
+    }, [platos]);
     console.log("📊 Columnas vivas que recibe el ProductGrid desde el backend:", columnasGrid);
 // 🔥 2. LÓGICA DE ORDENAMIENTO INTELIGENTE (PROFESIONAL)
     // Usamos useMemo para ordenar los platos por popularidad (totalVentas) 
@@ -32,7 +42,7 @@ const platosFinales = useMemo(() => {
     // Si hay búsqueda, mostramos tal cual vienen para no saturar el procesador
     if (busqueda.trim() !== "") return platosFiltrados;
 
-    if (categoriaActiva === 'todos') {
+    if (categoriaActiva === 'TODOS') {
         // Hacemos una copia rápida para ordenar
         const copia = [...platosFiltrados];
         return copia.sort((a, b) => {
@@ -162,7 +172,7 @@ const platosFinales = useMemo(() => {
                             _id: `manual_${Date.now()}`, // ID único temporal
                             nombre: nombreManual.trim().toUpperCase(),
                             precio: Number(precioManual),
-                            categoria: (categoriaActiva && categoriaActiva !== 'todos') ? categoriaActiva : 'MANUAL',
+                            categoria: (categoriaActiva && categoriaActiva !== 'TODOS') ? categoriaActiva : 'MANUAL',
                             disponible: true,
                             controlaInventario: false,
                             seImprime: true

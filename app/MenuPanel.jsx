@@ -36,7 +36,7 @@ export default function MenuPanel({ configNegocio: configInyectada }) {
     const [tenantId, setTenantId] = useState(CURRENT_TENANT);
     const [configNegocio, setConfigNegocio] = useState(configInyectada);
     const [platos, setPlatos] = useState([]);
-    const [categoriaActiva, setCategoriaActiva] = useState('todos');
+    const [categoriaActiva, setCategoriaActiva] = useState('TODOS');
     const [cargando, setCargando] = useState(true);
     const [mostrarListaOrdenes, setMostrarListaOrdenes] = useState(false);
     const [nombreMesero, setNombreMesero] = useState(null);
@@ -320,7 +320,7 @@ useEffect(() => {
             const cumpleBusqueda = nombre.toLowerCase().includes(busqueda.toLowerCase()) || 
                                    barcode.toLowerCase().includes(busqueda.toLowerCase()) ||
                                    plu.toLowerCase().includes(busqueda.toLowerCase());
-            const cumpleCategoria = categoriaActiva === 'todos' || p.categoria === categoriaActiva;
+            const cumpleCategoria = categoriaActiva === 'TODOS' || p.categoria === categoriaActiva;
             return cumpleBusqueda && cumpleCategoria;
         });
     }, [platos, busqueda, categoriaActiva]);

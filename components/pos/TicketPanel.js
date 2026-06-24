@@ -601,7 +601,7 @@ export default function TicketPanel({
                     marginBottom: '4px'
                 }}>
                     {/* IZQUIERDA: Calculadora compacta con input más ancho */}
-                    {esModoCajero ? (
+                    {(esModoCajero || permisos.puedeCobrar) ? (
                         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                             <div style={{ display: 'flex', flexDirection: 'column' }}>
                                 <span style={{ fontSize: '0.65rem', fontWeight: '900', color: '#9CA3AF', marginBottom: '2px' }}>PAGA CON:</span>
@@ -815,9 +815,9 @@ export default function TicketPanel({
         try {
         
           if (sumaModal > 0 && Math.abs(sumaModal - total) < 10) {
-          await cobrarOrden('mixto_v2', montosFinales, tenantId); 
+          await cobrarOrden('mixto_v2', montosFinales, tenantId, permisos.puedeCobrar); 
           } else {
-          await cobrarOrden(metodoPago, null, tenantId);
+          await cobrarOrden(metodoPago, null, tenantId, permisos.puedeCobrar);
           }
          
     setPagaCon('');
