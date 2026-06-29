@@ -65,6 +65,7 @@ export async function POST(request) {
                 .from('ventas')
                 .select('*')
                 .eq('tenant_id', tenantId)
+                .eq('activo', true)
                 .gte('fecha_local', `${stringInicioLimpio} 00:00:00`)
                 .lte('fecha_local', `${stringFinLimpio} 23:59:59`),
             supabaseServer

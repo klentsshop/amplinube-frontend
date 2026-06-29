@@ -1,32 +1,26 @@
-'use client';
+ 'use client';
 import React, { useEffect, useState, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { SITE_CONFIG } from '@/lib/config';
-
 function TicketContent() {
     const searchParams = useSearchParams();
     const typeParam = searchParams.get('type');
     const tenantIdParam = searchParams.get('tenantId') || 'demo';
-    
     const [data, setData] = useState(null);
     const [listoParaImprimir, setListoParaImprimir] = useState(false);
-
     useEffect(() => {
         // 1️⃣ Intento A: Leer la inyección directa en memoria global (Escritorio - Instantáneo)
         let datosTicket = window.ticketPrintData || window.cocinaPrintData;
-
         // 2️⃣ Intento B: Si vino de un hilo asíncrono o móvil, leer de localStorage usando el prefijo tenant
         if (!datosTicket && tenantIdParam) {
-            const storageKey = typeParam === 'cocina' 
-                ? `${tenantIdParam}_cocina_print_data` 
+            const storageKey = typeParam === 'cocina'
+                ? `${tenantIdParam}_cocina_print_data`
                 : `${tenantIdParam}_ticket_preview_data`;
-            
             const savedData = localStorage.getItem(storageKey);
             if (savedData) {
                 datosTicket = JSON.parse(savedData);
             }
         }
-        
         // 3️⃣ Cargar la información si se localizó de forma exitosa
         if (datosTicket) {
             setData(datosTicket);
@@ -36,15 +30,12 @@ function TicketContent() {
             console.warn(`⚠️ No se encontraron datos para el Tenant: ${tenantIdParam} y tipo: ${typeParam}`);
         }
     }, [typeParam, tenantIdParam]);
-
     useEffect(() => {
         if (listoParaImprimir && typeof window !== 'undefined') {
             const esCocinaAuto = typeParam === 'cocina' && data?.autoPrint;
             const esClienteVentana = typeParam === 'cliente'; // 🔥 Fuerza el disparo para cuentas de clientes
-
             if (esCocinaAuto || esClienteVentana) {
                 window.print();
-                
                 // Solo cerramos automáticamente si es cocina autorizada
                 if (esCocinaAuto) {
                     const closeTimer = setTimeout(() => {
@@ -55,32 +46,26 @@ function TicketContent() {
             }
         }
     }, [listoParaImprimir, data?.autoPrint, typeParam]);
-
     if (!data) return <p style={{ textAlign: 'center', marginTop: '50px' }}>Cargando ticket...</p>;
-
     const esModoCocina = typeParam === 'cocina';
     const esDomicilio = String(data.tipoOrden || "").toLowerCase() === 'domicilio';
-
     const totalProductos = (data.productos || []).reduce((acc, item) => {
     // 🛡️ Cirugía: Absorbemos tanto el formato estructurado viejo como el de las columnas planas de Supabase (precio)
     const precio = Number(item.precioNum || item.precioUnitario || item.precio || 0);
     const cantidad = Number(item.cantidad) || 0;
     return acc + (precio * cantidad);
     }, 0);
-
-    const valorPropina = data.propina === -1 
-        ? (Number(data.montoManual) || 0) 
+    const valorPropina = data.propina === -1
+        ? (Number(data.montoManual) || 0)
         : (totalProductos * ((Number(data.propina) || 0) / 100));
-
     const totalFinal = totalProductos + valorPropina;
-
     return (
-        <div id="ticket-root" style={{ 
-            width: '100%', maxWidth: '280px', margin: '0 auto', padding: '0 2px', 
-            backgroundColor: 'white', fontFamily: 'monospace', color: '#000' 
+        <div id="ticket-root" style={{
+            width: '100%', maxWidth: '280px', margin: '0 auto', padding: '0 2px',
+            backgroundColor: 'white', fontFamily: 'monospace', color: '#000'
         }}>
             {/* PANEL DE CONTROL INTERACTIVO (NO IMPRIMIBLE) */}
-            <div className="no-print" style={{ 
+            <div className="no-print" style={{
                 display: 'flex', gap: '10px', marginBottom: '20px',
                 position: 'sticky', top: '0', backgroundColor: 'white',
                 padding: '10px 0', zIndex: 10
@@ -88,27 +73,21 @@ function TicketContent() {
                 <button onClick={() => window.close()} style={{ flex: 1, padding: '12px', backgroundColor: '#666', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>⬅️ VOLVER</button>
                 <button onClick={() => window.print()} style={{ flex: 1.5, padding: '12px', backgroundColor: '#000', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>🖨️ IMPRIMIR</button>
             </div>
-            
             <div className="ticket-printable-area">
-                
                 {/* 1️⃣ RENDERIZADO SI ES COMANDA DE COCINA (IMAGEN 2 - image_b884c0.png) */}
                 {esModoCocina ? (
                     <div style={{ textAlign: 'center', width: '100%' }}>
                         <h1 style={{ margin: '0 0 4px 0', fontSize: '32px', fontWeight: 'bold', lineHeight: '1' }}>
                             MESA: {data.mesa || '0'}
                         </h1>
-                        
                         {/* Si cuentas con número de orden interno o prefijo, se renderiza aquí de forma gigante */}
                         <h2 style={{ margin: '4px 0', fontSize: '24px', fontWeight: 'bold', lineHeight: '1' }}>
                             ORDEN #{String(data.ordenId || '').slice(-2) || '01'}
                         </h2>
-                        
                         <p style={{ margin: '6px 0', fontSize: '18px', fontWeight: 'bold' }}>
                             MESERO: {String(data.mesero || 'SISTEMA').toUpperCase()}
                         </p>
-                        
                         <div style={{ borderTop: '2px dashed #000', margin: '10px 0' }}></div>
-                        
                         {/* CUERPO DE LA COMANDA CON FUENTE INYECTADA GRANDE */}
                         <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: 'monospace' }}>
                             <tbody>
@@ -116,12 +95,10 @@ function TicketContent() {
                                     const cantNum = Number(item.cantidad) || 0;
                                     const esPeso = cantNum % 1 !== 0;
                                     const cantidadTexto = esPeso ? cantNum.toFixed(3) : cantNum;
-                                    
                                     return (
                                         <tr key={index} style={{ verticalAlign: 'top' }}>
                                             <td style={{ padding: '6px 0', fontSize: '22px', fontWeight: 'bold', textAlign: 'left', lineHeight: '1.1', wordBreak: 'break-word' }}>
                                                 {cantidadTexto} {String(item.nombre || item.nombrePlato || 'PRODUCTO').toUpperCase()}
-                                                
                                                 {item.comentario && (
                                                     <div className="comentario-cocina" style={{ fontSize: '18px', fontWeight: 'bold', marginTop: '4px', paddingLeft: '10px', lineHeight: '1.1' }}>
                                                         {`>${String(item.comentario).toUpperCase()}<`}
@@ -133,14 +110,12 @@ function TicketContent() {
                                 })}
                             </tbody>
                         </table>
-                        
                         <div style={{ borderTop: '2px dashed #000', margin: '10px 0' }}></div>
                         <p style={{ fontSize: '14px', fontWeight: 'bold', margin: '5px 0', textAlign: 'center' }}>
                             HORA: {new Date(data.fecha).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', hour12: true })}
                         </p>
                     </div>
                 ) : (
-                    
                     // 2️⃣ RENDERIZADO SI ES CUENTA DE CLIENTE (IMAGEN 1 - image_b8853c.png)
                     <div>
                            {/* ENCABEZADO FISCAL COMERCIAL ULTRA-PROFESIONAL */}
@@ -150,31 +125,26 @@ function TicketContent() {
     const negocioNit = data.brand?.nit || data.nit || data.nitNegocio || null;
     const negocioDireccion = data.brand?.address || data.direccion || data.direccionNegocio || null;
     const negocioTelefono = data.brand?.phone || data.telefono || data.telefonoNegocio || null;
-
     // 🕒 Parseamos la fecha y hora de impresión de forma limpia
     const fechaImpresion = data.fecha ? new Date(data.fecha) : new Date();
     const stringFecha = fechaImpresion.toLocaleDateString('es-CO', { year: 'numeric', month: '2-digit', day: '2-digit' });
     const stringHora = fechaImpresion.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', hour12: true });
-
     return (
         <div style={{ textAlign: 'center', marginBottom: '8px' }}>
             {/* Nombre Comercial Gigante */}
             <h2 style={{ margin: '0 0 4px 0', fontSize: '24px', fontWeight: 'bold', lineHeight: '1', letterSpacing: '-0.5px' }}>
                 {String(negocioNombre).toUpperCase()}
             </h2>
-            
             {/* Datos Legales Compactos */}
             <div style={{ fontSize: '11px', lineHeight: '1.3', fontWeight: 'bold', color: '#000' }}>
                 {negocioNit && <p style={{ margin: '2px 0' }}>NIT: {negocioNit}</p>}
                 {negocioDireccion && <p style={{ margin: '2px 0' }}>{String(negocioDireccion).toUpperCase()}</p>}
                 {negocioTelefono && <p style={{ margin: '2px 0' }}>TEL: {negocioTelefono}</p>}
-                
                 {/* 📅 Fila de Fecha y Hora de Impresión Comercial */}
                 <p style={{ margin: '4px 0 2px 0', fontSize: '10px', opacity: 0.85, fontWeight: 'normal' }}>
                     FECHA: {stringFecha} - HORARIO: {stringHora}
                 </p>
             </div>
-            
             <div style={{ borderTop: '1px dashed #000', margin: '8px 0' }}></div>
             <h2 style={{ margin: '4px 0', fontSize: '20px', fontWeight: 'bold' }}>**** CUENTA ****</h2>
             <div style={{ borderTop: '1px dashed #000', margin: '8px 0' }}></div>
@@ -190,25 +160,21 @@ function TicketContent() {
                                         const nombreSeguro = String(current.nombre || current.nombrePlato || "PRODUCTO").trim().toUpperCase();
                                         const precioSeguro = Number(current.precioNum || current.precioUnitario) || 0;
                                         const llave = `${nombreSeguro}-${precioSeguro}`;
-                                        
-                                        if (acc[llave]) { 
-                                            acc[llave].amount += (Number(current.cantidad) || 0); 
-                                        } else { 
-                                            acc[llave] = { ...current, nombre: nombreSeguro, amount: (Number(current.cantidad) || 0) }; 
+                                        if (acc[llave]) {
+                                            acc[llave].amount += (Number(current.cantidad) || 0);
+                                        } else {
+                                            acc[llave] = { ...current, nombre: nombreSeguro, amount: (Number(current.cantidad) || 0) };
                                         }
                                         return acc;
                                     }, {});
-
                                    return Object.values(productosAgrupados).map((item, index) => {
                                         const cantNum = Number(item.amount) || 0;
                                         const esPeso = cantNum % 1 !== 0 || item.esVentaPorPeso === true;
                                         const cantidadTexto = esPeso ? cantNum.toFixed(3) : cantNum;
-                                        
                                         // 🛡️ Captura el precio unitario exacto del esquema relacional híbrido
                                         const precioUnitario = Number(item.precioNum || item.precioUnitario || item.precio || 0);
                                         const precioLinea = precioUnitario * cantNum;
                                         const sufijoUnidad = esPeso ? 'Kilo' : 'U';
-
                                         return (
                                             <tr key={index} style={{ borderBottom: '1px dotted #e5e7eb', verticalAlign: 'top' }}>
                                                 {/* Celda de detalle con el nombre del producto y el desglose unitario abajo */}
@@ -231,9 +197,7 @@ function TicketContent() {
                                 })()}
                             </tbody>
                         </table>
-
                         <hr style={{ border: 'none', borderTop: '1px dashed #000', marginTop: '10px', marginBottom: '5px' }} />
-                        
                         {/* DESGLOSE DE TOTALES */}
                         <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: 'monospace', fontSize: '13px', fontWeight: 'bold' }}>
                             <tbody>
@@ -259,7 +223,6 @@ function TicketContent() {
                                 </tr>
                             </tbody>
                         </table>
-
                         {/* 🛡️ CONDICIONAL EXCLUSIVO PARA DOMICILIOS (IMAGEN 1 - image_b8853c.png) */}
                        {/* 🛡️ Cirugía: Si no existe datosEntrega, buscamos el fallback directo del cliente unificado en Supabase */}
 {esDomicilio && (data.datosEntrega || data.cliente || data.clientes) && (() => {
@@ -267,12 +230,10 @@ function TicketContent() {
     const nombreCli = entrega.nombreCliente || entrega.nombre || entrega.nombre_completo || 'GENERAL';
     const direccionCli = entrega.direccion || entrega.direccion_entrega || 'N/A';
     const telefonoCli = entrega.telefono || entrega.celular || 'N/A';
-
     return (
         <div style={{ width: '100%' }}>
             <hr style={{ border: 'none', borderTop: '1px dashed #000', marginTop: '10px', marginBottom: '4px' }} />
             <h3 style={{ textAlign: 'center', margin: '4px 0', fontSize: '18px', fontWeight: 'bold' }}>DATOS DE ENTREGA</h3>
-            
             <div style={{ fontSize: '14px', fontWeight: 'bold', lineHeight: '1.3', textAlign: 'left' }}>
                 <div style={{ borderTop: '1px dashed #000', margin: '4px 0' }}></div>
                 <p style={{ margin: '4px 0' }}>CLIENTE: {String(nombreCli).toUpperCase()}</p>
@@ -285,42 +246,35 @@ function TicketContent() {
         </div>
     );
 })()}
-
                         <p style={{ textAlign: 'center', marginTop: '15px', fontSize: '11px', fontWeight: 'bold' }}>GRACIAS POR SU VISITA</p>
                     </div>
                 )}
-
                 {/* ESPACIADO MARGINAL TÉRMICO PREVIENE CORTES PREMATUROS */}
                 <div className="extra-space" style={{ height: '60px', display: 'block', pageBreakAfter: 'always' }}>&nbsp;</div>
             </div>
-
             {/* PARCHE DE ESTILOS CSS INYECTADOS DIRECTOS AL MOTOR DE WINDOWS */}
             <style jsx>{`
                 @media print {
                     .no-print { display: none !important; }
-                    
-                    @page { 
-                        margin: 0 !important; 
-                        size: 58mm auto; 
+                    @page {
+                        margin: 0 !important;
+                        size: 58mm auto;
                     }
-
-                    html, body { 
-                        width: 58mm !important; 
-                        margin: 0 !important; 
-                        padding: 0 !important; 
+                    html, body {
+                        width: 58mm !important;
+                        margin: 0 !important;
+                        padding: 0 !important;
                         background: #fff;
                         overflow: hidden !important;
                     }
-
-                    #ticket-root { 
-                        width: 54mm !important; 
-                        max-width: 54mm !important; 
+                    #ticket-root {
+                        width: 54mm !important;
+                        max-width: 54mm !important;
                         margin: 0 auto !important;
-                        padding: 0 1mm !important; 
+                        padding: 0 1mm !important;
                         display: block !important;
                     }
-
-                    * { 
+                    * {
                         color-adjust: exact !important;
                         -webkit-print-color-adjust: exact !important;
                     }
@@ -329,7 +283,6 @@ function TicketContent() {
         </div>
     );
 }
-
 export default function TicketPreviewPage() {
     return (
         <Suspense fallback={<p style={{ textAlign: 'center', marginTop: '50px' }}>Cargando ticket...</p>}>

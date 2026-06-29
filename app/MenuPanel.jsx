@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useState, useEffect, useMemo } from 'react';
-// 🛡️ ADAPTADOR: Gestiona si cargamos datos de Sanity o de DEMO_DATA
 import { getProductos, getMeseros } from '@/lib/dataAdapter';
 import { ENV, DEMO_DATA } from '@/lib/env';
 

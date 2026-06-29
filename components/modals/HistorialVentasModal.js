@@ -18,7 +18,10 @@ export default function HistorialVentasModal({ isOpen, onClose, onReimprimir, te
                 body: JSON.stringify({ fechaSeleccionada: fecha, tenantId: tenantId })
             });
             const data = await res.json();
-            setVentas(Array.isArray(data) ? data : []);
+            const ventasLimpias = Array.isArray(data) ? data : [];
+            // 🛡️ FILTRO SÉNIOR: Excluimos de forma fulminante cualquier folio anulado en la vista del cajero
+            const ventasActivas = ventasLimpias.filter(v => v.activo !== false);
+            setVentas(ventasActivas);
         } catch (e) {
             console.error("Error al obtener historial:", e);
             alert("Error al conectar con el servidor");

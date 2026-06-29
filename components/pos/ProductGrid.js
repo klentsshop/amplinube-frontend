@@ -30,7 +30,6 @@ const ProductGrid = memo(({
         // 3. Retornamos 'TODOS' en mayúscula en la primera posición fija
         return ['TODOS', ...ordenadas];
     }, [platos]);
-    console.log("📊 Columnas vivas que recibe el ProductGrid desde el backend:", columnasGrid);
 // 🔥 2. LÓGICA DE ORDENAMIENTO INTELIGENTE (PROFESIONAL)
     // Usamos useMemo para ordenar los platos por popularidad (totalVentas) 
     // solo cuando estemos en la vista "todos" y no haya una búsqueda activa.
@@ -54,10 +53,11 @@ const platosFinales = useMemo(() => {
 
     return platosFiltrados;
 }, [platosFiltrados, busqueda, categoriaActiva]);
-    return (
-        <div className={styles.menuPanel}>
-   {!mostrarCarritoMobile && (
-    <div className={styles.mobileSearchHeader}>
+return (
+    <div className={styles.menuPanel}>
+   {/* 🛡️ El buscador solo se oculta en móvil si el carrito está expandido en pantalla completa */}
+   {((typeof window !== 'undefined' && window.innerWidth > 768) || !mostrarCarritoMobile) && (
+     <div className={styles.mobileSearchHeader}>
         {/* Botón Carrito (Solo visible en móvil) */}
         <button 
             className={styles.mobileOrderBtn} 

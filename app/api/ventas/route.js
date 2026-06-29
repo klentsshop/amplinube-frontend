@@ -42,16 +42,51 @@ export async function POST(req) {
         const ordenId = payload.ordenId;
         const tipoOrden = typeof payload.tipoOrden === 'string' ? payload.tipoOrden.trim() : 'mesa';
 
-        // --- 2. FECHAS Y FOLIO ---
-        const now = new Date();
-        const fechaUTC = now.toISOString();
-        const fechaLocal = new Date().toLocaleString('sv-SE', { timeZone: 'America/Bogota' });
+        // --- 2. FECHAS Y FOLIO (CONSECUTIVO GLOBAL POR TENANT OPTIMIZADO) ---
+        // --- 2. FECHAS Y FOLIO (CONSECUTIVO GLOBAL POR TENANT OPTIMIZADO) ---
+const now = new Date();
+const fechaUTC = now.toISOString();
+const fechaLocal = new Date().toLocaleString('sv-SE', { timeZone: 'America/Bogota' });
 
-        const datePart = fechaUTC.slice(2, 10).replace(/-/g, '');
-        const seed = transaccionId ? transaccionId.slice(-4).toUpperCase() : (crypto.randomBytes(2).toString('hex')).toUpperCase();
-        const prefix = tenantId.slice(0, 3).toUpperCase(); 
-        const folioGenerado = `${prefix}-${datePart}-${seed}`;
-        const ventaId = transaccionId ? `venta-${transaccionId}` : `venta-${Date.now()}-${seed}`;
+const datePart = fechaUTC.slice(2, 10).replace(/-/g, ''); // "260625"
+const prefix = tenantId.slice(0, 3).toUpperCase(); 
+
+let seed = '';
+
+// 🚀 Forzamos a que SIEMPRE busque el consecutivo numérico en Supabase, ignorando el transaccionId para el folio
+const { data: ultimaVenta, error: errUltima } = await supabaseServer
+    .from('ventas')
+    .select('folio')
+    .eq('tenant_id', tenantId)
+    .order('fecha_local', { ascending: false })
+    .order('folio', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+if (errUltima) {
+    console.error('⚠️ Error buscando última venta, paracaídas activado:', errUltima.message);
+    seed = crypto.randomBytes(3).toString('hex').toUpperCase(); 
+} else if (!ultimaVenta || !ultimaVenta.folio) {
+    seed = '000001';
+} else {
+    // 🧠 BISTURÍ: Extraemos el número final limpiando cualquier carácter extraño o letra de rescate
+    // Buscamos la última coincidencia numérica al final del folio
+    const matchNumero = ultimaVenta.folio.match(/\d+$/);
+    const ultimoNumero = matchNumero ? parseInt(matchNumero[0], 10) : 0;
+
+    if (ultimoNumero === 0) {
+        // Si por un fallo catastrófico no había números al final, inicializamos de forma segura
+        seed = '000001';
+    } else {
+        // El consecutivo avanza infinitamente e ignora si la fecha del folio anterior era de ayer
+        const siguienteConsecutivo = ultimoNumero + 1;
+        seed = String(siguienteConsecutivo).padStart(6, '0'); 
+    }
+}
+
+const folioGenerado = `${prefix}-${datePart}-${seed}`;
+// Mantenemos el transaccionId únicamente para el ID único del registro en la base de datos si existe
+const ventaId = transaccionId ? `venta-${transaccionId}` : `venta-${Date.now()}-${seed}`;
         
         // --- 3. 🛡️ ESCUDO ANTI-FANTASMAS (EL BLOQUEO MAESTRO) ---
         if (ordenId && ordenId !== "undefined" && ordenId !== "null") {
@@ -299,6 +334,45 @@ export async function POST(req) {
 
         if (supabaseError) {
             console.error('❌ Error inyectando venta en Supabase:', supabaseError.message);
+            
+            // 🛡️ CONTROL DE CONCURRENCIA MÁXIMA: Si el folio colisionó (Código 23505), regeneramos ID único al vuelo
+            if (supabaseError.code === '23505') {
+                console.warn('⚠️ Colisión de folio detectada por alta concurrencia. Aplicando paracaídas alfanumérico...');
+                const seedRescate = crypto.randomBytes(2).toString('hex').toUpperCase();
+                const folioRescate = `${prefix}-${datePart}-C${seedRescate}`;
+                
+                const { error: errReintento } = await supabaseServer
+                    .from('ventas')
+                    .insert([{
+                        ...payload, // Reutiliza los mismos campos estructurados del insert anterior
+                        transaccion_id: `venta-${Date.now()}-${seedRescate}`,
+                        folio: folioRescate,
+                        tenant_id: tenantId,
+                        mesa: String(mesa),
+                        tipo_orden: tipoOrden,
+                        mesero: mesero,
+                        metodo_pago: (metodoPago === 'mixto_v2' || detallePagosValido.length > 1) ? 'mixto_v2' : metodoPago,
+                        total_pagado: totalPagado,
+                        propina_recaudada: propinaRecaudada,
+                        fecha_iso: fechaUTC,
+                        fecha_local: fechaLocal,
+                        datos_entrega: datosEntrega || null,
+                        detalle_pagos: detallePagosValido,
+                        platos_vendidos: platosVenta,
+                        pago_efectivo: columnaEfectivo,
+                        pago_tarjeta: columnaTarjeta,
+                        pago_digital: columnaDigital
+                    }]);
+                
+                if (!errReintento) {
+                    console.log(`🎉 Venta salvada exitosamente bajo el folio de emergencia: ${folioRescate}`);
+                    return NextResponse.json({ 
+                        ok: true, 
+                        message: 'Venta registrada (Resolución por concurrencia)',
+                        folio: folioRescate
+                    }, { status: 201 });
+                }
+            }
             throw new Error(`SUPABASE_WRITE_FAILED: ${supabaseError.message}`);
         }
 

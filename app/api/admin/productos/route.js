@@ -53,6 +53,23 @@ export async function POST(req) {
                     .single();
 
                 // 2. Armamos el objeto clonando la respuesta nativa de Sanity
+                // 🛡️ CIRUGÍA SÉNIOR: Extractor estático anticipado para el CDN de Sanity en POST
+                let urlDeImagenInicial = null;
+                if (data.imagen?.asset?._ref) {
+                    try {
+                        const ref = data.imagen.asset._ref;
+                        const parts = ref.split('-');
+                        if (parts.length >= 4) {
+                            const id = parts[1];
+                            const dimensions = parts[2];
+                            const ext = parts[3];
+                            urlDeImagenInicial = `https://cdn.sanity.io/images/${process.env.NEXT_PUBLIC_SANITY_PROJECT_ID}/${process.env.NEXT_PUBLIC_SANITY_DATASET}/${id}-${dimensions}.${ext}`;
+                        }
+                    } catch (e) {
+                        console.error("⚠️ Error extractor estático en POST de productos", e);
+                    }
+                }
+
                 const nuevoProductoCache = {
                     _id: resultado._id,
                     _type: 'plato',
@@ -62,7 +79,7 @@ export async function POST(req) {
                     tenant: data.tenantId,
                     barcode: data.barcode || null,
                     categoria: { _type: 'reference', _ref: data.categoria },
-                    ...(resultado.imagenUrl ? { imagenUrl: resultado.imagenUrl } : {}), // Si el cliente ya resolvió la URL
+                    ...(urlDeImagenInicial ? { imagenUrl: urlDeImagenInicial } : {}), // ⚡ Inyectada en caliente con seguridad
                     ...(data.imagen ? { imagen: data.imagen } : {}),
                     _createdAt: new Date().toISOString(),
                     _updatedAt: new Date().toISOString(),

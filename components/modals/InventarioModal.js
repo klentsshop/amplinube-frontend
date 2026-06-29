@@ -153,25 +153,38 @@ export default function InventarioModal({ isOpen, onClose, tenantId }) {
                         </thead>
                         <tbody>
                             {insumosProcesados.map((insumo) => {
-                                const insumoId = insumo.id || insumo._id;
-                                const esCritico = insumo.stockActual <= (insumo.stockMinimo || 5);
-                                const guardadoOk = confirmacion[insumoId];
+    const insumoId = insumo.id || insumo._id;
+    const esCritico = insumo.stockActual <= (insumo.stockMinimo || 5);
+    const guardadoOk = confirmacion[insumoId];
 
-                                return (
-                                    <tr key={insumoId} style={{ 
-                                        borderBottom: '1px solid #F3F4F6',
-                                        backgroundColor: guardadoOk ? '#ECFDF5' : (esCritico ? '#FFF7F7' : 'transparent'),
-                                        transition: 'background-color 0.3s ease'
-                                    }}>
-                                        <td style={{ padding: '12px' }}>
-                                            <div style={{ fontWeight: '800', fontSize: '0.95rem', color: '#1F2937' }}>{insumo.nombre?.toUpperCase()}</div>
-                                            <span style={{ fontSize: '0.65rem', color: '#94A3B8', fontWeight: 'bold' }}>
-                                                UNIDAD: {['CARNE', 'LOMO', 'POLLO', 'CERDO', 'PESCADO', 'PULPA'].some(p => insumo.nombre?.toUpperCase().includes(p)) ? 'KILOGRAMOS' : (insumo.unidadMedida?.toUpperCase() || 'UNIDADES')}
-                                            </span>
-                                        </td>
-                                        <td style={{ padding: '12px', textAlign: 'center' }}>
-                                            <div style={{ fontSize: '1.2rem', fontWeight: '900', color: esCritico ? '#EF4444' : '#10B981' }}>{insumo.stockActual}</div>
-                                        </td>
+    // 🛡️ CIRUGÍA ANTI-PALABRAS QUEMADAS
+    const unidadCalculada = insumo.unidadMedida 
+        ? insumo.unidadMedida.toUpperCase() 
+        : (Number(insumo.stockActual) % 1 !== 0 ? 'KG' : 'UND');
+
+    return (
+        <tr key={insumoId} style={{ 
+            borderBottom: '1px solid #F3F4F6',
+            backgroundColor: guardadoOk ? '#ECFDF5' : (esCritico ? '#FFF7F7' : 'transparent'),
+            transition: 'background-color 0.3s ease'
+        }}>
+            <td style={{ padding: '12px' }}>
+                <div style={{ fontWeight: '800', fontSize: '0.95rem', color: '#1F2937' }}>{insumo.nombre?.toUpperCase()}</div>
+                <span style={{ fontSize: '0.65rem', color: '#94A3B8', fontWeight: 'bold' }}>
+                    UNIDAD: {unidadCalculada}
+                </span>
+            </td>
+                                        {/* ✅ Código corregido nivel Senior */}
+                           <td style={{ padding: '12px', textAlign: 'center' }}>
+                           <div style={{ fontSize: '1.2rem', fontWeight: '900', color: esCritico ? '#EF4444' : '#10B981' }}>
+                            {(() => {
+                            const numStock = parseFloat(insumo.stockActual || 0);
+                           // Si tiene decimales (como el 47.100 del pulpo), mostramos 3 decimales exactos de balanza.
+                               // Si es entero (como 10 unidades de gaseosa), lo muestra limpio sin ceros estorbando.
+                           return numStock % 1 !== 0 ? numStock.toFixed(3) : numStock;
+                             })()}
+                                 </div>
+                                      </td>
                                         <td style={{ padding: '12px' }}>
                                             <div style={{ display: 'flex', gap: '5px', justifyContent: 'center' }}>
                                                 <input 

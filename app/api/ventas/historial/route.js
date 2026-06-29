@@ -23,14 +23,14 @@ export async function POST(request) {
         const finFiltro = fechaFin ? `${fechaFin} 23:59:59` : `${fechaSeleccionada} 23:59:59`;
 
         // 📡 CONSULTA DE RANGO SOBRE TEXTO LOCAL
-        const { data: ventasRaw, error: supabaseError } = await supabaseServer
+       const { data: ventasRaw, error: supabaseError } = await supabaseServer
             .from('ventas')
             .select('*')
             .eq('tenant_id', tenantId)
-            .gte('fecha_local', inicioFiltro) // Mayor o igual al inicio del rango
-            .lte('fecha_local', finFiltro)    // Menor o igual al fin del rango
+            .eq('activo', true) // 👈 FILTRO BOLEANO: Trae solo las que siguen activas
+            .gte('fecha_local', inicioFiltro) 
+            .lte('fecha_local', finFiltro)    
             .order('fecha_local', { ascending: false });
-
         if (supabaseError) {
             console.error('❌ Error leyendo historial de Supabase:', supabaseError.message);
             throw new Error(`SUPABASE_FETCH_FAILED: ${supabaseError.message}`);

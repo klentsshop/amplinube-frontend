@@ -97,11 +97,7 @@ const balanceNeto = (reporte?.ventasTotales || 0) - (reporte?.gastosTotales || r
             const nombre = plato.nombre || plato[0] || "Desconocido";
             const cant = plato.cantidad || plato[1] || 0;
 
-            // 🥩 Lógica de Identidad de Fama:
-            // Si el nombre contiene palabras clave de carnicería O si el número tiene decimales
-            const palabrasCarniceria = ['LOMO', 'CERDO', 'CARNE', 'PESCADO', 'MOJARRA', 'POLLO', 'CHORIZO', 'LIBRA'];
-            const esProductoPeso = palabrasCarniceria.some(p => nombre.toUpperCase().includes(p)) || 
-                                   cant.toString().includes('.');
+            const esProductoPeso = plato.esVentaPorPeso === true || (Number(cant) % 1 !== 0);
 
             return (
                 <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: idx === (reporte.estadisticas.topPlatos.length - 1) ? 'none' : '1px solid #F3F4F6', fontSize: '0.9em' }}>

@@ -144,40 +144,41 @@ export function CartProvider({ children, tenantId }) {
         }
     }
 
-    // Si pasa el escudo, se agrega de forma normal al estado local
-    setItems(prev => {
-        const esPesado = cantidadManual !== null;
-        const existingIdx = !esPesado ? prev.findIndex(it => 
-          (it._id || it.id) === pId && (it.comentario === (product.comentario || '')) && !it._key 
-        ) : -1;
+setItems(prev => {
+    const esPesado = cantidadManual !== null;
+    const existingIdx = !esPesado ? prev.findIndex(it => 
+      (it._id || it.id) === pId && (it.comentario === (product.comentario || '')) && !it._key 
+    ) : -1;
 
-        if (existingIdx !== -1) {
-            const copy = [...prev];
-            const itemActual = copy[existingIdx];
-            const nuevaCantidad = itemActual.cantidad + cantAAgregar;
-            
-            copy[existingIdx] = { 
-                ...itemActual,           
-                ...product,
-                cantidad: nuevaCantidad, 
-                subtotalNum: Number((nuevaCantidad * precioNum).toFixed(2))
-            };
-            return copy;
-        }
+    if (existingIdx !== -1) {
+        const copy = [...prev];
+        const itemActual = copy[existingIdx];
+        const nuevaCantidad = itemActual.cantidad + cantAAgregar;
+        
+        copy[existingIdx] = { 
+            ...itemActual,           
+            ...product,
+            // 🌟 Si el producto es por peso o tiene decimales, no lo redondeamos a entero
+            cantidad: product.esVentaPorPeso ? Number(nuevaCantidad) : Math.round(nuevaCantidad), 
+            subtotalNum: Number((nuevaCantidad * precioNum).toFixed(2))
+        };
+        return copy;
+    }
 
-        return [...prev, { 
-          ...product, 
-          _id: pId, 
-          lineId: crypto.randomUUID(), 
-          cantidad: cantAAgregar, 
-          precioNum, 
-          precioCosto: Number(product.precioCosto || 0),
-          subtotalNum: Number((precioNum * cantAAgregar).toFixed(2)), 
-          comentario: product.comentario || '', 
-          categoria: (product.categoria || "").toString().toUpperCase().trim(),
-          seImprime: product.seImprime ?? true 
-        }];
-    });
+    return [...prev, { 
+      ...product, 
+      _id: pId, 
+      lineId: crypto.randomUUID(), 
+      // 🌟 Conservamos la cantidad exacta con decimales que viene de la báscula/modal
+      cantidad: Number(cantAAgregar), 
+      precioNum, 
+      precioCosto: Number(product.precioCosto || 0),
+      subtotalNum: Number((precioNum * cantAAgregar).toFixed(2)), 
+      comentario: product.comentario || '', 
+      categoria: (product.categoria || "").toString().toUpperCase().trim(),
+      seImprime: product.seImprime ?? true 
+    }];
+});
   }, [items, stockLocalCache, cleanPrice]);
   const setCartFromOrden = (platosOrdenados = [], tipoDeSanity = 'mesa') => {
     // 🧹 Limpiamos el rastro del localStorage antes de cargar lo nuevo

@@ -72,7 +72,7 @@ export default function VistaMeseros({
                     onClick={() => setSubPestana('formulario')}
                     style={{ flex: 1, padding: '12px', fontSize: '0.85rem', fontWeight: 'bold', border: 'none', backgroundColor: subPestana === 'formulario' ? '#fff' : '#f3f4f6', color: subPestana === 'formulario' ? (editandoMeseroId ? '#3b82f6' : '#10b981') : '#6b7280', borderBottom: subPestana === 'formulario' ? `3px solid ${editandoMeseroId ? '#3b82f6' : '#10b981'}` : 'none', cursor: 'pointer', transition: 'all 0.2s' }}
                 >
-                    {editandoMeseroId ? '🔄 MODIFICAR PERMISOS' : '➕ REGISTRAR MESERO'}
+                    {editandoMeseroId ? '🔄 MODIFICAR PERMISOS' : '➕ REGISTRAR VENDEDOR'}
                 </button>
             </div>
 
