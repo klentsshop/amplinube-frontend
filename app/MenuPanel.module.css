@@ -88,33 +88,37 @@
 }
 
 .cardInfo {
-    padding: 6px; /* Padding ultra-reducido para no estirar el cubo */
+    padding: 6px; 
     background: white;
     display: flex;
     flex-direction: column;
     justify-content: space-between;
-    height: 50px; /* Altura fija estricta para la zona de texto */
-    flex-shrink: 0; /* Impide que el texto se encoja o colapse */
+    min-height: 55px; 
+    flex: 0 0 auto; /* Evita colapsos extraños */
     border-top: 1px solid #f3f4f6;
 }
 
 .cardTitle { 
     font-weight: 700; 
-    font-size: 0.75rem; 
+    font-size: 0.72rem; /* Un pelín más compacta para que rinda más en alta densidad (10 cols) */
     color: #111827;
-    margin-bottom: 4px;
+    margin-bottom: 2px;
+    line-height: 1.2;
 
-    /* 🛡️ BLINDAJE DE UNA SOLA LÍNEA CON PUNTOS SUSPENSIVOS */
-    white-space: nowrap;     /* Fuerza al texto a quedarse en una sola línea horizontal */
-    overflow: hidden;        /* Esconde todo lo que se salga de la tarjeta */
-    text-overflow: ellipsis; /* Pone de forma automática los tres puntos (...) al final */
+    /* 🧠 MULTILÍNEA INTELIGENTE: Removemos el 'nowrap' y aplicamos line-clamp nativo */
+    white-space: normal;     /* Permite saltos de línea */
+    word-break: break-word;  /* Rompe palabras si exceden el micro-contenedor */
+    display: -webkit-box;
+    -webkit-line-clamp: 2;   /* Limita estrictamente a máximo 2 líneas limpias */
+    -webkit-box-orient: vertical;
+    overflow: hidden;        /* Oculta si por alguna razón intentara salir una 3ra línea */
 }
-
 .cardPrice { 
     color: #ef4444; 
     font-weight: 700; 
-    font-size: 0.8rem; /* Precio compacto equilibrado */
-    margin-top: auto;
+    font-size: 0.75rem; 
+    margin-top: auto;        /* ⚓ Ancla el precio firmemente al fondo de la caja info */
+    white-space: nowrap;     /* Evita que el precio se parta en dos renglones */
 }
 
 /* BARRA DE CATEGORÍAS ESCRITORIO */

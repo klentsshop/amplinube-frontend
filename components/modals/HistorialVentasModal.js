@@ -121,10 +121,10 @@ setVentas(ventasActivas.reverse());
                         {ventas.length > 0 ? (
                             ventas.map(v => {
                                 // 🧬 Identificamos si esta fila exacta es la que el usuario quiere desplegar
-                                const esFilaAbierta = !!ventaDetalle && ventaDetalle._id === v._id;
+                                const esFilaAbierta = !!ventaDetalle && ventaDetalle.folio === v.folio;
 
                                 return (
-                                    <div key={v._id} style={{ display: 'flex', flexDirection: 'column', padding: '15px', borderBottom: '1px solid #f1f5f9', backgroundColor: esFilaAbierta ? '#f8fafc' : 'white', transition: 'background-color 0.2s' }}>
+                                    <div key={v.folio} style={{ display: 'flex', flexDirection: 'column', padding: '15px', borderBottom: '1px solid #f1f5f9', backgroundColor: esFilaAbierta ? '#f8fafc' : 'white', transition: 'background-color 0.2s' }}>
                                         
                                         {/* Bloque superior: Fila de la venta */}
                                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>

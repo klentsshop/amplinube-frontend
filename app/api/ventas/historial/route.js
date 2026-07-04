@@ -31,7 +31,7 @@ export async function POST(request) {
             }),
             supabaseServer
                 .from('ventas')
-                .select('folio, mesa, mesero, datos_entrega, total_pagado, propina_recaudada, pago_efectivo, pago_tarjeta, pago_digital, metodo_pago, detalle_pagos, platos_vendidos, fecha_local')
+                .select('folio, mesa, mesero, tipo_orden, datos_entrega, total_pagado, propina_recaudada, pago_efectivo, pago_tarjeta, pago_digital, metodo_pago, detalle_pagos, platos_vendidos, fecha_local')
                 .eq('tenant_id', tenantId)
                 .eq('activo', true)
                 .gte('fecha_local', inicioFiltro) 
@@ -64,6 +64,7 @@ export async function POST(request) {
             folio: v.folio,
             mesa: v.mesa,
             mesero: v.mesero,
+            tipoOrden: v.tipo_orden,
             datosEntrega: v.datos_entrega,
             totalPagado: Number(v.total_pagado || 0), 
             propinaRecaudada: Number(v.propina_recaudada || 0),
