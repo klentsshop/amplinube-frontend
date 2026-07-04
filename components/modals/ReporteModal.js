@@ -28,11 +28,16 @@ export default function ReporteModal({
         const gastosEfecCalculado = Math.max(0, totalGastosGlobal - valTarjeta - valDigital);
         const efectivoEnCajaReal = Math.max(0, efectivoBruto - gastosEfecCalculado);
 
-        const datosVentas = Object.entries(datos.productos || {})
+        const mapaProductosReales = datos.inventarioConsolidado?.productos || datos.productos || {};
+const mapaPreciosReales = datos.inventarioConsolidado?.precios || datos.precios || {};
+const mapaCostosReal = datos.inventarioConsolidado?.preciosCosto || datos.preciosCosto || {};
+const mapaUnidadesReal = datos.inventarioConsolidado?.unidadesMedida || datos.unidadesMedida || {};
+
+        const datosVentas = Object.entries(mapaProductosReales)
             .sort(([a], [b]) => a.localeCompare(b))
             .map(([clave, cantidad]) => {
-                const [nombre, precioUnit] = clave.split('_');
-                const esPeso = datos.unidadesMedida?.[clave] === 'kg' || Number(cantidad) % 1 !== 0;
+               const [nombre, precioUnit] = clave.split('_');
+                const esPeso = mapaUnidadesReal?.[clave] === 'kg' || Number(cantidad) % 1 !== 0;
 
                 return {
                     "PRODUCTO / ARTÍCULO": nombre.toUpperCase(),
@@ -73,31 +78,27 @@ export default function ReporteModal({
             { "CONCEPTO": "📉 (-) GASTOS ASIGNADOS A DIGITAL", "VALOR": valDigital }
         ]);
 let totalUtilidadGlobal = 0;
-        const datosRentabilidad = Object.entries(datos.productos || {})
+        const datosRentabilidad = Object.entries(mapaProductosReales)
             .sort(([a], [b]) => a.localeCompare(b))
             .map(([clave, cantidad]) => {
-                // 🛡️ BISTURÍ SENIOR: Desestructuramos para limpiar el nombre y el precio unitario
                 const [nombreReal] = clave.split('_');
                 
-                // 🛡️ REPARACIÓN DE ENLACE DIRECTO (Sin opcionales cruzados)
-                const precioVenta = datos.precios && datos.precios[clave] ? Number(datos.precios[clave]) : 0;
-                const precioCosto = datos.preciosCosto && datos.preciosCosto[clave] ? Number(datos.preciosCosto[clave]) : 0;
+                const precioVenta = mapaPreciosReales && mapaPreciosReales[clave] ? Number(mapaPreciosReales[clave]) : 0;
+                const precioCosto = mapaCostosReal && mapaCostosReal[clave] ? Number(mapaCostosReal[clave]) : 0;
 
-                const totalVenta = precioVenta * cantidad;
-                const totalCosto = precioCosto * cantidad;
+                const totalVenta = precioVenta * Number(cantidad);
+                const totalCosto = precioCosto * Number(cantidad);
                 const utilidad = totalVenta - totalCosto;
 
-                // 🛡️ FILTRO DE SINCERIDAD CONTABLE: Solo sumamos a la utilidad global si el artículo tiene un costo real parametrizado (> 0)
-                if (precioCosto > 0) {
-                    totalUtilidadGlobal += utilidad;
-                }
+                // 🛡️ BISTURÍ SENIOR: Sumamos SIEMPRE la utilidad, tenga o no costo registrado en el sistema
+                totalUtilidadGlobal += utilidad;
 
                 return {
                     "PRODUCTO": nombreReal.toUpperCase(),
-                    "UNIDADES VENDIDAS": Number(cantidad) % 1 !== 0 ? Number(cantidad) : Math.floor(cantidad),
+                    "UNIDADES VENDIDAS": Number(cantidad) % 1 !== 0 ? Number(cantidad).toFixed(3) : Math.floor(cantidad),
                     "PRECIO COSTO": precioCosto,
                     "PRECIO VENTA": precioVenta,
-                    "UTILIDAD": utilidad
+                    "UTILIDAD": Math.round(utilidad)
                 };
             });
 
@@ -252,40 +253,55 @@ let totalUtilidadGlobal = 0;
                             📥 DESCARGAR EXCEL CONTABLE
                         </button>
 
-                        <h3 style={{ marginTop: '20px', fontSize: '1rem', borderBottom: '2px solid #F3F4F6', paddingBottom: '5px' }}>📋 Inventario Vendido</h3>
-                        <div style={{ backgroundColor: '#F3F4F6', padding: '10px', borderRadius: '8px' }}>
-                            {/* 🥩 SECCIÓN: PESADOS (KG) */}
-                            <p style={{ fontSize: '0.7rem', fontWeight: 'bold', color: '#2563EB', marginBottom: '5px' }}>PRODUCTOS POR PESO (KG)</p>
-                            {Object.entries(datos.productos || {})
-                            .filter(([clave, cant]) => datos.unidadesMedida?.[clave] === 'kg' || Number(cant) % 1 !== 0)
-                            .sort(([a], [b]) => a.localeCompare(b))
-                            .map(([clave, cant]) => {
-                             const [nombre, precio] = clave.split('_'); // 🛡️ BISTURÍ
-                             return (
-                              <div key={clave} style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #E5E7EB', padding: '5px 0' }}>
-                               <span style={{ fontSize: '0.85rem' }}>{nombre.toUpperCase()} <small>(${Number(precio).toLocaleString()})</small></span>
-                               <strong style={{ color: '#2563EB' }}>{Number(cant).toFixed(3)} Kg</strong>
-                             </div>
-                              );
-                             })
-                             }
+                        {/* 📋 Inventario Vendido */}
+<h3 style={{ marginTop: '20px', fontSize: '1rem', borderBottom: '2px solid #F3F4F6', paddingBottom: '5px' }}>📋 Inventario Vendido</h3>
+<div style={{ backgroundColor: '#F3F4F6', padding: '10px', borderRadius: '8px' }}>
+    
+    {/* 🛡️ INYECCIÓN DE CONTROL DE FLUJO PARA LA PANTALLA */}
+    {(() => {
+        const uiProductos = datos.inventarioConsolidado?.productos || datos.productos || {};
+        const uiUnidades = datos.inventarioConsolidado?.unidadesMedida || datos.unidadesMedida || {};
+        const uiPrecios = datos.inventarioConsolidado?.precios || datos.precios || {};
 
-                            {/* 🍺 SECCIÓN: UNIDADES (UND) */}
-                            <p style={{ fontSize: '0.7rem', fontWeight: 'bold', color: '#4B5563', marginTop: '15px', marginBottom: '5px' }}>PRODUCTOS POR UNIDAD (UND)</p>
-                            {Object.entries(datos.productos || {})
-                             .filter(([clave, cant]) => datos.unidadesMedida?.[clave] !== 'kg' && Number(cant) % 1 === 0)
-                             .sort(([a], [b]) => a.localeCompare(b))
-                              .map(([clave, cant]) => {
-                              const [nombre, precio] = clave.split('_'); // 🛡️ BISTURÍ
-                             return (
-                             <div key={clave} style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #E5E7EB', padding: '5px 0' }}>
-                             <span style={{ fontSize: '0.85rem' }}>{nombre.toUpperCase()} <small>(${Number(precio).toLocaleString()})</small></span>
-                              <strong style={{ color: '#1F2937' }}>x{cant} Und</strong>
-                              </div>
-                              );
-                              })
-                              }
-                        </div>
+        return (
+            <>
+                {/* 🥩 SECCIÓN: PESADOS (KG) */}
+                <p style={{ fontSize: '0.7rem', fontWeight: 'bold', color: '#2563EB', marginBottom: '5px' }}>PRODUCTOS POR PESO (KG)</p>
+                {Object.entries(uiProductos)
+                    .filter(([clave, cant]) => uiUnidades?.[clave] === 'kg' || Number(cant) % 1 !== 0)
+                    .sort(([a], [b]) => a.localeCompare(b))
+                    .map(([clave, cant]) => {
+                        const [nombre] = clave.split('_');
+                        const precio = uiPrecios && uiPrecios[clave] ? Number(uiPrecios[clave]) : Number(clave.split('_')[1]) || 0;
+                        return (
+                            <div key={clave} style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #E5E7EB', padding: '5px 0' }}>
+                                <span style={{ fontSize: '0.85rem' }}>{nombre.toUpperCase()} <small>(${Number(precio).toLocaleString()})</small></span>
+                                <strong style={{ color: '#2563EB' }}>{Number(cant).toFixed(3)} Kg</strong>
+                            </div>
+                        );
+                    })
+                }
+
+                {/* 🍺 SECCIÓN: UNIDADES (UND) */}
+                <p style={{ fontSize: '0.7rem', fontWeight: 'bold', color: '#4B5563', marginTop: '15px', marginBottom: '5px' }}>PRODUCTOS POR UNIDAD (UND)</p>
+                {Object.entries(uiProductos)
+                    .filter(([clave, cant]) => uiUnidades?.[clave] !== 'kg' && Number(cant) % 1 === 0)
+                    .sort(([a], [b]) => a.localeCompare(b))
+                    .map(([clave, cant]) => {
+                        const [nombre] = clave.split('_');
+                        const precio = uiPrecios && uiPrecios[clave] ? Number(uiPrecios[clave]) : Number(clave.split('_')[1]) || 0;
+                        return (
+                            <div key={clave} style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #E5E7EB', padding: '5px 0' }}>
+                                <span style={{ fontSize: '0.85rem' }}>{nombre.toUpperCase()} <small>(${Number(precio).toLocaleString()})</small></span>
+                                <strong style={{ color: '#1F2937' }}>x{cant} Und</strong>
+                            </div>
+                        );
+                    })
+                }
+            </>
+        );
+    })()}
+</div>
 
                         <h3 style={{ marginTop: '20px', fontSize: '1rem', borderBottom: '2px solid #FEE2E2', paddingBottom: '5px' }}>💸 Gastos</h3>
                         <div style={{ border: '1px solid #FEE2E2', padding: '10px', borderRadius: '8px' }}>

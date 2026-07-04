@@ -100,16 +100,19 @@ export default function MenuPanel({ configNegocio: configInyectada }) {
         setOrdenActivaId, ordenesActivas, esModoCajero: acc.esModoCajero, 
         setMostrarCarritoMobile, nombreMesero: acc.esModoCajero ? "Caja" : nombreMesero, setNombreMesero, tipoOrden, validarPinAdmin: acc.validarPinAdmin, tenantId, config: configNegocio
     });
-    // Carga inicial del directorio al abrir el modal
     useEffect(() => {
-        // 🛡️ BISTURÍ: Solo va al servidor si abren el modal Y la lista local está completamente vacía
-        if (mostrarModalClientes && tenantId && clientesLista.length === 0) {
-            fetch(`/api/clientes?tenant=${tenantId}`)
-                .then(res => res.json())
-                .then(data => setClientesLista(data || []))
-                .catch(err => console.error("Error en directorio:", err));
-        }
-    }, [mostrarModalClientes, tenantId, clientesLista.length]);
+    if (!mostrarModalClientes || !tenantId) return;
+
+    // Retardo de 300ms para esperar a que el usuario termine de escribir antes de golpear la API
+    const delayDebounceFn = setTimeout(() => {
+        fetch(`/api/clientes?tenant=${tenantId}&search=${encodeURIComponent(busquedaCli.trim())}`)
+            .then(res => res.json())
+            .then(data => setClientesLista(data || []))
+            .catch(err => console.error("🔥 Error en directorio remoto:", err));
+    }, 300);
+
+    return () => clearTimeout(delayDebounceFn);
+}, [mostrarModalClientes, tenantId, busquedaCli]);
 
     const seleccionarParaEditar = (c) => {
         setIdClienteEditando(c._id); setCliNombre(c.nombre); setCliTelefono(c.telefono); setCliDireccion(c.direccion);
@@ -119,11 +122,7 @@ export default function MenuPanel({ configNegocio: configInyectada }) {
         setIdClienteEditando(null); setCliNombre(''); setCliTelefono(''); setCliDireccion('');
     };
 
-    const clientesFiltrados = useMemo(() => {
-        const query = busquedaCli.toLowerCase().trim();
-        if (!query) return clientesLista;
-        return clientesLista.filter(c => (c.nombre || "").toLowerCase().includes(query) || (c.telefono || "").includes(query));
-    }, [busquedaCli, clientesLista]);
+    const clientesFiltrados = clientesLista;
 
 // --- 4. EFECTOS Y WATCHERS ---
     // 🚀 SINCRO MULTITENANT: Escucha los cambios vivos que vienen de Sanity a través del Wrapper

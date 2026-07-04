@@ -245,9 +245,38 @@ export async function DELETE(request) {
                 .single();
 
             if (registroActual && Array.isArray(registroActual.payload_json)) {
-                // Filtramos sobre la raíz del array plano para sacar el itemId del insumo borrado
-                const nuevoPayload = registroActual.payload_json.filter(item => !(item?._id === itemId && item?._type === 'inventario'));
+                // Nueva cirugía de precisión: Filtro, limpieza de recetas en cascada y saneamiento de banderas
+const nuevoPayload = registroActual.payload_json
+    .filter(item => {
+        // PASO 1: Eliminar físicamente el insumo del array plano
+        if (item?._id === itemId && item?._type === 'inventario') {
+            return false; 
+        }
+        return true;
+    })
+    .map(item => {
+        // PASO 2: Si el elemento es un plato (o 'plato', ajusta según tu _type exacto), limpiamos su receta
+        if (item?._type === 'plato' && Array.isArray(item.recetaInsumos)) {
+            
+            // Filtramos la receta para eliminar el insumo destruido (comprobando por estructura nativa)
+            const recetaLimpia = item.recetaInsumos.filter(recetaItem => {
+                const insumoRef = recetaItem?.insumo?._ref || recetaItem?.insumoId;
+                return insumoRef !== itemId;
+            });
 
+            // PASO 3: Validación inteligente de bandera (Si la receta quedó vacía, apagamos el control)
+            const controlaInventarioActualizado = recetaLimpia.length === 0 ? false : (item.controlaInventario ?? false);
+
+            return {
+                ...item,
+                recetaInsumos: recetaLimpia,
+                controlaInventario: controlaInventarioActualizado
+            };
+        }
+
+        // Cualquier otro documento (categorías, alertas, etc.) pasa intacto
+        return item;
+    });
                 await supabaseServer
                     .from('catalog_cache')
                     .upsert({ 

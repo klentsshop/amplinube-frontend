@@ -13,38 +13,51 @@ export default function VistaVentas({ tenantId }) {
     
 
     const cargarVentas = async () => {
-        if (!tenantId) return;
-        setCargando(true);
-        try {
-            const res = await fetch(`/api/admin/ventas?tenantId=${tenantId}`);
-            const data = await res.json();
-            setVentas(Array.isArray(data) ? data : []);
-        } catch (e) {
-            console.error(e);
-        } finally {
-            setCargando(false);
-        }
-    };
+    if (!tenantId) return;
+    setCargando(true);
+    try {
+        // ⚡ PASAMOS EL PARÁMETRO BUSQUEDA AL BACKEND
+        const res = await fetch(`/api/admin/ventas?tenantId=${tenantId}&search=${encodeURIComponent(busqueda)}`);
+        const data = await res.json();
+        setVentas(Array.isArray(data) ? data : []);
+    } catch (e) {
+        console.error(e);
+    } finally {
+        setCargando(false);
+    }
+};
 
     useEffect(() => {
-        cargarVentas();
-        if (tenantId) cargarOrdenesEliminadas();
-    }, [tenantId]);
-
+    cargarVentas();
+    if (tenantId) cargarOrdenesEliminadas();
+}, [tenantId, busqueda]);
     const cargarOrdenesEliminadas = async () => {
-        if (!tenantId) return;
-        setCargando(true);
-        try {
-            // Cambiamos al endpoint que consulta 'ordenes_eliminadas' en Supabase
-            const res = await fetch(`/api/admin/ordenes-eliminadas?tenantId=${tenantId}`);
-            const data = await res.json();
-            setOrdenesEliminadas(Array.isArray(data) ? data : []);
-        } catch (e) {
-            console.error("Error cargando auditoría de órdenes borradas:", e);
-        } finally {
-            setCargando(false);
+    if (!tenantId) return;
+    
+    setCargando(true);
+    try {
+        // 🚀 CONTROL ANTI-CACHÉ ABSOLUTO: Agregamos &t= para romper el caché del navegador
+        // y asegurar que si acabas de borrar una orden, Supabase la entregue en 0 milisegundos.
+        const res = await fetch(
+            `/api/admin/ordenes-eliminadas?tenantId=${tenantId}&search=${encodeURIComponent(busqueda)}&t=${Date.now()}`
+        );
+
+        if (!res.ok) {
+            throw new Error(`Error en el servidor: ${res.status} ${res.statusText}`);
         }
-    };
+
+        const data = await res.json();
+        
+        // 🛡️ Defensivo: Validamos que los datos sean un Array antes de actualizar el estado
+        setOrdenesEliminadas(Array.isArray(data) ? data : []);
+        
+    } catch (e) {
+        console.error("❌ Error crítico cargando auditoría de órdenes borradas:", e);
+        // Opcional: Podrías setear un estado de error aquí si manejas alertas visuales
+    } finally {
+        setCargando(false);
+    }
+};
 
     const handleAnularVenta = async (transaccionId, folio) => {
         const motivo = prompt(`⚠️ ¿Cuál es el motivo de anulación para la venta con FOLIO [ ${folio} ]?\n\nEsta acción cambiará el estado de la factura a ANULADA en la auditoría.`);
@@ -270,21 +283,22 @@ const ordenesFiltradas = ordenesEliminadas.filter(o => {
                             <tr><td colSpan="5" style={{ padding: '20px', textAlign: 'center', color: '#6b7280' }}>No se encontraron registros de órdenes borradas.</td></tr>
                         ) : (
                             ordenesFiltradas.map((o, idx) => {
-                                const esFilaAbierta = ordenEliminadaDetalle?.id === o.id;
+                            // 🧬 Aseguramos la comparación correcta con el id único de Supabase
+                            const idUnico = o.id || o.sanity_id || idx;
+                            const esFilaAbierta = ordenEliminadaDetalle?.id === o.id;
 
-                                // Parseamos de forma segura el array de platos_ordenados que viene de Supabase
-                                let platosOrdenadosArray = [];
-                                try {
-                                    platosOrdenadosArray = typeof o.platos_ordenados === 'string' 
-                                        ? JSON.parse(o.platos_ordenados) 
-                                        : (o.platos_ordenados || []);
-                                } catch (err) { console.error(err); }
-
+                              // Parseamos de forma segura el array de platos_ordenados que viene de Supabase
+                             let platosOrdenadosArray = [];
+                             try {
+                             platosOrdenadosArray = typeof o.platos_ordenados === 'string' 
+                             ? JSON.parse(o.platos_ordenados) 
+                             : (o.platos_ordenados || []);
+                              } catch (err) { console.error(err); }
                                 // Sumamos el valor que se perdió/borró del carrito
                                 const totalPerdido = platosOrdenadosArray.reduce((acc, curr) => acc + (Number(curr.subtotal || 0)), 0);
 
                                 return (
-                                    <React.Fragment key={o.id || idx}>
+                                       <React.Fragment key={idUnico}>
                                         <tr style={{ borderBottom: '1px solid #e5e7eb', backgroundColor: esFilaAbierta ? '#fff5f5' : 'transparent' }}>
                                             <td style={{ padding: '10px', fontWeight: '600', color: '#ef4444' }}>Mesa {o.mesa}</td>
                                             <td style={{ padding: '10px' }}>{o.mesero || 'Sin asignar'}</td>

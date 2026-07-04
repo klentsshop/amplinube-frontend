@@ -63,9 +63,11 @@ export async function GET(request) {
                     .eq('tenant_host', tenantLimpio) // 👈 Cambiado a tenantLimpio
                     .maybeSingle(); 
 
-                // Extraemos la colección estática de inventarios guardada en el payload
-                const p = cacheRow?.payload_json;
-                const catalogoInsumosBunker = p?.inventario || p?.inventarios || [];
+                // 🛡️ Extraemos los insumos filtrando el array plano de la caché por su _type nativo
+const arrayPlanoCache = cacheRow?.payload_json;
+const catalogoInsumosBunker = Array.isArray(arrayPlanoCache)
+    ? arrayPlanoCache.filter(item => item?._type === 'inventario')
+    : [];
 
                 if (catalogoInsumosBunker && catalogoInsumosBunker.length > 0) {
                     // Preparamos los registros masivos para inyectar en la tabla viva de stock

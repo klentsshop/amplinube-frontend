@@ -33,20 +33,19 @@ export function useReportes(getFechaBogota, tenantId) {
     // ================================================================
     // 📊 1. CIERRE DE DÍA (CAJA RÁPIDA) - VERSIÓN FAMA BLINDADA
     // ================================================================
-    const generarCierreDia = async () => {
+const generarCierreDia = async () => {
         setCargandoReporte(true);
         setMostrarReporte(true);
         try {
             const inicio = `${fechaInicioReporte} 00:00:00`;
             const fin = `${fechaFinReporte} 23:59:59`;
 
-           const [resVentas, resGastos] = await Promise.all([
+            const [resVentas, resGastos] = await Promise.all([
                 fetch(`/api/ventas/historial`, { 
                     method: 'POST', 
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ fechaSeleccionada: fechaInicioReporte, fechaFin: fechaFinReporte, tenantId }) 
                 }),
-                // ↩️ Volvemos a tu ruta original con el tenantId en la URL
                 fetch(`/api/gastos?tenantId=${tenantId}&inicio=${encodeURIComponent(inicio)}&fin=${encodeURIComponent(fin)}`, { 
                     method: 'GET'
                 })
@@ -56,88 +55,34 @@ export function useReportes(getFechaBogota, tenantId) {
                 throw new Error("No se pudo obtener la información financiera de Supabase.");
             }
 
-            const ventas = await resVentas.json();
+            const respuestaVentasJson = await resVentas.json();
             const gastos = await resGastos.json();
 
-            let totalVentasNetas = 0;
-            let totalPropinas = 0;
-            let productos = {};
-            let preciosParaExcel = {};
-            let preciosCostoParaExcel = {};
-            let unidadesMedida = {}; // 🥩 Rastreador de tipos (Kg vs Und)
-            let metodos = { efectivo: 0, tarjeta: 0, digital: 0 };
+            // Extraemos basándonos en la estructura compuesta de la API
+            const metaTotals = respuestaVentasJson.metaTotales || null;
+            const invReal = respuestaVentasJson.inventarioConsolidado || null;
 
-            ventas.forEach(v => {
-                const ventaNeta = Number(v.totalPagado || 0); // Ya viene limpio sin propina duplicada
-                const propina = Number(v.propinaRecaudada || 0);
-
-                totalVentasNetas += ventaNeta;
-                totalPropinas += propina;
-                   // ================================================================
-                // 🛡️ REGLA CONTABLE RE-BLINDADA: SUMATORIA DIRECTA POR COLUMNAS
-                // Prioridad absoluta a pagoEfectivo, pagoTarjeta y pagoDigital que vienen de Supabase
-                // ================================================================
-                if (v.pagoEfectivo > 0 || v.pagoTarjeta > 0 || v.pagoDigital > 0) {
-                    metodos.efectivo += (v.pagoEfectivo || 0);
-                    metodos.tarjeta += (v.pagoTarjeta || 0);
-                    metodos.digital += (v.pagoDigital || 0);
-                } else {
-                    // Fallback seguro de retrocompatibilidad por si hay registros viejos sin columnas planas
-                    let procesado = false;
-                    if (v.detallePagos && Array.isArray(v.detallePagos) && v.detallePagos.length > 0) {
-                        v.detallePagos.forEach(p => {
-                            const m = p.metodo?.toLowerCase() || 'efectivo';
-                            const monto = Number(p.monto || 0);
-                            if (m === 'efectivo') metodos.efectivo += monto;
-                            else if (m === 'tarjeta') metodos.tarjeta += monto;
-                            else if (m === 'digital' || m === 'nequi' || m === 'daviplata') metodos.digital += monto;
-                        });
-                        procesado = true;
-                    }
-
-                    if (!procesado) {
-                        const mp = v.metodoPago?.toLowerCase() || 'efectivo';
-                        if (mp === 'efectivo') metodos.efectivo += ventaNeta;
-                        else if (mp === 'tarjeta') metodos.tarjeta += ventaNeta;
-                        else metodos.digital += ventaNeta;
-                    }
-                }
-
-                // 🥩 CONTEO DE PRODUCTOS (Lógica original idéntica)
-               v.platosVendidosV2?.forEach(p => {
-    const nombre = (p.nombrePlato || p.nombre || "Desconocido").toUpperCase().trim();
-    const cant = Number(p.cantidad || 0);
-    const precioU = Number(p.precioUnitario || p.precioNum || p.precio || 0);
-    const costoU = Number(p.precioCosto || 0);
-
-    // 🛡️ BISTURÍ: Creamos la clave única combinada
-    const claveUnica = `${nombre}_${precioU}`;
-
-    // Almacenamos la información indexada por la variación de precio
-    productos[claveUnica] = (productos[claveUnica] || 0) + cant;
-    preciosParaExcel[claveUnica] = precioU;
-    preciosCostoParaExcel[claveUnica] = costoU;
-
-    if (cant % 1 !== 0) {
-        unidadesMedida[claveUnica] = 'kg';
-    }
-}); 
-            });
+            // 🛡️ ENLACE DIRECTO DESDE EL RPC COMPARTIDO SIN PROCESAMIENTOS LOCALES COORTADOS
+            const totalVentasNetas = metaTotals ? metaTotals.ventasTotales : 0;
+            const totalPropinas = metaTotals ? metaTotals.propinasTotales : 0;
+            const metodos = metaTotals ? { ...metaTotals.metodosPago } : { efectivo: 0, tarjeta: 0, digital: 0 };
 
             const totalGastos = gastos.reduce((acc, g) => acc + Number(g.monto || 0), 0);
 
+            // 🟩 ASIGNACIÓN INDESTRUCTIBLE DIRECTA AL ESTADO DEL MODAL (30 MILLONES REALES)
             setDatosReporte({
                 ventas: totalVentasNetas,
                 totalPropinas,
                 gastos: totalGastos,
-                productos,
-                precios: preciosParaExcel,
-                preciosCosto: preciosCostoParaExcel,
-                unidadesMedida, // 🥩 Importante para el ReporteModal
-                metodosPago: metodos
+                metodosPago: metodos,
+                // Inyectamos el objeto relacional completo para burlar el límite físico de red
+                inventarioConsolidado: invReal, 
+                productos: invReal ? invReal.productos : {},
+                precios: invReal ? invReal.precios : {},
+                preciosCosto: invReal ? invReal.preciosCosto : {},
+                unidadesMedida: invReal ? invReal.unidadesMedida : {}
             });
-
-            setListaGastosDetallada(gastos);
+         setListaGastosDetallada(gastos);
         } catch (error) {
             console.error("🔥 Error crítico en cierre:", error);
             alert("Error al generar cierre de día.");

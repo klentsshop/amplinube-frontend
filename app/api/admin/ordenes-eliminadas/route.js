@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { supabaseServer } from '@/lib/supabase';
 
 export const dynamic = 'force-dynamic';
+export const revalidate = 0;
 
 // 🔍 GET: Traer el historial de auditoría de órdenes borradas con Búsqueda Global por Servidor
 export async function GET(request) {
@@ -18,13 +19,13 @@ export async function GET(request) {
         let query = supabaseServer
             .from('ordenes_eliminadas')
             .select('*')
-            .ilike('tenant_id', tenantId.toLowerCase().trim());
+            .eq('tenant_id', tenantId.toLowerCase().trim());
 
         // 2️⃣ ⚡ EL SUPERPODER DE LA LUPA: Si escriben algo, Postgres escanea en millones de registros por Mesa, Mesero o Quién eliminó
         if (search.trim() !== '') {
             const queryLimpia = `%${search.trim()}%`;
             // Buscamos coincidencia en cualquiera de los campos clave de la auditoría
-            query = query.or(`mesa.ilike.${queryLimpia},mesero.ilike.${queryLimpia},eliminado_por.ilike.${queryLimpia}`);
+            query = query.and(`mesa.ilike.${queryLimpia},mesero.ilike.${queryLimpia},eliminado_por.ilike.${queryLimpia}`);
         }
 
         // 3️⃣ Ordenamos para que lo más recién borrado salga arriba de primeras y limitamos a 50 filas

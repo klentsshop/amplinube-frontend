@@ -18,10 +18,13 @@ export default function HistorialVentasModal({ isOpen, onClose, onReimprimir, te
                 body: JSON.stringify({ fechaSeleccionada: fecha, tenantId: tenantId })
             });
             const data = await res.json();
-            const ventasLimpias = Array.isArray(data) ? data : [];
+            
+            // 🛡️ EXTRACCIÓN QUIRÚRGICA: Apuntamos directo a 'listaVentas' del nuevo payload unificado
+            const ventasLimpias = data && Array.isArray(data.listaVentas) ? data.listaVentas : [];
+            
             // 🛡️ FILTRO SÉNIOR: Excluimos de forma fulminante cualquier folio anulado en la vista del cajero
             const ventasActivas = ventasLimpias.filter(v => v.activo !== false);
-            setVentas(ventasActivas);
+setVentas(ventasActivas.reverse());
         } catch (e) {
             console.error("Error al obtener historial:", e);
             alert("Error al conectar con el servidor");
@@ -82,6 +85,7 @@ export default function HistorialVentasModal({ isOpen, onClose, onReimprimir, te
             console.error("⚠️ Error en el formateador de ticket nativo:", err);
         }
     };
+
     React.useEffect(() => {
         if (isOpen && tenantId) {
             obtenerVentas();
@@ -117,7 +121,7 @@ export default function HistorialVentasModal({ isOpen, onClose, onReimprimir, te
                         {ventas.length > 0 ? (
                             ventas.map(v => {
                                 // 🧬 Identificamos si esta fila exacta es la que el usuario quiere desplegar
-                                const esFilaAbierta = ventaDetalle?._id === v._id;
+                                const esFilaAbierta = !!ventaDetalle && ventaDetalle._id === v._id;
 
                                 return (
                                     <div key={v._id} style={{ display: 'flex', flexDirection: 'column', padding: '15px', borderBottom: '1px solid #f1f5f9', backgroundColor: esFilaAbierta ? '#f8fafc' : 'white', transition: 'background-color 0.2s' }}>
@@ -127,13 +131,13 @@ export default function HistorialVentasModal({ isOpen, onClose, onReimprimir, te
                                             <div style={{ flex: 1 }}>
                                                 <div style={{ fontWeight: '800', color: '#1e293b', fontSize: '0.95rem' }}>{v.folio || 'S/F'} - {v.mesa}</div>
                                                 <div style={{ color: '#64748b', fontSize: '0.8rem', marginTop: '2px' }}>
-                                                👤 {v.mesero || 'Caja'} • 💰 <strong>$
-                                                {String(
-                                               ((v.platosVendidosV2 || []).reduce((acc, plato) => 
-                                               acc + (Number(plato.precioUnitario || 0) * Number(plato.cantidad || 1)), 0
-                                                ) + Number(v.propinaRecaudada || 0)).toLocaleString()
-                                                )}
-                                               </strong>
+                                                    👤 {v.mesero || 'Caja'} • 💰 <strong>$
+                                                    {String(
+                                                        ((v.platosVendidosV2 || []).reduce((acc, plato) => 
+                                                            acc + (Number(plato.precioUnitario || plato.precio_unitario || plato.precio || 0) * Number(plato.cantidad || 1)), 0
+                                                        ) + Number(v.propinaRecaudada || 0)).toLocaleString()
+                                                    )}
+                                                    </strong>
                                                 </div>
                                             </div>
                                             
@@ -146,8 +150,7 @@ export default function HistorialVentasModal({ isOpen, onClose, onReimprimir, te
                                                 >
                                                     👁️
                                                 </button>
-                                                {/* 🖨️ FUNCIÓN DE REIMPRESIÓN ORIGINAL (INTACTA) */}
-                                               {/* 🖨️ BOTÓN DUAL SÉNIOR: Canal Bluetooth + Canal Cable simultáneos */}
+                                                {/* 🖨️ BOTÓN DUAL SÉNIOR: Canal Bluetooth + Canal Cable simultáneos */}
                                                 <button 
                                                     onClick={() => {
                                                         onReimprimir(v); // Ejecuta Bluetooth (Móvil)
@@ -162,17 +165,17 @@ export default function HistorialVentasModal({ isOpen, onClose, onReimprimir, te
 
                                         {/* 🎯 INYECCIÓN ENTRE LÍNEAS: Desplaza las demás filas hacia abajo de forma orgánica */}
                                         {esFilaAbierta && (
-                                            <div style={{ marginTop: '12px', padding: '15px', backgroundColor: 'white', borderRadius: '8px', border: '1px solid #cbd5e1', boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.02)' }}>
+                                        <div style={{ marginTop: '12px', padding: '15px', backgroundColor: 'white', borderRadius: '8px', border: '1px solid #cbd5e1', boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.02)' }}>
                                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', borderBottom: '2px solid #cbd5e1', paddingBottom: '5px' }}>
-                                                    <strong style={{ fontSize: '0.85rem', color: '#1e293b' }}>🛒 DETALLE: {ventaDetalle.folio}</strong>
+                                                    <strong style={{ fontSize: '0.85rem', color: '#1e293b' }}>🛒 DETALLE: {v.folio || 'S/F'}</strong>
                                                     <button onClick={() => setVentaDetalle(null)} style={{ border: 'none', background: 'none', color: '#ef4444', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.8rem' }}>OCULTAR</button>
                                                 </div>
 
                                                 <div style={{ maxHeight: '150px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                                                    {(ventaDetalle.platosVendidosV2 || []).map((plato, idx) => (
+                                                    {(v.platosVendidosV2 || []).map((plato, idx) => (
                                                         <div key={plato._key || idx} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', color: '#334155', padding: '2px 0' }}>
                                                             <div style={{ flex: 1, paddingRight: '10px' }}>
-                                                                <span style={{ fontWeight: 'bold', color: '#0f766e' }}>{plato.cantidad}x</span> {plato.nombrePlato || plato.nombre}
+                                                                <span style={{ fontWeight: 'bold', color: '#0f766e' }}>{plato.cantidad}x</span> {plato.nombrePlato || plato.nombre || 'PRODUCTO'}
                                                                 {plato.comentario && <div style={{ fontSize: '0.75rem', color: '#b91c1c', fontStyle: 'italic', marginLeft: '22px' }}>↳ 📝 {plato.comentario}</div>}
                                                             </div>
                                                             <span style={{ fontWeight: 'bold' }}>${(Number(plato.precioUnitario || 0) * Number(plato.cantidad || 1)).toLocaleString()}</span>
@@ -180,46 +183,44 @@ export default function HistorialVentasModal({ isOpen, onClose, onReimprimir, te
                                                     ))}
                                                 </div>
 
-                                                {/* DESGLOSE DE TOTALES ESTILO TICKET */}
+                                                {/* DESGLOSE DE TOTALES */}
                                                 <div style={{ marginTop: '12px', paddingTop: '10px', borderTop: '2px dashed #cbd5e1', display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '0.85rem' }}>
-                                                <div style={{ display: 'flex', justifyContent: 'space-between', color: '#64748b' }}>
-                                                <span>Subtotal Productos:</span>
-                                                <span>$
-                                                {String(
-                                                (ventaDetalle.platosVendidosV2 || []).reduce((acc, plato) => 
-                                                 acc + (Number(plato.precioUnitario || 0) * Number(plato.cantidad || 1)), 0
-                                                 ).toLocaleString()
-                                                 )}
-                                                </span>
-                                               </div>
+                                                    <div style={{ display: 'flex', justifyContent: 'space-between', color: '#64748b' }}>
+                                                        <span>Subtotal Productos:</span>
+                                                        <span>$
+                                                            {((v.platosVendidosV2 || []).reduce((acc, plato) => {
+                                                                return acc + (Number(plato.precioUnitario || 0) * Number(plato.cantidad || 1));
+                                                            }, 0)).toLocaleString()}
+                                                        </span>
+                                                    </div>
                                                     
-                                                    {Number(ventaDetalle.propinaRecaudada) > 0 && (
+                                                    {Number(v.propinaRecaudada) > 0 && (
                                                         <div style={{ display: 'flex', justifyContent: 'space-between', color: '#0f766e', fontWeight: '500' }}>
                                                             <span>💖 Propina:</span>
-                                                            <span>${Number(ventaDetalle.propinaRecaudada).toLocaleString()}</span>
+                                                            <span>${Number(v.propinaRecaudada).toLocaleString()}</span>
                                                         </div>
                                                     )}
 
                                                     <div style={{ display: 'flex', justifyContent: 'space-between', color: '#475569', fontSize: '0.8rem', fontStyle: 'italic', marginBottom: '2px' }}>
                                                         <span>💳 Método de Pago:</span>
-                                                        <span style={{ textTransform: 'uppercase', fontWeight: 'bold' }}>{ventaDetalle.metodoPago || 'No especificado'}</span>
+                                                        <span style={{ textTransform: 'uppercase', fontWeight: 'bold' }}>{v.metodoPago || 'No especificado'}</span>
                                                     </div>
 
-                                                   <div style={{ display: 'flex', justifyContent: 'space-between', color: '#1e293b', fontSize: '1rem', fontWeight: '900', paddingTop: '4px', borderTop: '1px solid #e2e8f0' }}>
-                                                   <span>💰 TOTAL:</span>
-                                                   <span style={{ color: '#10b981' }}>$
-                                                    {String(
-                                                    ((ventaDetalle.platosVendidosV2 || []).reduce((acc, plato) => 
-                                                    acc + (Number(plato.precioUnitario || 0) * Number(plato.cantidad || 1)), 0
-                                                    ) + Number(ventaDetalle.propinaRecaudada || 0)).toLocaleString()
-                                                    )}
-                                                    </span>
-                                                </div>
+                                                    <div style={{ display: 'flex', justifyContent: 'space-between', color: '#1e293b', fontSize: '1rem', fontWeight: '900', paddingTop: '4px', borderTop: '1px solid #e2e8f0' }}>
+                                                        <span>💰 TOTAL:</span>
+                                                        <span style={{ color: '#10b981' }}>$
+                                                            {String(
+                                                                ((v.platosVendidosV2 || []).reduce((acc, plato) => 
+                                                                    acc + (Number(plato.precioUnitario || 0) * Number(plato.cantidad || 1)), 0
+                                                                ) + Number(v.propinaRecaudada || 0)).toLocaleString()
+                                                            )}
+                                                        </span>
+                                                    </div>
                                                 </div>
 
-                                                {ventaDetalle.datosEntrega && (
+                                                {v.datosEntrega && (
                                                     <div style={{ marginTop: '10px', paddingTop: '8px', borderTop: '1px dotted #cbd5e1', fontSize: '0.8rem', color: '#475569' }}>
-                                                        📍 <strong>ENTREGA:</strong> {ventaDetalle.datosEntrega.nombreCliente} • {ventaDetalle.datosEntrega.telefono} • {ventaDetalle.datosEntrega.direccion}
+                                                        📍 <strong>ENTREGA:</strong> {v.datosEntrega.nombreCliente} • {v.datosEntrega.telefono} • {v.datosEntrega.direccion}
                                                     </div>
                                                 )}
                                             </div>

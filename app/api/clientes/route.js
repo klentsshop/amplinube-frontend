@@ -1,22 +1,37 @@
 import { NextResponse } from 'next/server';
 import { supabaseServer } from '@/lib/supabase'; // 🛡️ Importación de tu cliente de Supabase
 
-// 🟢 GET: Recuperar la lista de clientes desde Supabase
+// 🟢 GET: Recuperar la lista de clientes desde Supabase con Búsqueda Global
 export async function GET(request) {
     const { searchParams } = new URL(request.url);
     const tenantId = searchParams.get('tenant') || searchParams.get('tenantId');
+    // 🧠 Capturamos 'search' que es el parámetro que envía tu componente Front-end
+    const search = searchParams.get('search') || '';
 
     if (!tenantId || tenantId === 'undefined') {
         return NextResponse.json({ error: 'Falta el tenantId' }, { status: 400 });
     }
 
     try {
-        // 🚀 CONSULTA OPTIMIZADA: Renombramos 'id' a '_id' para retrocompatibilidad exacta con tu POS
-        const { data: clientes, error } = await supabaseServer
+        // 🛡️ Inicializamos la query base con el aliaseo para retrocompatibilidad
+        let query = supabaseServer
             .from('clientes')
             .select('_id:id, tenant_id, nombre, telefono, direccion, created_at')
-            .eq('tenant_id', tenantId)
-            .order('created_at', { ascending: false });
+            .eq('tenant_id', tenantId);
+
+        // ⚡ LUPA SENIOR: Si el cliente escribe en el input, buscamos en caliente en todo PostgreSQL
+        if (search.trim() !== '') {
+            const valor = search.trim();
+            const termino = `%${valor}%`;
+
+            // Evalúa coincidencia parcial insensible a mayúsculas en Nombre, Teléfono o Dirección
+            query = query.or(`nombre.ilike.${termino},telefono.ilike.${termino},direccion.ilike.${termino}`);
+        }
+
+        // Ordenamos, limitamos la entrega a los 30 más relevantes para cuidar la memoria y ejecutamos
+        const { data: clientes, error } = await query
+            .order('created_at', { ascending: false })
+            .limit(30);
 
         if (error) {
             console.error("❌ Error consultando clientes en Supabase:", error.message);

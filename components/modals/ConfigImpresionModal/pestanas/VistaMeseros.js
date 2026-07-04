@@ -109,30 +109,62 @@ export default function VistaMeseros({
                     </div>
                     
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                        <div style={{ display: 'grid', gridTemplateColumns: '2.5fr 1.5fr', gap: '8px', alignItems: 'end' }}>
+                        {/* 📱 GRID REESTRUCTURADO EN TRES COLUMNAS PARA INTEGRAR EL BOTÓN ACCIÓN ARRIBA */}
+                        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '6px', alignItems: 'end' }}>
                             <div>
                                 <label style={{ fontSize: '0.7rem', fontWeight: 'bold', color: '#6b7280', display: 'block', marginBottom: '4px' }}>Nombre del Vendedor(a)</label>
                                 <input 
                                     type="text" 
-                                    placeholder="Ej: MARÍA ANTONIA o CARLOS PINZÓN" 
+                                    placeholder="Ej: MARÍA ANTONIA" 
                                     value={meseroNombre} 
                                     onChange={e => setMeseroNombre(e.target.value)} 
                                     required 
-                                    style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #d1d5db', outline: 'none', textTransform: 'uppercase' }} 
+                                    style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #d1d5db', outline: 'none', textTransform: 'uppercase', fontSize: '0.8rem' }} 
                                 />
                             </div>
 
-                            <div style={{ display: 'flex', alignItems: 'center', backgroundColor: '#fff', border: '1px solid #d1d5db', borderRadius: '6px', padding: '9px 8px', height: '37px' }}>
-                                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.75rem', fontWeight: 'bold', color: '#374151', cursor: 'pointer', width: '100%' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', backgroundColor: '#fff', border: '1px solid #d1d5db', borderRadius: '6px', padding: '9px 4px', height: '35px', justifyContent: 'center' }}>
+                                <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.7rem', fontWeight: 'bold', color: '#374151', cursor: 'pointer', width: '100%' }}>
                                     <input 
                                         type="checkbox" 
                                         checked={meseroActivo} 
                                         onChange={e => setMeseroActivo(e.target.checked)} 
-                                        style={{ cursor: 'pointer', width: '15px', height: '15px' }} 
+                                        style={{ cursor: 'pointer', width: '14px', height: '14px' }} 
                                     />
-                                    ¿Usuario Activo?
+                                    ¿Activo?
                                 </label>
                             </div>
+
+                            {/* 🚀 INYECCIÓN MAESTRA: El botón ahora vive aquí arriba, inmune al teclado del iPhone */}
+                            <button 
+                                type="button" 
+                                disabled={guardando} 
+                                onClick={(e) => {
+                                    e.preventDefault();
+                                    const pseudoEvento = {
+                                        preventDefault: () => {},
+                                        target: { verReporte, verAdmin, puedeCargarGasto, verVentas, verInventario, puedeCobrar }
+                                    };
+                                    handleGuardarMesero(pseudoEvento);
+                                    setSubPestana('listado');
+                                }}
+                                style={{ 
+                                    height: '35px',
+                                    padding: '0 8px', 
+                                    backgroundColor: editandoMeseroId ? '#2563eb' : '#10b981', 
+                                    color: 'white', 
+                                    border: 'none', 
+                                    borderRadius: '6px', 
+                                    fontWeight: 'bold', 
+                                    cursor: 'pointer', 
+                                    fontSize: '0.68rem', 
+                                    textTransform: 'uppercase',
+                                    boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+                                    whiteSpace: 'nowrap'
+                                }}
+                            >
+                                {editandoMeseroId ? '💾 GUARDAR' : '💾 GUARDAR' }
+                            </button>
                         </div>
 
                         {/* SECCIÓN INTERRUPTORES DE RESTRICCIÓN DE ROLES GRANULARES */}
@@ -164,44 +196,6 @@ export default function VistaMeseros({
                                     <input type="checkbox" checked={puedeCobrar} onChange={e => setPuedeCobrar(e.target.checked)} style={{ width: '14px', height: '14px' }} />
                                     💵 COBRAR
                                 </label>
-                            </div>
-
-                            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '4px', borderTop: '1px dashed #f3f4f6', paddingTop: '8px' }}>
-                                <button 
-                                    type="button" 
-                                    disabled={guardando} 
-                                    onClick={(e) => {
-                                        e.preventDefault();
-                                        // Interceptor atómico de payload completo para inyectar al manejador padre
-                                        const pseudoEvento = {
-                                            preventDefault: () => {},
-                                            target: {
-                                                verReporte,
-                                                verAdmin,
-                                                puedeCargarGasto,
-                                                verVentas,
-                                                verInventario,
-                                                puedeCobrar
-                                            }
-                                        };
-                                        handleGuardarMesero(pseudoEvento);
-                                        setSubPestana('listado'); // Retorna al listado de forma limpia
-                                    }}
-                                    style={{ 
-                                        padding: '8px 24px', 
-                                        backgroundColor: editandoMeseroId ? '#2563eb' : '#10b981', 
-                                        color: 'white', 
-                                        border: 'none', 
-                                        borderRadius: '6px', 
-                                        fontWeight: 'bold', 
-                                        cursor: 'pointer', 
-                                        fontSize: '0.75rem', 
-                                        textTransform: 'uppercase',
-                                        boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
-                                    }}
-                                >
-                                    {editandoMeseroId ? '💾 GUARDAR CAMBIOS' : '🚀 REGISTRAR VENDEDOR'}
-                                </button>
                             </div>
                         </div>
                     </div>
