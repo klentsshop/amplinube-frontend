@@ -82,7 +82,7 @@ export async function GET(request) {
         // 🛡️ BLINDAJE ANTI-CAMPOS BLANCOS / ARREGLOS VACÍOS
         // Si Sanity viene vacío, nulo o no es un arreglo válido, aplicamos paracaídas inmediato
         if (!dataFresh || !Array.isArray(dataFresh) || dataFresh.length === 0) {
-            console.warn(`⚠️ Sanity mmolvió un catálogo vacío para [${tenantAlias}]. Bloqueando persistencia para evitar sobreescritura fantasma.`);
+            console.warn(`⚠️ Sanity devolvió un catálogo vacío para [${tenantAlias}]. Bloqueando persistencia para evitar sobreescritura fantasma.`);
             
             // Intentamos recuperar lo último que hubiera en Supabase aunque errCache haya dicho algo antes,
             // o simplemente servimos lo que haya sin romper el POS del cliente.
@@ -94,6 +94,24 @@ export async function GET(request) {
             
             // Si de verdad no hay nada en ningún lado, respondemos vacío pero NO lo guardamos en Supabase
             return NextResponse.json([], { headers: { 'X-Cache-Status': 'MISS-EMPTY' } });
+        }
+
+        // 🎯 NUEVO BLINDAJE: Extracción y llenado automático de la tabla 'negocios'
+        const docNegocio = dataFresh.find(item => item._type === 'negocio');
+        if (docNegocio) {
+            await supabaseServer
+                .from('negocios')
+                .upsert({
+                    tenant: tenantAlias,
+                    nombre: docNegocio.nombre || 'RESTAURANTE',
+                    nit: docNegocio.nit || '',
+                    direccion: docNegocio.direccion || '',
+                    telefono: docNegocio.telefono || '',
+                    colordark: docNegocio.colordark || '#000A6F',
+                    updated_at: new Date().toISOString()
+                }, { onConflict: 'tenant' });
+
+            console.log(`🏛️ Tabla 'negocios' sincronizada correctamente para: [${tenantAlias}]`);
         }
 
         // 🚀 SENIOR: Aplanamos y resolvemos las imágenes en el servidor de forma ultra segura antes de guardar

@@ -15,6 +15,9 @@ export async function POST(req) {
             return NextResponse.json({ ok: false, error: 'TENANT_MISSING' }, { status: 400 });
         }
         
+        // 🛡️ BISTURÍ: Declaración segura de la constante limpia para queries de Supabase
+        const cleanTenant = tenantId.toLowerCase().trim();
+        
         // --- 1. VARIABLES ORIGINALES ---
         const mesa = payload.mesa || 'General';
         const mesero = payload.mesero || 'Personal General';
@@ -88,15 +91,17 @@ const folioGenerado = `${prefix}-${datePart}-${seed}`;
 // Mantenemos el transaccionId únicamente para el ID único del registro en la base de datos si existe
 const ventaId = transaccionId ? `venta-${transaccionId}` : `venta-${Date.now()}-${seed}`;
         
-        // --- 3. 🛡️ ESCUDO ANTI-FANTASMAS (EL BLOQUEO MAESTRO) ---
+        // --- 3. 🛡️ ESCUDO ANTI-FANTASMAS (EL BLOQUEO MAESTRO EN SUPABASE) ---
         if (ordenId && ordenId !== "undefined" && ordenId !== "null") {
-            const mesaExiste = await sanityClientServer.fetch(
-                `defined(*[_type == "ordenActiva" && _id == $id && tenant == $tenantId][0])`, 
-                { id: ordenId, tenantId }
-            );
+            const { data: mesaExiste, error: errCheckMesa } = await supabaseServer
+                .from('ordenes_activas')
+                .select('id')
+                .eq('id', ordenId)
+                .eq('tenant', cleanTenant)
+                .maybeSingle();
             
-            if (!mesaExiste) {
-                console.warn(`⚠️ Cobro duplicado evitado: ${ordenId}`);
+            if (errCheckMesa || !mesaExiste) {
+                console.warn(`⚠️ Cobro duplicado evitado o mesa inexistente en Supabase: ${ordenId}`);
                 return NextResponse.json({ 
                     ok: true, 
                     yaProcesada: true, 
@@ -113,7 +118,6 @@ const ventaId = transaccionId ? `venta-${transaccionId}` : `venta-${Date.now()}-
                 }, { status: 400 });
             }
         }
-
         // --- 4. 🚀 BÚSQUEDA DE IDS Y RECETAS DESDE EL BÚNKER DE SUPABASE (CON CONTINGENCIA REAL) ---
         const nombresPlatos = (payload.platosVendidosV2 || []).map(item => item.nombrePlato || item.nombre);
         let mapeoSanity = [];
@@ -228,69 +232,60 @@ const ventaId = transaccionId ? `venta-${transaccionId}` : `venta-${Date.now()}-
             else if (m === 'digital' || m === 'nequi' || m === 'daviplata') columnaDigital += monto;
         });
 
-        // ==========================================
-        // 🏗️ INICIO DE TRANSACCIÓN ATÓMICA ÚNICA
-        // ==========================================
-        let transaction = sanityClientServer.transaction();
-
-        // B. CREAR TICKET VENTA PARA APK
-        transaction = transaction.create({
-            _id: `venta-pulso-${Date.now()}-${seed}`,
-            _type: 'venta',
-            tenant: tenantId,
-            metodoPago: abrirCajon ? 'EFECTIVO_MIXTO' : metodoPago 
-        });
-
-        // C. BORRAR MESA ACTIVA
-        if (ordenId) {
-            transaction = transaction.delete(ordenId);
-        }
-
         // ====================================================================
         // --- D. 🔥 POPULARIDAD (Sanity) e INVENTARIO HÍBRIDO (Supabase) ---
         // ====================================================================
         const descuentosSupabase = [];
 
-        (payload.platosVendidosV2 || []).forEach(p => {
-            const nombrePlato = p.nombrePlato || p.nombre;
-            const match = (mapeoSanity || []).find(m => m.nombre === nombrePlato);
-            
-            if (match && match._id) {
-                // 📈 La popularidad cambia poco, se queda como patch ligero en Sanity
-                transaction = transaction.patch(match._id, {
-                    setIfMissing: { totalVentas: 0 },
-                    inc: { totalVentas: Number(p.cantidad) || 1 }
-                });
+        // Ejecutamos los patches de popularidad en Sanity en paralelo de forma ultra veloz
+        if (Array.isArray(payload.platosVendidosV2) && payload.platosVendidosV2.length > 0) {
+            await Promise.all(
+                payload.platosVendidosV2.map(async (p) => {
+                    const nombrePlato = p.nombrePlato || p.nombre;
+                    const match = (mapeoSanity || []).find(m => m.nombre === nombrePlato);
+                    
+                    if (match && match._id) {
+                        try {
+                            // 📈 LE AVISAMOS A SANITY: Suma el contador para que el ProductGrid siga ordenando a la perfección
+                            await sanityClientServer
+                                .patch(match._id)
+                                .setIfMissing({ totalVentas: 0 })
+                                .inc({ totalVentas: Number(p.cantidad) || 1 })
+                                .commit();
+                        } catch (sanityErr) {
+                            console.error(`⚠️ No se pudo actualizar popularidad en Sanity para ${nombrePlato}:`, sanityErr.message);
+                        }
 
-                // 🥩 LÓGICA DE EXTRACCIÓN: Preparamos los descuentos para Supabase
-                if (match.controlaInventario) {
-                    const cantVenta = Number(p.cantidad) || 0;
-                    const esPesaje = cantVenta % 1 !== 0; 
+                        // 🥩 LÓGICA DE EXTRACCIÓN: Preparamos los descuentos para Supabase
+                        if (match.controlaInventario) {
+                            const cantVenta = Number(p.cantidad) || 0;
+                            const esPesaje = cantVenta % 1 !== 0; 
 
-                    // Caso 1: Recetas multi-insumo
-                    if (Array.isArray(match.recetaInsumos) && match.recetaInsumos.length > 0) {
-                        match.recetaInsumos.forEach(insumoItem => {
-                            if (insumoItem.insumoId) {
-                                const montoFinal = esPesaje ? cantVenta : (Number(insumoItem.cantidad) || 1) * cantVenta;
+                            // Caso 1: Recetas multi-insumo
+                            if (Array.isArray(match.recetaInsumos) && match.recetaInsumos.length > 0) {
+                                match.recetaInsumos.forEach(insumoItem => {
+                                    if (insumoItem.insumoId) {
+                                        const montoFinal = esPesaje ? cantVenta : (Number(insumoItem.cantidad) || 1) * cantVenta;
+                                        descuentosSupabase.push({
+                                            insumo_id: insumoItem.insumoId,
+                                            cantidad: montoFinal
+                                        });
+                                    }
+                                });
+                            } 
+                            // Caso 2: Insumo Vinculado Directo
+                            else if (match.insumoVinculadoRef) {
+                                const montoFinal = esPesaje ? cantVenta : (Number(match.cantidadADescontar) || 1) * cantVenta;
                                 descuentosSupabase.push({
-                                    insumo_id: insumoItem.insumoId,
+                                    insumo_id: match.insumoVinculadoRef,
                                     cantidad: montoFinal
                                 });
                             }
-                        });
-                    } 
-                    // Caso 2: Insumo Vinculado Directo
-                    else if (match.insumoVinculadoRef) {
-                        const montoFinal = esPesaje ? cantVenta : (Number(match.cantidadADescontar) || 1) * cantVenta;
-                        descuentosSupabase.push({
-                            insumo_id: match.insumoVinculadoRef,
-                            cantidad: montoFinal
-                        });
+                        }
                     }
-                }
-            }
-        });
-        
+                })
+            );
+        }
         // ==========================================================
         // 🚀 INYECCIÓN SENIOR EN POSTGRESQL CON TIMEOUT DE 3 SEGUNDOS
         // ==========================================================
@@ -344,7 +339,6 @@ const ventaId = transaccionId ? `venta-${transaccionId}` : `venta-${Date.now()}-
                 const { error: errReintento } = await supabaseServer
                     .from('ventas')
                     .insert([{
-                        ...payload, // Reutiliza los mismos campos estructurados del insert anterior
                         transaccion_id: `venta-${Date.now()}-${seedRescate}`,
                         folio: folioRescate,
                         tenant_id: tenantId,
@@ -363,7 +357,6 @@ const ventaId = transaccionId ? `venta-${transaccionId}` : `venta-${Date.now()}-
                         pago_tarjeta: columnaTarjeta,
                         pago_digital: columnaDigital
                     }]);
-                
                 if (!errReintento) {
                     console.log(`🎉 Venta salvada exitosamente bajo el folio de emergencia: ${folioRescate}`);
                     return NextResponse.json({ 
@@ -376,11 +369,44 @@ const ventaId = transaccionId ? `venta-${transaccionId}` : `venta-${Date.now()}-
             throw new Error(`SUPABASE_WRITE_FAILED: ${supabaseError.message}`);
         }
 
-        // --- 🚀 EJECUCIÓN FINAL ---
-        // 🛡️ PASO A: Aseguramos Sanity primero para liberar la mesa física.
-        await transaction.commit();
+        // --- 🚀 EJECUCIÓN FINAL (MIGRACIÓN SUPABASE - PULSO DE CAJÓN INDEPENDIENTE) ---
 
-        // ⚡ PASO B: Con Sanity asegurado, impactamos masivamente el Inventario en Supabase en paralelo
+        // 🪓 PASO A: Si el pago involucra efectivo, creamos el pulso en Supabase para abrir el cajón
+        // Esto replica exactamente el documento flotante de Sanity, funcionando incluso para caja rápida sin mesa.
+        if (abrirCajon) {
+            const { error: errPulso } = await supabaseServer
+                .from('tickets_caja_pendientes')
+                .insert([{
+                    id: `pulso-${Date.now()}-${seed}`,
+                    tenant_id: tenantId,
+                    tipo_accion: 'ABRIR_CAJON', // ⚡ Indica a la APK que solo debe abrir el monedero sin gastar papel
+                    metodo_pago: metodoPago.toUpperCase(),
+                    mesa: String(mesa),
+                    folio: folioGenerado,
+                    platos_ordenados: [] // 🛡️ Evita nulos en el live stream
+                }]);
+
+            if (errPulso) {
+                console.error('⚠️ No se pudo registrar el pulso de apertura en Supabase:', errPulso.message);
+            }
+        }
+
+        // 🪓 PASO B: LIBERACIÓN DE LA MESA EN SUPABASE (Limpia la mesa física si existía una orden activa)
+        if (ordenId && ordenId !== "undefined" && ordenId !== "null") {
+            const { error: errBorrarMesa } = await supabaseServer
+                .from('ordenes_activas')
+                .delete()
+                .eq('id', ordenId)
+                .eq('tenant', cleanTenant);
+
+            if (errBorrarMesa) {
+                console.error(`⚠️ Error liberando mesa ${ordenId} en Supabase:`, errBorrarMesa.message);
+            } else {
+                console.log(`🔌 [MESA_LIBERADA]: Mesa ${ordenId} eliminada de Supabase.`);
+            }
+        }
+
+        // ⚡ PASO C: Procesamos los descuentos de las recetas en paralelo
         if (descuentosSupabase.length > 0) {
             await Promise.all(
                 descuentosSupabase.map(async (descuento) => {
@@ -397,13 +423,12 @@ const ventaId = transaccionId ? `venta-${transaccionId}` : `venta-${Date.now()}-
             );
         }
           
-        // 🎉 PASO C: Éxito absoluto y retorno limpio al frontend
+        // 🎉 Retorno limpio al frontend de Next.js
         return NextResponse.json({ 
             ok: true, 
-            message: 'Venta registrada e Inventario actualizado',
+            message: 'Venta registrada e Inventario actualizado en Supabase',
             folio: folioGenerado
         }, { status: 201 });
-
     } catch (err) {
         console.error('🔥 [FATAL_ERROR_VENTAS]:', err.message);
         return NextResponse.json({ 

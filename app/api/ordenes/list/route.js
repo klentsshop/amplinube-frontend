@@ -1,216 +1,253 @@
 import { NextResponse } from 'next/server';
-import { sanityClientServer } from '@/lib/sanity';
+import { supabaseServer } from '@/lib/supabase';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
-// 🟢 GET: Recupera las mesas filtradas por cliente
+// 🟢 GET: Recupera las mesas vivas desde Supabase Relacional
 export async function GET(request) {
     try {
         const { searchParams } = new URL(request.url);
-        // 🛡️ Fallback: Si no viene tenantId, usamos 'demo' para que no se vea vacío
         const tenantId = searchParams.get('tenantId');
-if (!tenantId || tenantId === 'undefined') {
-    // Si no hay un cliente real identificado, respondemos vacío de inmediato para proteger los datos
-    return NextResponse.json([]);
-}
-
-        const query = `*[_type == "ordenActiva" && tenant == $tenantId] | order(fechaCreacion asc) {
-            _id, mesa, mesero, tipoOrden, fechaCreacion, platosOrdenados, imprimirSolicitada, tenant,
-    clienteRef, datosEntrega
-        }`;
-
-      const data = await sanityClientServer.fetch(query, { tenantId }, { useCdn: false });
         
-        // 🛡️ MITIGACIÓN DE API REQUESTS: Cabeceras de control estricto para frenar el desangre de consultas fantasmas
-        return new NextResponse(JSON.stringify(data || []), {
+        if (!tenantId || tenantId === 'undefined') {
+            return NextResponse.json([]);
+        }
+
+        const cleanTenant = tenantId.toLowerCase().trim();
+
+        // 1. Extraemos las cabeceras de las órdenes activas del comercio
+        const { data: ordenesRows, error: errOrdenes } = await supabaseServer
+            .from('ordenes_activas')
+            .select('*')
+            .eq('tenant', cleanTenant)
+            .order('fecha_creacion', { ascending: true });
+
+        if (errOrdenes) throw errOrdenes;
+        if (!ordenesRows || ordenesRows.length === 0) return NextResponse.json([]);
+
+       // 2. Extraemos todos los platos vinculados a esas órdenes en un solo mapeo optimizado (Anti-N+1)
+        // 🛡️ BISTURÍ SENIOR: Doble ordenamiento (created_at + id) para garantizar orden secuencial determinista
+        const listaIds = ordenesRows.map(o => o.id);
+        const { data: platosRows, error: errPlatos } = await supabaseServer
+            .from('platos_ordenados')
+            .select('*')
+            .in('orden_id', listaIds)
+            .order('created_at', { ascending: true })
+            .order('id', { ascending: true });
+
+        if (errPlatos) throw errPlatos;
+
+        // 3. Extraemos todas las estaciones pendientes
+        const { data: pendientesRows, error: errPendientes } = await supabaseServer
+            .from('estaciones_pendientes')
+            .select('*')
+            .in('orden_id', listaIds);
+
+        if (errPendientes) throw errPendientes;
+
+        // 4. Reconstruimos la firma JSON exacta orientada a documentos que el POS Frontend espera
+        const respuestaFormateada = ordenesRows.map(o => {
+            const misPlatos = (platosRows || [])
+                .filter(p => p.orden_id === o.id)
+                .map(p => {
+                    // 🛡️ EXTRACCIÓN SEGURA DE INVENTARIO DESDE EL COMENTARIO
+                    let comentarioTexto = p.comentario || "";
+                    let controlaInventario = false;
+                    let insumoVinculado = null;
+
+                    if (comentarioTexto.trim().startsWith('{')) {
+                        try {
+                            const jsonComentario = JSON.parse(comentarioTexto);
+                            comentarioTexto = jsonComentario.comentarioOriginal || "";
+                            insumoVinculado = jsonComentario.insumo || null;
+                            controlaInventario = true;
+                        } catch (e) {
+                            // Si falla, el comentario era un texto común y corriente
+                        }
+                    }
+
+                    return {
+                        _key: p.line_id || Math.random().toString(36).substring(2, 9),
+                        _id: p.plato_id,
+                        _type: 'platoOrdenado',
+                        nombrePlato: p.nombre_plato,
+                        cantidad: Number(p.cantidad || 0),
+                        precioUnitario: Number(p.precio_unitario || 0),
+                        subtotal: Number(p.subtotal || 0),
+                        comentario: comentarioTexto,
+                        categoria: p.categoria || "",
+                        controlaInventario: controlaInventario,
+                        amount: Number(p.cantidad || 0), 
+                        cantidadADescontar: insumoVinculado ? Number(p.cantidad || 0) : 0,
+                        insumoVinculado: insumoVinculado
+                    };
+                });
+
+            const misEstaciones = (pendientesRows || [])
+                .filter(e => e.orden_id === o.id)
+                .map(e => e.estacion);
+
+            return {
+                _id: o.id, // Sincronía perfecta de llaves con Supabase
+                _type: 'ordenActiva', // Requerido para mantener simetría estricta con el Front
+                _rev: `supa-rev-${new Date(o.ultima_actualizacion || o.fecha_creacion).getTime()}`,
+                tenant: o.tenant,
+                mesa: o.mesa,
+                mesero: o.mesero || 'Caja',
+                tipoOrden: o.tipo_orden,
+                fechaCreacion: o.fecha_creacion,
+                ultimaActualizacion: o.ultima_actualizacion,
+                imprimirSolicitada: o.imprimir_solicitada,
+                imprimirCliente: o.imprimir_cliente,
+                clienteRef: o.cliente_ref ? JSON.parse(o.cliente_ref) : null,
+                datosEntrega: o.datos_entrega,
+                platosOrdenados: misPlatos,
+                estacionesPendientes: misEstaciones,
+                // Inyectamos dinámicamente los cursores en la raíz para que la APK los lea transparente
+                ...(typeof o.cursores_estaciones === 'string' ? JSON.parse(o.cursores_estaciones || '{}') : (o.cursores_estaciones || {}))
+            };
+        });
+
+        return new NextResponse(JSON.stringify(respuestaFormateada), {
             status: 200,
             headers: {
                 'Content-Type': 'application/json',
                 'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0',
-                'Pragma': 'no-cache',
-                'Expires': '0',
             }
         });
+
     } catch (error) {
-        console.error('[API_LIST_GET_ERROR]:', error);
-        return new NextResponse(JSON.stringify([]), {
-            status: 200,
-            headers: { 'Content-Type': 'application/json' }
-        });
+        console.error('🔥 [SUPABASE_LIST_GET_ERROR]:', error);
+        return new NextResponse(JSON.stringify([]), { status: 200, headers: { 'Content-Type': 'application/json' } });
     }
 }
 
-// 🔵 POST: Guarda o Actualiza la mesa
+// 🔵 POST: Transaccionalidad de Guardado y Adiciones sobre Supabase
 export async function POST(request) {
     try {
         const body = await request.json();
-        // 🛡️ Extraemos tenantId de forma flexible para que no de error 400
         const { mesa, mesero, platosOrdenados, ordenId, tipoOrden, clienteRef, datosEntrega } = body;
         const tenantId = body.tenantId || body.tenant;
-if (!tenantId || tenantId === 'undefined') {
-    return NextResponse.json({ error: 'Identificador de comercio inválido para registrar pedidos.' }, { status: 400 });
-}
 
-        // 1. VALIDACIÓN DE SEGURIDAD
-        if (
-    !mesa ||
-    !Array.isArray(platosOrdenados) ||
-    platosOrdenados.length === 0
-) {
+        if (!tenantId || tenantId === 'undefined') {
+            return NextResponse.json({ error: 'Identificador de comercio inválido.' }, { status: 400 });
+        }
+        if (!mesa || !Array.isArray(platosOrdenados) || platosOrdenados.length === 0) {
             return NextResponse.json({ error: 'Datos incompletos.' }, { status: 400 });
         }
-// ✅ REEMPLAZAR POR ESTE BLOQUE:
-// Traemos tanto el _id como el titulo de las categorías con impresión desactivada
-// 🛡️ LECTURA DESDE EL ESCUDO DE SUPABASE (Costo Sanity: $0)
+
+        const cleanTenant = tenantId.toLowerCase().trim();
+
+        // 🛡️ CONTROL DE CATEGORÍAS NO IMPRIMIBLES DESDE CATALOG_CACHE
         let categoriasNoImprimibles = [];
-        try {
-            const { supabaseServer } = await import('@/lib/supabase');
-            const { data: cacheRow } = await supabaseServer
-                .from('catalog_cache')
-                .select('payload_json')
-                .eq('tenant_host', tenantId.toLowerCase().trim())
-                .single();
+        const { data: cacheRow } = await supabaseServer
+            .from('catalog_cache')
+            .select('payload_json')
+            .eq('tenant_host', cleanTenant)
+            .maybeSingle();
 
-            const categoriasBunker = cacheRow?.payload_json?.categoria || cacheRow?.payload_json?.categorias || [];
-            categoriasNoImprimibles = categoriasBunker.filter(c => c.seImprime === false);
-        } catch (cacheError) {
-            console.error("⚠️ Falló búnker de caché. Activando contingencia directa en Sanity para salvar tiqueteras...");
-            try {
-                // Plan de rescate: Si Supabase no responde, sacrificamos una API request a Sanity antes de mandar basura a las impresoras
-                categoriasNoImprimibles = await sanityClientServer.fetch(
-                    `*[_type == "categoria" && tenant == $tenantId && seImprime == false]{ _id, titulo }`,
-                    { tenantId },
-                    { useCdn: false }
-                );
-            } catch (sanityFatalError) {
-                console.error("🔥 Error crítico global: Sin acceso a catálogos para mapear impresión.", sanityFatalError.message);
+        if (cacheRow?.payload_json) {
+            const catalogo = cacheRow.payload_json;
+            const categorias = catalogo.filter(item => item._type === 'categoria');
+            categoriasNoImprimibles = categorias.filter(c => c.seImprime === false);
+        }
+
+        const idsExcluidos = new Set(categoriasNoImprimibles.map(c => String(c._id).trim()));
+        const titulosExcluidos = new Set(categoriasNoImprimibles.map(c => String(c.titulo).trim().toUpperCase()));
+
+        const estacionesSet = new Set();
+        const platosNormalizados = platosOrdenados.map(p => {
+            const catIdOriginal = typeof p.categoria === 'object' ? (p.categoria?._ref || p.categoria?._id) : p.categoria;
+            const catIdLimpio = String(catIdOriginal || "").trim();
+            const catLabelLimpia = String(p.categoriaLabel || p.categoria || "").trim().toUpperCase();
+            
+            const esCategoriaExcluida = idsExcluidos.has(catIdLimpio) || titulosExcluidos.has(catLabelLimpia);
+            const debeImprimirPlato = p.seImprime === true && !esCategoriaExcluida;
+            const categoriaFinal = p.categoriaLabel ? String(p.categoriaLabel).trim().toUpperCase() : catLabelLimpia;
+            
+            if (debeImprimirPlato && categoriaFinal) {
+                estacionesSet.add(categoriaFinal);
             }
-        }
 
-// Estructuramos conjuntos indexados (Set) para búsquedas instantáneas
-const idsExcluidos = new Set((categoriasNoImprimibles || []).map(c => String(c._id).trim()));
-const titulosExcluidos = new Set((categoriasNoImprimibles || []).map(c => String(c.titulo).trim().toUpperCase()));
+            // 🛡️ BISTURÍ: Empaquetamos los datos de inventario dentro del comentario para no romper tu base de datos física
+            let comentarioFinal = p.comentario || "";
+            if (p.controlaInventario && p.insumoVinculado) {
+                comentarioFinal = JSON.stringify({
+                    comentarioOriginal: p.comentario || "",
+                    insumo: p.insumoVinculado
+                });
+            }
 
-// ✅ REEMPLAZAR POR ESTE BLOQUE:
-const estacionesSet = new Set();
-const platosNormalizados = platosOrdenados.map(p => {
-    // Extraemos de forma elástica el ID de la categoría (si viene como string o como objeto de referencia)
-    const catIdOriginal = typeof p.categoria === 'object' ? (p.categoria?._ref || p.categoria?._id) : p.categoria;
-    const catIdLimpio = String(catIdOriginal || "").trim();
-    
-    // Extraemos el nombre de la categoría (usando p.categoriaLabel o la propiedad cruda)
-    const catLabelLimpia = String(p.categoriaLabel || p.categoria || "").trim().toUpperCase();
-    
-    // Un plato NO se imprime si su ID de categoría está excluido O si su nombre de texto coincide con uno excluido
-    const esCategoriaExcluida = idsExcluidos.has(catIdLimpio) || titulosExcluidos.has(catLabelLimpia);
-    
-    // Condición maestra final
-    const debeImprimirPlato = p.seImprime === true && !esCategoriaExcluida;
-    
-    // Definimos la etiqueta limpia que leerá el despachador de la comanda
-    const categoriaFinal = p.categoriaLabel ? String(p.categoriaLabel).trim().toUpperCase() : catLabelLimpia;
-    
-    if (debeImprimirPlato && categoriaFinal) {
-        estacionesSet.add(categoriaFinal);
-    }
+            // Enviaremos estrictamente las columnas que creamos en el script SQL de public.platos_ordenados
+            const payloadPlato = {
+                line_id: p._key || p.lineId || Math.random().toString(36).substring(2, 9),
+                plato_id: p._id,
+                nombre_plato: p.nombrePlato || p.nombre,
+                cantidad: Number(p.cantidad) || 1,
+                precio_unitario: Number(p.precioUnitario || p.precioNum) || 0,
+                subtotal: (Number(p.precioUnitario || p.precioNum) || 0) * (Number(p.cantidad) || 1),
+                comentario: comentarioFinal,
+                categoria: categoriaFinal
+            };
 
-    return {
-        _key: p._key || p.lineId || Math.random().toString(36).substring(2, 9),
-        _id: p._id,
-        nombrePlato: p.nombrePlato || p.nombre,
-        cantidad: Number(p.cantidad) || 1,
-        precioUnitario: Number(p.precioUnitario || p.precioNum) || 0,
-        precioCosto: Number(p.precioCosto || 0),
-        subtotal: (Number(p.precioUnitario || p.precioNum) || 0) * (Number(p.cantidad) || 1),
-        comentario: p.comentario || "",
-        categoria: categoriaFinal, 
-        seImprime: debeImprimirPlato, 
-        controlaInventario: p.controlaInventario || false,
-        amount: Number(p.cantidad) || 1,
-        cantidadADescontar: p.cantidadADescontar || 0,
-        insumoVinculado: p.insumoVinculado || null
-    };
-});
+            // 🛡️ PRESERVACIÓN CRONOLÓGICA: Si la línea ya existía y trae timestamp, lo mantenemos
+            if (p.created_at || p.createdAt) {
+                payloadPlato.created_at = p.created_at || p.createdAt;
+            }
 
-const estacionesPendientes = Array.from(estacionesSet);
-        const fechaActual = new Date().toISOString();
+            return payloadPlato;
+        });
+        const estacionesPendientes = Array.from(estacionesSet);
         const valorSolicitada = body.hasOwnProperty('imprimirSolicitada') ? body.imprimirSolicitada : true;
+        const valorCliente = body.hasOwnProperty('imprimirCliente') ? body.imprimirCliente : false;
 
-        // 3. BUSCAR ID DESTINO (Búsqueda mejorada)
-        let idDestino = ordenId;
-        if (!idDestino) {
-            idDestino = await sanityClientServer.fetch(
-                `*[_type == "ordenActiva" && mesa == $mesa && tenant == $tenantId][0]._id`,
-                { mesa, tenantId },
-                { useCdn: false }
-            );
-        }
-        
-        let transaction = sanityClientServer.transaction();
+        // 🛡️ DECLARACIÓN ANTICIPADA: Mapeo elástico para evitar el ReferenceError de clienteFinalPayload
+        const clienteFinalPayload = body.cliente ? {
+            id: body.cliente.id || body.cliente._id,
+            nombre: body.cliente.nombre,
+            telefono: body.cliente.telefono,
+            direccion: body.cliente.direccion
+        } : (typeof clienteRef === 'string' ? JSON.parse(clienteRef) : (clienteRef || null));
 
-        if (idDestino) {
-            // ACTUALIZAR MESA EXISTENTE
-            transaction = transaction.patch(idDestino, {
-                setIfMissing: { 
-                estacionesPendientes: [],
-                mesero: mesero || 'Caja'
-                },
-                insert: {
-                    after: 'estacionesPendientes[-1]',
-                    items: estacionesPendientes
-                },
-                set: {
-                    mesa,
-                    tenant: tenantId, 
-                    tipoOrden: tipoOrden || 'mesa',
-                    platosOrdenados: platosNormalizados,
-                    ultimaActualizacion: fechaActual,
-                    imprimirSolicitada: valorSolicitada,                
-                   clienteRef: body.cliente ? {
-                   _id: body.cliente.id || body.cliente._id, 
-                   nombre: body.cliente.nombre,
-                   telefono: body.cliente.telefono,
-                   direccion: body.cliente.direccion
-                   } : null,
-                   ...(datosEntrega ? { datosEntrega } : {})
-                    
-                   },
-                unset:  [
-                         'impreso',
-                         'imprime',
-                          ...(clienteRef ? [] : ['clienteRef']),
-                         ...(datosEntrega ? [] : ['datosEntrega'])
-                        ]
-            });
-        } else {
-            // CREAR MESA NUEVA
-            transaction = transaction.create({
-                _id: `orden-${tenantId}-${Date.now()}`, 
-                _type: 'ordenActiva',
-                tenant: tenantId, 
-                mesa,
-                mesero,
-                tipoOrden: tipoOrden || 'mesa',
-                fechaCreacion: fechaActual,
-                ultimaActualizacion: fechaActual,
-                platosOrdenados: platosNormalizados,
-                imprimirSolicitada: valorSolicitada,
-                estacionesPendientes: estacionesPendientes,
-                ...(clienteRef ? { clienteRef } : {}),
-                ...(datosEntrega ? { datosEntrega } : {})
-            });
+        // 🔍 REPARACIÓN: Búsqueda del ID por mesa cuando el Front no envía ordenId
+        let idRealOrden = ordenId;
+        if (!idRealOrden) {
+            const { data: ordenExistente } = await supabaseServer
+                .from('ordenes_activas')
+                .select('id')
+                .eq('tenant', cleanTenant)
+                .eq('mesa', mesa.trim())
+                .maybeSingle();
+            
+            if (ordenExistente) idRealOrden = ordenExistente.id;
         }
 
-        const result = await transaction.commit();
+        // 🚀 BISTURÍ RELOJ SUIZO: Ejecución atómica pura en 1 sola transacción en Postgres
+        const { data: idResultado, error: errRpc } = await supabaseServer
+            .rpc('guardar_orden_transaccional', {
+                p_orden_id: idRealOrden || null,
+                p_tenant: cleanTenant,
+                p_mesa: mesa.trim(),
+                p_mesero: mesero || 'Caja',
+                p_tipo_orden: tipoOrden || 'mesa',
+                p_imprimir_solicitada: valorSolicitada,
+                p_imprimir_cliente: valorCliente,
+                p_datos_entrega: datosEntrega || null,
+                p_cliente_ref: clienteFinalPayload ? JSON.stringify(clienteFinalPayload) : null,
+                p_platos: platosNormalizados,
+                p_estaciones: estacionesPendientes
+            });
 
+        if (errRpc) throw errRpc;
+        const idFinal = idResultado || idRealOrden;
         return NextResponse.json({
-            message: idDestino ? 'Orden actualizada' : 'Orden creada',
-            ordenId: idDestino || (result.results[0] ? result.results[0].id : null)
+            message: ordenId || idRealOrden ? 'Orden actualizada' : 'Orden creada',
+            ordenId: idFinal
         }, { status: 200 });
 
     } catch (error) {
-        console.error('🔥 [API_ORDENES_POST_ERROR]:', error.message);
+        console.error('🔥 [SUPABASE_ORDENES_POST_ERROR]:', error);
         return NextResponse.json({ error: error.message }, { status: 500 });
     }
 }

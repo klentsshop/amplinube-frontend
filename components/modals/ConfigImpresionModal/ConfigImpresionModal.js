@@ -1,7 +1,7 @@
 'use client';
 import React, { useState, useEffect } from 'react';
 import { Monitor, PlusCircle } from 'lucide-react';
-import { client, sanityClientServer } from '@/lib/sanity';
+import { client } from '@/lib/sanity';
 import { getStationFingerprint } from '@/lib/utils';
 
 // 🛡️ ENLACES MÓDULOS DESCUARTIZADOS EN JS NATIVO
@@ -17,6 +17,7 @@ import VistaVentas from './pestanas/VistaVentas';
 export default function ConfigImpresionModal({ isOpen, onClose, categorias, tenantId }) {
     // --- 1. CONTROL DE NAVEGACIÓN (Pestañas) ---
     const [pestanaActiva, setPestanaActiva] = useState('estacion'); 
+    const [impresoraNombre, setImpresoraNombre] = useState('');
     const [listaCategoriasCompletas, setListaCategoriasCompletas] = useState([]);
     const [editandoCatId, setEditandoCatId] = useState(null);
 
@@ -154,25 +155,35 @@ export default function ConfigImpresionModal({ isOpen, onClose, categorias, tena
     }, [pestanaActiva, tenantId, busquedaInv]); // 🔒 Mantenemos busquedaInv para que no pierdas la edición de ningún producto
     useEffect(() => {
         if (isOpen && typeof window !== 'undefined') {
-            const idUnico = getStationFingerprint(); 
-            setFingerprint(idUnico);
-            console.log("🆔 ID Generado y Guardado en LocalStorage:", idUnico);
-            cargarConfiguracion(idUnico);
+            cargarConfiguracion();
             cargarCategoriasNegocio();
             cargarInventarioAdmin();
         }
     }, [isOpen]);
 
-    const cargarConfiguracion = async (id) => {
+    const cargarConfiguracion = async () => {
         if (!tenantId) return; 
-        const query = `*[_type == "estacionPC" && pcFingerprint == $id && tenant == $tenantId][0]`;
-        const data = await client.fetch(query, { id, tenantId }, { useCdn: false });
-        if (data) {
-            setNombreEstacion(data.nombre);
-            setCategoriasSeleccionadas(data.categoriasVinculadas || []);
-        } else {
-            setNombreEstacion('');
-            setCategoriasSeleccionadas([]);
+        try {
+            // Leemos directo desde la tabla negocios de Supabase
+            const res = await fetch(`/api/catalogo?tenantId=${tenantId}`);
+            // O directamente consultamos la tabla de negocios si tienes la API
+            const dataCache = await res.json();
+            
+            // Extraemos el documento de negocio o sus categorías
+            if (dataCache) {
+                const docNegocio = Array.isArray(dataCache) ? dataCache.find(i => i._type === 'negocio') : null;
+                if (docNegocio && docNegocio.categorias) {
+                    const catsArray = typeof docNegocio.categorias === 'string' 
+                        ? docNegocio.categorias.split(',') 
+                        : docNegocio.categorias;
+                    setCategoriasSeleccionadas(catsArray);
+                    if (docNegocio.impresoraNombre) {
+                    setImpresoraNombre(docNegocio.impresoraNombre);
+                    }
+                }
+            }
+        } catch (e) {
+            console.error("Error cargando configuración de negocio:", e);
         }
     };
 
@@ -193,34 +204,31 @@ export default function ConfigImpresionModal({ isOpen, onClose, categorias, tena
         );
     };
 
-    const guardarEstacion = async () => {
-        if (!nombreEstacion.trim()) {
-            alert("⚠️ Por favor, asigna un nombre a esta estación antes de guardar.");
-            return;
-        }
+    const guardarEstacion = async (dataEnviar) => {
         setGuardando(true);
         try {
             const res = await fetch('/api/estaciones/save', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    fingerprint: fingerprint,
-                    nombre: nombreEstacion || 'Caja Nueva',
-                    categorias: categoriasSeleccionadas,
-                    tenantId: tenantId
+                    categorias: dataEnviar?.categorias || categoriasSeleccionadas,
+                    impresoraNombre: dataEnviar?.impresoraNombre || '',
+                    tenantAlias: tenantId
                 })
             });
             const data = await res.json();
             if (data.success) {
-                alert('✅ Estación Guardada en la Nube');
+                alert('✅ Configuración de Estación e Impresora guardada.');
                 onClose();
             } else { 
                 throw new Error(data.error || 'Error desconocido'); 
             }
         } catch (error) {
             console.error("🔥 Error al guardar estación:", error);
-            alert('❌ Error al guardar: Revisa la consola del servidor');
-        } finally { setGuardando(false); }
+            alert('❌ Error al guardar: Revisa la consola');
+        } finally { 
+            setGuardando(false); 
+        }
     };
 
     const handleCrearCategoria = async () => {
@@ -809,6 +817,7 @@ export default function ConfigImpresionModal({ isOpen, onClose, categorias, tena
                             nombreEstacion={nombreEstacion} setNombreEstacion={setNombreEstacion}
                             categorias={categorias} toggleCategoria={toggleCategoria}
                             categoriasSeleccionadas={categoriasSeleccionadas} guardarEstacion={guardarEstacion}
+                            impresoraNombreInicial={impresoraNombre}
                             guardando={guardando} onClose={onClose}
                         />
                     )}

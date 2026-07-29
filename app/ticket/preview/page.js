@@ -31,21 +31,23 @@ function TicketContent() {
         }
     }, [typeParam, tenantIdParam]);
     useEffect(() => {
-        if (listoParaImprimir && typeof window !== 'undefined') {
-            const esCocinaAuto = typeParam === 'cocina' && data?.autoPrint;
-            const esClienteVentana = typeParam === 'cliente'; // 🔥 Fuerza el disparo para cuentas de clientes
-            if (esCocinaAuto || esClienteVentana) {
-                window.print();
-                // Solo cerramos automáticamente si es cocina autorizada
-                if (esCocinaAuto) {
-                    const closeTimer = setTimeout(() => {
-                        window.close();
-                    }, 1500);
-                    return () => clearTimeout(closeTimer);
-                }
+    if (listoParaImprimir && typeof window !== 'undefined') {
+        const esCocinaAuto = typeParam === 'cocina' && data?.autoPrint;
+        // 🎯 Solo imprimirá automáticamente si explícitamente se pide en la data (autoPrint = true)
+        const esClienteAuto = typeParam === 'cliente' && data?.autoPrint === true;
+
+        if (esCocinaAuto || esClienteAuto) {
+            window.print();
+            // Solo cerramos automáticamente si es cocina autorizada
+            if (esCocinaAuto) {
+                const closeTimer = setTimeout(() => {
+                    window.close();
+                }, 1500);
+                return () => clearTimeout(closeTimer);
             }
         }
-    }, [listoParaImprimir, data?.autoPrint, typeParam]);
+    }
+}, [listoParaImprimir, data?.autoPrint, typeParam]);
     if (!data) return <p style={{ textAlign: 'center', marginTop: '50px' }}>Cargando ticket...</p>;
     const esModoCocina = typeParam === 'cocina';
     const esDomicilio = String(data.tipoOrden || "").toLowerCase() === 'domicilio';
@@ -141,9 +143,9 @@ function TicketContent() {
                 {negocioDireccion && <p style={{ margin: '2px 0' }}>{String(negocioDireccion).toUpperCase()}</p>}
                 {negocioTelefono && <p style={{ margin: '2px 0' }}>TEL: {negocioTelefono}</p>}
                 {/* 📅 Fila de Fecha y Hora de Impresión Comercial */}
-                <p style={{ margin: '4px 0 2px 0', fontSize: '10px', opacity: 0.85, fontWeight: 'normal' }}>
-                    FECHA: {stringFecha} - HORARIO: {stringHora}
-                </p>
+                <p style={{ margin: '4px 0 2px 0', fontSize: '11px', fontWeight: 'bold', color: '#000' }}>
+    FECHA: {stringFecha} - HORARIO: {stringHora}
+</p>
             </div>
             <div style={{ borderTop: '1px dashed #000', margin: '8px 0' }}></div>
             <h2 style={{ margin: '4px 0', fontSize: '20px', fontWeight: 'bold' }}>**** CUENTA ****</h2>
@@ -183,9 +185,9 @@ function TicketContent() {
                                                         {item.nombre}
                                                     </div>
                                                     {/* 🔬 DESGLOSE INDUSTRIAL: Precio por kilo o unidad secundario */}
-                                                    <div style={{ fontSize: '10px', fontWeight: 'normal', color: '#333', opacity: 0.9, marginTop: '1px' }}>
-                                                        {cantidadTexto} {esPeso ? 'KG' : 'unid.'} x $ {precioUnitario.toLocaleString('es-CO')}/{sufijoUnidad}
-                                                    </div>
+                                                    <div style={{ fontSize: '11px', fontWeight: 'bold', color: '#000', marginTop: '1px' }}>
+                                                    {cantidadTexto} {esPeso ? 'KG' : 'unid.'} x $ {precioUnitario.toLocaleString('es-CO')}/{sufijoUnidad}
+                                                 </div>
                                                 </td>
                                                 {/* Alineación forzada extrema derecha para el total de la línea */}
                                                 <td style={{ padding: '4px 0', textAlign: 'right', whiteSpace: 'nowrap', width: '85px', fontSize: '12px', fontWeight: 'bold', lineHeight: '1.2' }}>

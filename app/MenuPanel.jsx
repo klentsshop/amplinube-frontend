@@ -11,7 +11,6 @@ import { useImpresion } from '@/hooks/useImpresion';
 import { useAccesos } from '@/hooks/useAccesos';
 import { useOrdenHandlers } from '@/hooks/useOrdenHandlers';
 import { useGastos } from '@/hooks/useGastos';
-import { useWindowsPrint } from '@/hooks/useWindowsPrint';
 import { cleanPrice, getFechaBogota } from '@/lib/utils';
 
 import { SITE_CONFIG as RESTAURANTE_CONFIG, CURRENT_TENANT } from '@/lib/config';
@@ -132,15 +131,6 @@ export default function MenuPanel({ configNegocio: configInyectada }) {
         }
     }, [configInyectada]);
 
-    // 🚀 AJUSTE SENIOR EN MENU PANEL
-    useWindowsPrint(
-        ordenesActivas, 
-        (platosNuevos) => {
-            setPlatosParaImprimir(platosNuevos); // 1. Buzón de impresión
-            imp.imprimirCocina(platosNuevos);    // 2. Disparo físico
-        }, 
-        tenantId // 👈 BISTURÍ: Inyectamos la identidad del cliente
-    );
 useEffect(() => {
     const verificarSeguridadMesero = async () => {
         if (!tenantId) return;
@@ -213,8 +203,6 @@ useEffect(() => {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ venta, tenantId: tenantId })
             });
-            if (res.ok) alert("✅ Ticket enviado a la impresora");
-            else alert("❌ Error al generar reimpresión");
         } catch (error) {
             console.error(error);
             alert("❌ Error de conexión");

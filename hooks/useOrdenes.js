@@ -20,15 +20,16 @@ export function useOrdenes(providedTenantId) {
     const fetchOrdenesFrecuentes = useCallback(async () => {
         if (!tenantId) return;
         try {
-            const query = `*[_type == "ordenActiva" && tenant == $tenantId] | order(fechaCreacion asc) {
-                _id, _rev, tenant, mesa, mesero, tipoOrden, fechaCreacion, 
-                imprimirSolicitada, clienteRef, datosEntrega, estacionesPendientes, platosOrdenados
-            }`;
-            const data = await client.fetch(query, { tenantId }, { useCdn: false });
+            // 🛡️ BISTURÍ: Consumimos la nueva API optimizada anti-N+1 de Supabase
+            const url = `/api/ordenes/list?tenantId=${encodeURIComponent(tenantId.toLowerCase().trim())}`;
+            const res = await fetch(url, { method: 'GET', headers: { 'Cache-Control': 'no-store' } });
+            if (!res.ok) throw new Error(`HTTP Error ${res.status}`);
+            
+            const data = await res.json();
             setOrdenes(data || []);
             setErrorConexion(null);
         } catch (err) {
-            console.error("❌ Error en fetch manual de órdenes:", err);
+            console.error("❌ Error en fetch manual de órdenes relacionales:", err);
             setErrorConexion(err);
         }
     }, [tenantId]);
@@ -42,41 +43,12 @@ export function useOrdenes(providedTenantId) {
         // 🛡️ Carga inicial al montar o cambiar de comercio
         fetchOrdenesFrecuentes();
 
-        console.log(`📡 Ecosistema Reactivo activado para Lista de Órdenes. Tenant: ${tenantId}`);
+       // 🛡️ Sincronización inicial rápida al montar el POS o cambiar de comercio
+        fetchOrdenesFrecuentes();
+        console.log(`📡 Sincronización Relacional activada para Lista de Órdenes. Tenant: ${tenantId}`);
 
-        // Filtro estricto: Escucha cualquier mutación (creación, edición, borrado) de ordenActiva para este tenant
-        const query = `*[_type == "ordenActiva" && tenant == $tenantId]`;
-        
-        const subscription = client.listen(query, { tenantId }, { includeResult: true })
-            .subscribe((update) => {
-                // Evaluamos el tipo de transición en la base de datos de Sanity
-                if (update.transition === 'disappear') {
-                    // 🗑️ Si la orden se eliminó o cobró, la removemos del estado local de inmediato
-                    setOrdenes((prev) => prev.filter((o) => o._id !== update.documentId));
-                } else if (update.transition === 'appear' || update.transition === 'update') {
-                    const documentoMutado = update.result;
-                    if (!documentoMutado) return;
-
-                    setOrdenes((prev) => {
-                        const existe = prev.some((o) => o._id === documentoMutado._id);
-                        if (existe) {
-                            // 🔄 Actualización quirúrgica de la mesa en la pantalla de todos
-                            return prev.map((o) => o._id === documentoMutado._id ? documentoMutado : o);
-                        } else {
-                            // 📥 Inserción instantánea de nueva mesa en orden cronológico
-                            const nuevaLista = [...prev, documentoMutado];
-                            return nuevaLista.sort((a, b) => new Date(a.fechaCreacion) - new Date(b.fechaCreacion));
-                        }
-                    });
-                }
-            });
-
-        // 🛡️ GUILLOTINA DE DESUSCRIPCIÓN ABSOLUTA AL DESMONTAR COMPONENTE
         return () => {
-            if (subscription && typeof subscription.unsubscribe === 'function') {
-                subscription.unsubscribe();
-                console.log(`🔌 Conexión WebSocket liberada para Tenant: ${tenantId}`);
-            }
+            console.log(`🔌 Limpieza perimetral de hook de órdenes para Tenant: ${tenantId}`);
         };
     }, [tenantId, fetchOrdenesFrecuentes]);
 
@@ -128,19 +100,22 @@ export function useOrdenes(providedTenantId) {
     // ==========================================
     // 🗑️ OPERACIÓN: ELIMINAR ÓRDENES
     // ==========================================
+    // ==========================================
+    // 🗑️ OPERACIÓN: ELIMINAR ÓRDENES (MIGRADO A SUPABASE ID)
+    // ==========================================
     const eliminarOrden = async (ordenId) => {
         if (!ordenId || !tenantId) return;
 
         setCargandoAccion(true);
         try {
-            // ✅ Petición HTTP a la API nativa sin alteraciones
-            const res = await fetch('/api/ordenes/delete', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ ordenId, tenantId }),
+            // 🛡️ BISTURÍ: Apuntamos al endpoint relacional por ID con el método DELETE nativo
+            const url = `/api/ordenes/${ordenId}?tenantId=${encodeURIComponent(tenantId.toLowerCase().trim())}`;
+            const res = await fetch(url, {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' }
             });
             
-            if (!res.ok) throw new Error("Error al eliminar la orden");
+            if (!res.ok) throw new Error("Error al eliminar la orden en Supabase");
             
             // Forzamos remoción local inmediata por consistencia visual
             setOrdenes((prev) => prev.filter((o) => o._id !== ordenId));

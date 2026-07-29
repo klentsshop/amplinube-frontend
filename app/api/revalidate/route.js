@@ -34,7 +34,7 @@ export async function POST(request) {
         }
 
         // 2. 🎯 EXTRACCIÓN DEL TENANT Y DEL DOCUMENTO MUTADO
-        const tenantAlias = body?.tenant || body?.tenantAlias;
+        const tenantAlias = body?.tenant || body?.tenantAlias || (body?.slug?.current); // 👈 Captura el tenant también del slug si existe
         const documentoMutado = body; // El body contiene el documento de Sanity que cambió
 
         if (!tenantAlias || !documentoMutado?._id || !documentoMutado?._type) {
@@ -44,6 +44,30 @@ export async function POST(request) {
 
         const cleanAlias = tenantAlias.toString().toLowerCase().trim();
         console.log(`📡 [WEBHOOK SÉNIOR] Mutación detectada para [${cleanAlias}] en tipo: [${documentoMutado._type}]`);
+
+        // 🚀 NUEVA CIRUGÍA: SINCRONIZACIÓN DE LA TABLA 'negocios' PARA EL BRIDGE C#
+        if (documentoMutado._type === 'negocio') {
+            console.log(`🏛️ Sincronizando datos maestros del negocio [${cleanAlias}] en Supabase...`);
+            const { error: upsertNegocioError } = await supabaseServer
+                .from('negocios')
+                .upsert({
+                    tenant: cleanAlias,
+                    nombre: documentoMutado.nombre || 'RESTAURANTE',
+                    nit: documentoMutado.nit || '',
+                    direccion: documentoMutado.direccion || '',
+                    telefono: documentoMutado.telefono || '',
+                    colordark: documentoMutado.colordark || '#000A6F',
+                    updated_at: new Date().toISOString()
+                }, { onConflict: 'tenant' });
+
+            if (upsertNegocioError) {
+                console.error(`🔥 Error al sincronizar la tabla 'negocios' para [${cleanAlias}]:`, upsertNegocioError);
+                // No lanzamos 'throw' para permitir que el proceso de catalog_cache continúe
+            } else {
+                console.log(`✅ Datos maestros de [${cleanAlias}] actualizados correctamente para C# Bridge.`);
+            }
+        }
+        // ----------------------------------------------------------------------------------
 
         // 3. 🛰️ LECTURA DEL BÚNKER: Traemos el caché actual de Supabase
         const { data: cacheExistente, error: errFetch } = await supabaseServer
@@ -96,8 +120,7 @@ export async function POST(request) {
                 nuevoPayload.push(itemProcesado);
             }
         } else {
-            // 🚨 EL BÚNKER NO EXISTÍA: Si por alguna razón la fila está vacía, no arriesgamos data parcial.
-            // Dejamos que el POS lo regenere limpio desde Sanity en su próximo GET consultando la API de catálogo.
+            // 🚨 EL BÚNKER NO EXISTÍA
             console.log(`⚠️ El búnker estaba vacío en Supabase para [${cleanAlias}]. Saltando parcheo para forzar inicialización limpia.`);
             return NextResponse.json({ revalidated: false, message: "Caché vacío, requiere GET inicial" });
         }

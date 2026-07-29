@@ -5,15 +5,16 @@ export function useImpresion(cart, config, ordenMesa, nombreMesero, tenantId) {
     const idCliente = tenantId || 'demo';
     const imprimirTicket = useCallback((datosExtras = {}) => {
         if (!cart?.length) return;
+        
         const ticketData = {
             productos: [...cart],
-            mesa: datosExtras.mesa || "Mesa",
-            mesero: datosExtras.mesero || "Caja",
+            mesa: datosExtras.mesa || ordenMesa || "Mesa",
+            mesero: datosExtras.mesero || nombreMesero || "Caja",
             tipoOrden: datosExtras.tipoOrden || "mesa",
             propina: datosExtras.propina || 0,
             montoManual: datosExtras.montoManual || 0,
             fecha: new Date().toISOString(),
-            autoPrint: false,
+            autoPrint: false, // 👈 Se asegura de que no dispare window.print()
             brand: {
                 name: config?.nombre || null,
                 nit: config?.nit || null,
@@ -21,10 +22,12 @@ export function useImpresion(cart, config, ordenMesa, nombreMesero, tenantId) {
                 phone: config?.telefono || null
             }
         };
+
         const esMovil = /iPhone|Android/i.test(navigator.userAgent);
-        const url = `/ticket/preview?type=cliente&tenantId=${idCliente}`;
+        // 🎯 Agregamos &previewOnly=true para que la vista previa sepa que NO debe llamar window.print()
+        const url = `/ticket/preview?type=cliente&tenantId=${idCliente}&previewOnly=true`;
+
         if (esMovil) {
-            // Para móviles usamos localStorage para garantizar que cruce de pestaña
             localStorage.setItem(`${idCliente}_ticket_preview_data`, JSON.stringify(ticketData));
             window.open(url, '_blank');
         } else {
@@ -32,14 +35,15 @@ export function useImpresion(cart, config, ordenMesa, nombreMesero, tenantId) {
             const alto = 700;
             const x = (window.screen.width / 2) - (ancho / 2);
             const y = (window.screen.height / 2) - (alto / 2);
-            // Abrimos la ventana
+
             const ticketWindow = window.open(url, 'TicketWindow', `width=${ancho},height=${alto},left=${x},top=${y}`);
-            // 🚀 INYECCIÓN DIRECTA SENIOR: Le pasamos los datos directo al objeto window de la nueva pestaña
+            
             if (ticketWindow) {
                 ticketWindow.ticketPrintData = ticketData;
+                localStorage.setItem(`${idCliente}_ticket_preview_data`, JSON.stringify(ticketData));
             }
         }
-    }, [cart, idCliente]);
+    }, [cart, idCliente, ordenMesa, nombreMesero, config]);
     const imprimirCocina = useCallback((platosFiltrados = null) => {
         const datosAImprimir = platosFiltrados || cart;
         if (!datosAImprimir?.length) return;

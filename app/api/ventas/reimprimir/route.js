@@ -1,4 +1,5 @@
-import { sanityClientServer } from '@/lib/sanity';
+import { supabaseServer } from '@/lib/supabase';
+import crypto from 'crypto';
 
 export async function POST(req) {
     try {
@@ -18,37 +19,39 @@ export async function POST(req) {
         // Así la suma en el papel (Neto + Propina) dará el Total correcto.
         const valorNetoComida = granTotal - valorPropina;
 
-        const objetoTicket = {
-            _type: 'ticketCobro', 
-            tenant: tenantId,
-            mesa: `${venta.mesa}`,
-            mesero: venta.mesero,
-            tipoOrden: venta.tipoOrden || 'mesa', // 🚀 BISTURÍ: Pasamos el tipo
-            datosEntrega: venta.datosEntrega || null,
-            metodoPago: venta.metodoPago || "Efectivo",
-            platosOrdenados: (venta.platosVendidosV2 || []).map(p => ({
-                _key: crypto.randomUUID(), // 👈 Cambiado por seguridad criptográfica atómica
-                nombrePlato: p.nombrePlato,
-                cantidad: p.cantidad,
-                precio: p.precioUnitario,
-                subtotal: p.subtotal,
-            })),
+        // 🚀 INYECCIÓN SÉNIOR EN SUPABASE (Reimpresión Directa sin Sanity)
+        // Insertamos el registro con la acción de impresión explícita para que lo capture el Live Stream
+        const { error: errInsert } = await supabaseServer
+            .from('tickets_caja_pendientes')
+            .insert([{
+                id: `ticket-reimpresion-${Date.now()}-${crypto.randomBytes(2).toString('hex').toUpperCase()}`,
+                tenant_id: tenantId,
+                tipo_accion: 'IMPRIMIR_TICKET', // 🖨️ Le indica al Watcher que ejecute ClienteRenderer
+                metodo_pago: (venta.metodoPago || "Efectivo").toUpperCase(),
+                mesa: String(venta.mesa || 'General'),
+                mesero: venta.mesero || 'Caja',
+                folio: venta.folio || '01',
+                tipo_orden: venta.tipoOrden || 'mesa',
+                subtotal: valorNetoComida,
+                propina: valorPropina,
+                total: granTotal,
+                datos_entrega: venta.datosEntrega || null,
+                
+                // Mapeamos el array de platos como un JSONB relacional idéntico a lo que espera la APK
+                platos_ordenados: (venta.platosVendidosV2 || []).map(p => ({
+                    _key: crypto.randomUUID(),
+                    nombrePlato: p.nombrePlato,
+                    cantidad: p.cantidad,
+                    precio: p.precioUnitario,
+                    subtotal: p.subtotal
+                }))
+            }]);
 
-            // 🎯 ETIQUETAS PARA LA APK (Pintará los datos desglosados correctamente)
-            subtotal: valorNetoComida,   // La comida sola
-            propina: valorPropina,       // La propina sola
-            total: granTotal,            // El total que viste en el historial
+        if (errInsert) {
+            console.error('❌ Error registrando ticket de reimpresión en Supabase:', errInsert.message);
+            throw new Error(`DB_WRITE_FAILED: ${errInsert.message}`);
+        }
 
-            // ✅ CAMPOS PARA SANITY (Mantener histórico)
-            totalPagado: granTotal,
-            propinaRecaudada: valorPropina,
-            
-            imprimirSolicitada: true, 
-            imprimirCliente: true,    
-            fecha: new Date().toISOString()
-        };
-
-        await sanityClientServer.create(objetoTicket);
         return Response.json({ ok: true });
     } catch (err) {
         console.error('[REIMPRESION_ERROR]:', err);

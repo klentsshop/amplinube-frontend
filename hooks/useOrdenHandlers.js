@@ -47,15 +47,25 @@ export function useOrdenHandlers({
     // ==============================
     const cargarOrden = async (id) => {
         if (!tenantId) {
-        console.error("❌ Abortando carga: tenantId no definido.");
-        return false;
-    }
+            console.error("❌ Abortando carga: tenantId no definido.");
+            return false;
+        }
         try {
-            const res = await fetch('/api/ordenes/get', { 
-                method: 'POST', 
-                headers: { 'Content-Type': 'application/json' }, 
-                body: JSON.stringify({ ordenId: id, tenantId: tenantId }) 
+            // 🛡️ BISTURÍ: Apuntamos al endpoint relacional por ID usando GET nativo indexado
+            const url = `/api/ordenes/${id}?tenantId=${encodeURIComponent(tenantId.toLowerCase().trim())}`;
+            const res = await fetch(url, { 
+                method: 'GET', 
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'Cache-Control': 'no-cache'
+                }
             });
+            
+            if (!res.ok) {
+                console.error(`⚠️ Error al recuperar orden activa [${res.status}]`);
+                return false;
+            }
+
             const o = await res.json();
             
             if (o && o.platosOrdenados) {
@@ -210,13 +220,12 @@ const platosParaGuardar = cart.map(i => {
             setMostrarCarritoMobile(false);
           
             // ✅ ENVÍO A API (INTACTO)
-            await apiGuardar({ 
+               await apiGuardar({ 
                 tenant: tenantId,
                 mesa: mesa.trim(), 
                 mesero: meseroFinal, 
                 ordenId: ordenActivaId, 
                 platosOrdenados: platosParaGuardar,
-                _unset: ['impreso', 'imprime'],
                 imprimirSolicitada: true,
                 tipoOrden: tipoParaSanity,
                 ultimaActualizacion: new Date().toISOString(),
@@ -324,7 +333,8 @@ const platosParaGuardar = cart.map(i => {
                     tipoOrden: tipoOrden || "mesa",
                     datosEntrega,
                     mesero: nombreMesero || "Caja", 
-                    metodoPago: metodoPrimario,
+                    // 🛡️ BISTURÍ: Si es mixto clásico, forzamos que guarde el método combinado en el string general
+                    metodoPago: metodoPrimario === 'mixto' ? 'MIXTO_EFECTIVO_TARJETA' : metodoPrimario,
                     detallePagos: detalleFinal,
                     montoEfectivo: detalleFinal.find(p => p.metodo === 'efectivo')?.monto || 0,
                     montoTarjeta: detalleFinal.find(p => p.metodo === 'tarjeta')?.monto || 0,
