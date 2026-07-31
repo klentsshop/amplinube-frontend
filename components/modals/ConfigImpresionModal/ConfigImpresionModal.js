@@ -18,6 +18,7 @@ export default function ConfigImpresionModal({ isOpen, onClose, categorias, tena
     // --- 1. CONTROL DE NAVEGACIÓN (Pestañas) ---
     const [pestanaActiva, setPestanaActiva] = useState('estacion'); 
     const [impresoraNombre, setImpresoraNombre] = useState('');
+    const [anchoPapel, setAnchoPapel] = useState(58); // 👈 Estado inicial en 58 mm
     const [listaCategoriasCompletas, setListaCategoriasCompletas] = useState([]);
     const [editandoCatId, setEditandoCatId] = useState(null);
 
@@ -164,21 +165,21 @@ export default function ConfigImpresionModal({ isOpen, onClose, categorias, tena
     const cargarConfiguracion = async () => {
         if (!tenantId) return; 
         try {
-            // Leemos directo desde la tabla negocios de Supabase
             const res = await fetch(`/api/catalogo?tenantId=${tenantId}`);
-            // O directamente consultamos la tabla de negocios si tienes la API
             const dataCache = await res.json();
             
-            // Extraemos el documento de negocio o sus categorías
             if (dataCache) {
-                const docNegocio = Array.isArray(dataCache) ? dataCache.find(i => i._type === 'negocio') : null;
-                if (docNegocio && docNegocio.categorias) {
-                    const catsArray = typeof docNegocio.categorias === 'string' 
-                        ? docNegocio.categorias.split(',') 
-                        : docNegocio.categorias;
-                    setCategoriasSeleccionadas(catsArray);
-                    if (docNegocio.impresoraNombre) {
-                    setImpresoraNombre(docNegocio.impresoraNombre);
+                const docNegocio = Array.isArray(dataCache) ? dataCache.find(i => i._type === 'negocio' || i.tenant) : null;
+                if (docNegocio) {
+                    if (docNegocio.categorias) {
+                        const catsArray = typeof docNegocio.categorias === 'string' 
+                            ? docNegocio.categorias.split(',') 
+                            : docNegocio.categorias;
+                        setCategoriasSeleccionadas(catsArray);
+                    }
+                    if (docNegocio.impresoraNombre) setImpresoraNombre(docNegocio.impresoraNombre);
+                    if (docNegocio.ancho_papel || docNegocio.anchoPapel) {
+                        setAnchoPapel(Number(docNegocio.ancho_papel || docNegocio.anchoPapel));
                     }
                 }
             }
@@ -213,6 +214,7 @@ export default function ConfigImpresionModal({ isOpen, onClose, categorias, tena
                 body: JSON.stringify({
                     categorias: dataEnviar?.categorias || categoriasSeleccionadas,
                     impresoraNombre: dataEnviar?.impresoraNombre || '',
+                    ancho_papel: Number(dataEnviar?.ancho_papel || anchoPapel) || 58, // 👈 Se envía a la API
                     tenantAlias: tenantId
                 })
             });
@@ -818,6 +820,7 @@ export default function ConfigImpresionModal({ isOpen, onClose, categorias, tena
                             categorias={categorias} toggleCategoria={toggleCategoria}
                             categoriasSeleccionadas={categoriasSeleccionadas} guardarEstacion={guardarEstacion}
                             impresoraNombreInicial={impresoraNombre}
+                            anchoPapelInicial={anchoPapel} // 👈 Pasamos el ancho de papel cargado
                             guardando={guardando} onClose={onClose}
                         />
                     )}

@@ -18,6 +18,7 @@ export async function POST(req) {
             .from('estaciones_pendientes')
             .delete()
             .eq('orden_id', ordenId)
+            .eq('tenant', cleanTenant)
             .eq('estacion', estacionLimpia);
 
         if (errDelete) throw errDelete;
@@ -33,21 +34,22 @@ export async function POST(req) {
         let cursoresActuales = {};
         if (ordenActual?.cursores_estaciones) {
             cursoresActuales = typeof ordenActual.cursores_estaciones === 'string' 
-                ? JSON.parse(ordenActual.cursores_estaciones) 
+                ? JSON.parse(ordenActual.cursores_estaciones || '{}') 
                 : ordenActual.cursores_estaciones;
         }
 
-        // Inyectamos de forma dinámica la clave de la tablet (ej: ultimoKeyCOCINA = 'uuid-del-plato')
-        cursoresActuales[`ultimoKey${estacion.trim()}`] = ultimoLineId;
+        // Inyectamos de forma dinámica la clave normalizada para la tablet (ej: ultimoKeyRESTAURANTES = 'uuid-del-plato')
+        cursoresActuales[`ultimoKey${estacionLimpia}`] = ultimoLineId;
 
-        // 3. Persistimos el nuevo mapa de cursores en la cabecera relacional
+        // 3. Persistimos el nuevo mapa de cursores en la cabecera relacional con validación estricta de tenant
         const { error: errUpdate } = await supabaseServer
             .from('ordenes_activas')
             .update({
                 cursores_estaciones: cursoresActuales,
                 ultima_actualizacion: new Date().toISOString()
             })
-            .eq('id', ordenId);
+            .eq('id', ordenId)
+            .eq('tenant', cleanTenant);
 
         if (errUpdate) throw errUpdate;
 

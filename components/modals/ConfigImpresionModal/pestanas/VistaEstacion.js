@@ -6,58 +6,89 @@ export default function VistaEstacion({
     categorias = [], 
     toggleCategoria, 
     categoriasSeleccionadas = [], 
-    impresoraNombreInicial = '', // 👈 Recibe el valor actual cargado de la BD
+    impresoraNombreInicial = '', 
+    anchoPapelInicial = 58, // 👈 Recibe el ancho actual (por defecto 58)
     guardarEstacion, 
     guardando, 
     onClose 
 }) {
     const [impresoraNombre, setImpresoraNombre] = useState(impresoraNombreInicial);
+    const [anchoPapel, setAnchoPapel] = useState(anchoPapelInicial || 58);
+
     useEffect(() => {
-        if (impresoraNombreInicial) {
-            setImpresoraNombre(impresoraNombreInicial);
-        }
-    }, [impresoraNombreInicial]);
+        if (impresoraNombreInicial) setImpresoraNombre(impresoraNombreInicial);
+        if (anchoPapelInicial) setAnchoPapel(anchoPapelInicial);
+    }, [impresoraNombreInicial, anchoPapelInicial]);
+
     const handleSafeGuardar = (e) => {
         if (e) e.preventDefault();
         
         const dataEnviar = {
             categorias: categoriasSeleccionadas.length > 0 ? categoriasSeleccionadas : [],
-            impresoraNombre: impresoraNombre.trim() // 👈 Enviamos la impresora
+            impresoraNombre: impresoraNombre.trim(),
+            ancho_papel: Number(anchoPapel) || 58 // 👈 Enviamos el ancho de papel
         };
         
         guardarEstacion(dataEnviar);
     };
-
     return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
             
-            {/* SECCIÓN 1: NOMBRE DE IMPRESORA WINDOWS */}
-            <div>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 'bold', fontSize: '0.8rem', color: '#374151', marginBottom: '6px', textTransform: 'uppercase' }}>
-                    <Printer size={16} color="#10b981" />
-                    Nombre de la Impresora en Windows
-                </label>
-                <input 
-                    type="text"
-                    value={impresoraNombre}
-                    onChange={(e) => setImpresoraNombre(e.target.value)}
-                    placeholder="Ej: POS-58, POS-80, Epson TM-T20..."
-                    style={{
-                        width: '100%',
-                        padding: '10px 12px',
-                        borderRadius: '8px',
-                        border: '1px solid #d1d5db',
-                        fontSize: '0.85rem',
-                        fontWeight: '600',
-                        color: '#1f2937',
-                        outline: 'none',
-                        boxSizing: 'border-box'
-                    }}
-                />
-                <span style={{ fontSize: '0.7rem', color: '#6b7280', marginTop: '4px', display: 'block' }}>
-                    Debe coincidir exactamente con el nombre de la impresora instalada en el Panel de Control.
-                </span>
+            {/* SECCIÓN 1: NOMBRE DE IMPRESORA Y ANCHO DE PAPEL */}
+            <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+                <div style={{ flex: 1 }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 'bold', fontSize: '0.8rem', color: '#374151', marginBottom: '6px', textTransform: 'uppercase' }}>
+                        <Printer size={16} color="#10b981" />
+                        Impresora Windows
+                    </label>
+                    <input 
+                        type="text"
+                        value={impresoraNombre}
+                        onChange={(e) => setImpresoraNombre(e.target.value)}
+                        placeholder="Ej: POS-58, POS-80, Epson TM-T20..."
+                        style={{
+                            width: '100%',
+                            padding: '10px 12px',
+                            borderRadius: '8px',
+                            border: '1px solid #d1d5db',
+                            fontSize: '0.85rem',
+                            fontWeight: '600',
+                            color: '#1f2937',
+                            outline: 'none',
+                            boxSizing: 'border-box'
+                        }}
+                    />
+                </div>
+
+                <div style={{ width: '130px' }}>
+                    <label style={{ display: 'block', fontWeight: 'bold', fontSize: '0.8rem', color: '#374151', marginBottom: '6px', textTransform: 'uppercase' }}>
+                        Papel
+                    </label>
+                    <select
+                        value={anchoPapel}
+                        onChange={(e) => setAnchoPapel(Number(e.target.value))}
+                        style={{
+                            width: '100%',
+                            padding: '10px 12px',
+                            borderRadius: '8px',
+                            border: '1px solid #d1d5db',
+                            fontSize: '0.85rem',
+                            fontWeight: '700',
+                            color: '#1f2937',
+                            backgroundColor: '#ffffff',
+                            outline: 'none',
+                            boxSizing: 'border-box',
+                            cursor: 'pointer'
+                        }}
+                    >
+                        <option value={58}>58 mm</option>
+                        <option value={80}>80 mm</option>
+                    </select>
+                </div>
             </div>
+            <span style={{ fontSize: '0.7rem', color: '#6b7280', marginTop: '-8px', display: 'block' }}>
+                Debe coincidir exactamente con el nombre de la impresora en el Panel de Control y el ancho físico de papel usado.
+            </span>
 
             {/* SECCIÓN 2: CATEGORÍAS */}
             <div>

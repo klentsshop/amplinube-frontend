@@ -3,7 +3,7 @@ import { supabaseServer } from '@/lib/supabase';
 
 export async function POST(request) {
     try {
-        const { categorias, tenantAlias, impresoraNombre } = await request.json();
+        const { categorias, tenantAlias, impresoraNombre, ancho_papel } = await request.json();
 
         if (!tenantAlias) return NextResponse.json({ error: "Falta el tenant" }, { status: 400 });
 
@@ -13,7 +13,8 @@ export async function POST(request) {
             .from('negocios')
             .update({ 
                 categorias: categoriasString, 
-                impresoraNombre: impresoraNombre ? impresoraNombre.trim() : null, // 👈 Se inyecta la impresora
+                impresoraNombre: impresoraNombre ? impresoraNombre.trim() : null,
+                ancho_papel: Number(ancho_papel) || 58, // 👈 Se inyecta el ancho de papel
                 updated_at: new Date().toISOString() 
             })
             .eq('tenant', tenantAlias.trim().toLowerCase());
@@ -23,7 +24,8 @@ export async function POST(request) {
         return NextResponse.json({ 
             success: true, 
             categorias: categoriasString, 
-            impresoraNombre 
+            impresoraNombre,
+            ancho_papel: Number(ancho_papel) || 58
         });
 
     } catch (error) {

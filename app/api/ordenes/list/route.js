@@ -26,22 +26,23 @@ export async function GET(request) {
         if (errOrdenes) throw errOrdenes;
         if (!ordenesRows || ordenesRows.length === 0) return NextResponse.json([]);
 
-       // 2. Extraemos todos los platos vinculados a esas órdenes en un solo mapeo optimizado (Anti-N+1)
-        // 🛡️ BISTURÍ SENIOR: Doble ordenamiento (created_at + id) para garantizar orden secuencial determinista
+       // 2. Extraemos todos los platos vinculados a esas órdenes con filtro estricto de TENANT
         const listaIds = ordenesRows.map(o => o.id);
         const { data: platosRows, error: errPlatos } = await supabaseServer
             .from('platos_ordenados')
             .select('*')
+            .eq('tenant', cleanTenant)
             .in('orden_id', listaIds)
             .order('created_at', { ascending: true })
             .order('id', { ascending: true });
 
         if (errPlatos) throw errPlatos;
 
-        // 3. Extraemos todas las estaciones pendientes
+       // 3. Extraemos todas las estaciones pendientes filtrando por TENANT
         const { data: pendientesRows, error: errPendientes } = await supabaseServer
             .from('estaciones_pendientes')
             .select('*')
+            .eq('tenant', cleanTenant)
             .in('orden_id', listaIds);
 
         if (errPendientes) throw errPendientes;

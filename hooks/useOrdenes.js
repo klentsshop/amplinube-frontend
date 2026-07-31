@@ -1,64 +1,53 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { mutate as mutateGlobal } from 'swr';
-import { client } from '@/lib/sanity'; // 🛡️ Importación del cliente de Sanity nativo
 import { CURRENT_TENANT } from '@/lib/config';
+import { useOrdenesRealtime } from './useOrdenesRealtime';
 
 export function useOrdenes(providedTenantId) {
     const tenantId = (!providedTenantId || providedTenantId === 'demo') ? CURRENT_TENANT : providedTenantId;
 
-    // 🧬 Estados nativos sustitutos de SWR
-    const [ordenes, setOrdenes] = useState([]);
+    const [ordenesIniciales, setOrdenesIniciales] = useState([]);
     const [cargandoAccion, setCargandoAccion] = useState(false);
     const [errorConexion, setErrorConexion] = useState(null);
 
-    // ==========================================
-    // 📡 ESCUDO DE EXTRACTOR REPOSITORIO (FETCH MANUAL)
-    // ==========================================
-    // Esta función reemplaza la llamada de red inicial y sirve para forzar refrescos manuales
+    // 1. Fetch manual de órdenes activas (Snapshot HTTP inicial y para forzar refrescos)
     const fetchOrdenesFrecuentes = useCallback(async () => {
         if (!tenantId) return;
         try {
-            // 🛡️ BISTURÍ: Consumimos la nueva API optimizada anti-N+1 de Supabase
             const url = `/api/ordenes/list?tenantId=${encodeURIComponent(tenantId.toLowerCase().trim())}`;
             const res = await fetch(url, { method: 'GET', headers: { 'Cache-Control': 'no-store' } });
             if (!res.ok) throw new Error(`HTTP Error ${res.status}`);
             
             const data = await res.json();
-            setOrdenes(data || []);
+            setOrdenesIniciales(data || []);
             setErrorConexion(null);
+            return data;
         } catch (err) {
             console.error("❌ Error en fetch manual de órdenes relacionales:", err);
             setErrorConexion(err);
         }
     }, [tenantId]);
 
-    // ==========================================
-    // 👁️ TUNEL REACTIVO WEB-SOCKET (SANITY LISTEN)
-    // ==========================================
+    // 2. Conectamos la canalización en tiempo real vía SSE (Next.js / Supabase Multiplexor)
+    const { ordenes, setOrdenes, isConnected } = useOrdenesRealtime(
+        tenantId, 
+        ordenesIniciales, 
+        fetchOrdenesFrecuentes
+    );
+
+    // Carga inicial al montar o cambiar de tenant
     useEffect(() => {
-        if (!tenantId) return;
-
-        // 🛡️ Carga inicial al montar o cambiar de comercio
-        fetchOrdenesFrecuentes();
-
-       // 🛡️ Sincronización inicial rápida al montar el POS o cambiar de comercio
-        fetchOrdenesFrecuentes();
-        console.log(`📡 Sincronización Relacional activada para Lista de Órdenes. Tenant: ${tenantId}`);
-
-        return () => {
-            console.log(`🔌 Limpieza perimetral de hook de órdenes para Tenant: ${tenantId}`);
-        };
+        if (tenantId) {
+            fetchOrdenesFrecuentes();
+        }
     }, [tenantId, fetchOrdenesFrecuentes]);
 
-    // ==========================================
-    // 💾 OPERACIÓN: GUARDAR ÓRDENES
-    // ==========================================
+    // 3. Operación: Guardar Orden
     const guardarOrden = async (ordenPayload) => {
         setCargandoAccion(true);
         try {
-            // ✅ Mantenemos intacta tu lógica exacta de variables originales
             const payload = {
                 ...ordenPayload,
                 tenant: tenantId,
@@ -78,10 +67,7 @@ export function useOrdenes(providedTenantId) {
             if (!res.ok) throw new Error("Error al guardar en servidor");
             const data = await res.json();
             
-            // 🔄 Sincronización optimizada: ejecutamos fetch local rápido por persistencia de red
-            await fetchOrdenesFrecuentes(); 
-
-            // 🛡️ Acople exacto con useInventario y aviso a módulos transaccionales de Supabase (Intactos)
+            // Re-sincronización con módulos transaccionales
             if (tenantId) {
                 mutateGlobal(`/api/inventario/list?tenantId=${tenantId}`);
                 mutateGlobal(`/api/ventas?tenantId=${tenantId}`);
@@ -97,18 +83,12 @@ export function useOrdenes(providedTenantId) {
         }
     };
 
-    // ==========================================
-    // 🗑️ OPERACIÓN: ELIMINAR ÓRDENES
-    // ==========================================
-    // ==========================================
-    // 🗑️ OPERACIÓN: ELIMINAR ÓRDENES (MIGRADO A SUPABASE ID)
-    // ==========================================
+    // 4. Operación: Eliminar Orden
     const eliminarOrden = async (ordenId) => {
         if (!ordenId || !tenantId) return;
 
         setCargandoAccion(true);
         try {
-            // 🛡️ BISTURÍ: Apuntamos al endpoint relacional por ID con el método DELETE nativo
             const url = `/api/ordenes/${ordenId}?tenantId=${encodeURIComponent(tenantId.toLowerCase().trim())}`;
             const res = await fetch(url, {
                 method: 'DELETE',
@@ -117,10 +97,9 @@ export function useOrdenes(providedTenantId) {
             
             if (!res.ok) throw new Error("Error al eliminar la orden en Supabase");
             
-            // Forzamos remoción local inmediata por consistencia visual
-            setOrdenes((prev) => prev.filter((o) => o._id !== ordenId));
+            // Remoción optimista local (el evento SSE DELETE terminará de confirmarlo)
+            setOrdenes((prev) => prev.filter((o) => (o._id || o.id) !== ordenId));
             
-            // 🛡️ Sincronización del ecosistema al liberar la mesa en Supabase/Inventarios
             if (tenantId) {
                 mutateGlobal(`/api/inventario/list?tenantId=${tenantId}`);
                 mutateGlobal(`/api/ventas?tenantId=${tenantId}`);
@@ -134,16 +113,13 @@ export function useOrdenes(providedTenantId) {
         }
     };
 
-    // ==========================================
-    // ✅ RETORNO COMPLETO SIN DEGRADAR VARIABLES
-    // ==========================================
-    // Conservamos exactamente la misma firma estructural para que MenuPanel no rompa
     return { 
         ordenes, 
         guardarOrden, 
         eliminarOrden, 
-        refresh: fetchOrdenesFrecuentes, // Mapeado directo para compatibilidad heredada
+        refresh: fetchOrdenesFrecuentes,
         cargandoAccion, 
-        errorConexion 
+        errorConexion,
+        isConnected // Expuesto para mostrar status de conexión en vivo
     };
 }
