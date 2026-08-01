@@ -77,14 +77,19 @@ export function useOrdenHandlers({
                 const meseroFinal = vendedorLocal || o.mesero || o.nombreMesero || (esModoCajero ? "Caja" : null);
                 setNombreMesero(meseroFinal);
                 // 🛵 Sincronización del cliente guardado en la orden activa
-                if (o.clienteRef) {
-                    setClienteActivo(o.clienteRef);
-                } else if (o.datosEntrega) {
-                    setClienteActivo({
-                        nombre: o.datosEntrega.nombreCliente || o.datosEntrega.nombre || "N/A",
-                        direccion: o.datosEntrega.direccion || "N/A",
-                        telefono: o.datosEntrega.telefono || "N/A"
-                    });
+                // 🛵 Sincronización blindada del cliente tras migración a Supabase
+                const ref = typeof o.clienteRef === 'string' ? JSON.parse(o.clienteRef || '{}') : (o.clienteRef || {});
+                const entrega = typeof o.datosEntrega === 'string' ? JSON.parse(o.datosEntrega || '{}') : (o.datosEntrega || {});
+
+                const clienteUnificado = {
+                    id: ref.id || ref._id || o.clienteIdSupabase || null,
+                    nombre: ref.nombre || entrega.nombreCliente || entrega.nombre || null,
+                    direccion: ref.direccion || entrega.direccion || null,
+                    telefono: ref.telefono || entrega.telefono || null
+                };
+
+                if (clienteUnificado.nombre || clienteUnificado.telefono) {
+                    setClienteActivo(clienteUnificado);
                 } else {
                     setClienteActivo(null);
                 }
@@ -274,9 +279,9 @@ const platosParaGuardar = cart.map(i => {
         if (tipoOrden === 'domicilio' || !!clienteActivo) {
             if (clienteActivo) {
                 datosEntrega = {
-                    nombreCliente: normalizarParaImpresora(clienteActivo.nombre),
-                    direccion: normalizarParaImpresora(clienteActivo.direccion),
-                    telefono: clienteActivo.telefono.trim()
+                    nombreCliente: normalizarParaImpresora(clienteActivo.nombre || "CLIENTE GENERAL"),
+                    direccion: normalizarParaImpresora(clienteActivo.direccion || "MOSTRADOR"),
+                    telefono: (clienteActivo.telefono || "N/A").toString().trim()
                 };
             } else {
                 datosEntrega = {
