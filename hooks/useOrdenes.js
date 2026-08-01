@@ -4,9 +4,17 @@ import { useState, useCallback, useEffect } from 'react';
 import { mutate as mutateGlobal } from 'swr';
 import { CURRENT_TENANT } from '@/lib/config';
 import { useOrdenesRealtime } from './useOrdenesRealtime';
+import { createClient } from '@supabase/supabase-js';
+
+// 🌐 Cliente Supabase de Navegador para Broadcast Directo (Evita el bloqueo de Netlify)
+const supabaseBrowser = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+);
 
 export function useOrdenes(providedTenantId) {
     const tenantId = (!providedTenantId || providedTenantId === 'demo') ? CURRENT_TENANT : providedTenantId;
+    const cleanTenant = tenantId ? tenantId.toLowerCase().trim() : '';
 
     const [ordenesIniciales, setOrdenesIniciales] = useState([]);
     const [cargandoAccion, setCargandoAccion] = useState(false);
@@ -19,7 +27,7 @@ export function useOrdenes(providedTenantId) {
         if (!tenantId) return [];
 
         try {
-            const url = `/api/ordenes/list?tenantId=${encodeURIComponent(tenantId.toLowerCase().trim())}`;
+            const url = `/api/ordenes/list?tenantId=${encodeURIComponent(cleanTenant)}`;
             const res = await fetch(url, { method: 'GET', headers: { 'Cache-Control': 'no-store' } });
 
             if (!res.ok) throw new Error(`HTTP Error ${res.status}`);
@@ -35,12 +43,11 @@ export function useOrdenes(providedTenantId) {
             setErrorConexion(err);
             return [];
         }
-    }, [tenantId]);
+    }, [tenantId, cleanTenant]);
 
     // ==========================================
-    // 👁️ TUNEL REACTIVO BROADCAST (SUPABASE WEBSOCKETS)
+    // 👁️ TÚNEL REACTIVO BROADCAST (SUPABASE WEBSOCKETS)
     // ==========================================
-    // Conecta el navegador directo al canal Broadcast para sincronización instantánea
     const { ordenes, setOrdenes, isConnected, emitirCambio } = useOrdenesRealtime(
         tenantId, 
         ordenesIniciales, 
@@ -53,6 +60,28 @@ export function useOrdenes(providedTenantId) {
             fetchOrdenesFrecuentes();
         }
     }, [tenantId, fetchOrdenesFrecuentes]);
+
+    // ==========================================
+    // 🚀 DISPARADOR DIRECTO DESDE EL CLIENTE (A PRUEBA DE NETLIFY)
+    // ==========================================
+    const dispararBroadcastCliente = async () => {
+        try {
+            if (typeof emitirCambio === 'function') {
+                emitirCambio();
+            }
+            // Canal directo de cliente a cliente vía Supabase (Netlify no interviene aquí)
+            const channel = supabaseBrowser.channel(`rt-broadcast-${cleanTenant}`);
+            await channel.subscribe();
+            await channel.send({
+                type: 'broadcast',
+                event: 'ORDEN_CAMBIO',
+                payload: { timestamp: Date.now() }
+            });
+            supabaseBrowser.removeChannel(channel);
+        } catch (e) {
+            console.error("⚠️ Error disparando broadcast nativo desde cliente:", e);
+        }
+    };
 
     // ==========================================
     // 💾 OPERACIÓN: GUARDAR ÓRDENES
@@ -80,16 +109,12 @@ export function useOrdenes(providedTenantId) {
             if (!res.ok) throw new Error("Error al guardar en servidor");
             const data = await res.json();
 
-            // ⚡ REFRESCO LOCAL INMEDIATO TRAS EL POST
+            // ⚡ REFRESCO LOCAL INMEDIATO
             await fetchOrdenesFrecuentes();
 
-            // 📣 DISPARO DE BROADCAST EN VIVO
-            // Notifica por WebSocket a TODOS los celulares de meseros y la caja
-            if (typeof emitirCambio === 'function') {
-                emitirCambio();
-            }
+            // 📣 DISPARO DE BROADCAST DIRECTO DESDE EL NAVEGADOR
+            await dispararBroadcastCliente();
 
-            // Sincronización optimizada con los demás módulos
             if (tenantId) {
                 mutateGlobal(`/api/inventario/list?tenantId=${tenantId}`);
                 mutateGlobal(`/api/ventas?tenantId=${tenantId}`);
@@ -114,7 +139,7 @@ export function useOrdenes(providedTenantId) {
         setCargandoAccion(true);
 
         try {
-            const url = `/api/ordenes/${ordenId}?tenantId=${encodeURIComponent(tenantId.toLowerCase().trim())}`;
+            const url = `/api/ordenes/${ordenId}?tenantId=${encodeURIComponent(cleanTenant)}`;
             const res = await fetch(url, {
                 method: 'DELETE',
                 headers: { 'Content-Type': 'application/json' }
@@ -122,13 +147,11 @@ export function useOrdenes(providedTenantId) {
 
             if (!res.ok) throw new Error("Error al eliminar la orden en Supabase");
 
-            // 🛡️ BISTURÍ ANTI-MESAS FANTASMA: Evaluamos _id e id simultáneamente
+            // 🛡️ BISTURÍ ANTI-MESAS FANTASMA
             setOrdenes((prev) => prev.filter((o) => (o._id || o.id) !== ordenId));
 
-            // 📣 DISPARO DE BROADCAST EN VIVO TRAS ELIMINAR/COBRAR
-            if (typeof emitirCambio === 'function') {
-                emitirCambio();
-            }
+            // 📣 DISPARO DE BROADCAST DIRECTO DESDE EL NAVEGADOR
+            await dispararBroadcastCliente();
 
             if (tenantId) {
                 mutateGlobal(`/api/inventario/list?tenantId=${tenantId}`);
@@ -144,7 +167,7 @@ export function useOrdenes(providedTenantId) {
     };
 
     // ==========================================
-    // ✅ RETORNO COMPLETO SIN DEGRADAR VARIABLES
+    // ✅ RETORNO COMPLETO
     // ==========================================
     return { 
         ordenes, 
@@ -153,6 +176,6 @@ export function useOrdenes(providedTenantId) {
         refresh: fetchOrdenesFrecuentes,
         cargandoAccion, 
         errorConexion,
-        isConnected // Expuesto para monitorear el estado del WebSocket en pantalla
+        isConnected 
     };
 }

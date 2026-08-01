@@ -1,6 +1,7 @@
 'use client';
 import React, { useState, useEffect, useMemo } from 'react';
 import { useCart } from '@/app/context/CartContext';
+import { createClient } from '@supabase/supabase-js';
 
 const normalizarParaImpresora = (texto) => {
     // 1. Forzamos que sea String y manejamos nulos/undefined (Tu lógica original + robustez)
@@ -377,7 +378,25 @@ const platosParaGuardar = cart.map(i => {
                     clearCart(); 
                     await refreshOrdenes();
                     setTimeout(() => setMensajeExito(false), 1000);
-                    return; // 🏁 Salimos aquí, no hace falta hacer el resto
+                    return; 
+                }
+
+                // 🚀 DISPARO DE BROADCAST DIRECTO DESDE EL NAVEGADOR (A prueba de Netlify)
+                try {
+                    const supabaseBrowser = createClient(
+                        process.env.NEXT_PUBLIC_SUPABASE_URL,
+                        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+                    );
+                    const channel = supabaseBrowser.channel(`rt-broadcast-${tenantId.toLowerCase().trim()}`);
+                    await channel.subscribe();
+                    await channel.send({
+                        type: 'broadcast',
+                        event: 'ORDEN_CAMBIO',
+                        payload: { timestamp: Date.now(), mesaCerrada: idParaCerrar }
+                    });
+                    supabaseBrowser.removeChannel(channel);
+                } catch (errBc) {
+                    console.error("⚠️ Error disparando broadcast en cliente:", errBc);
                 }
 
                 // ✅ ÉXITO NORMAL: LIMPIEZA Y PREPARACIÓN DE TICKET

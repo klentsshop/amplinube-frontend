@@ -392,7 +392,7 @@ const ventaId = transaccionId ? `venta-${transaccionId}` : `venta-${Date.now()}-
             }
         }
 
-        // 🪓 PASO B: LIBERACIÓN DE LA MESA EN SUPABASE (Limpia la mesa física si existía una orden activa)
+        // 🪓 PASO B: LIBERACIÓN DE LA MESA EN SUPABASE (Limpia la mesa física)
         if (ordenId && ordenId !== "undefined" && ordenId !== "null") {
             const { error: errBorrarMesa } = await supabaseServer
                 .from('ordenes_activas')
@@ -404,31 +404,6 @@ const ventaId = transaccionId ? `venta-${transaccionId}` : `venta-${Date.now()}-
                 console.error(`⚠️ Error liberando mesa ${ordenId} en Supabase:`, errBorrarMesa.message);
             } else {
                 console.log(`🔌 [MESA_LIBERADA]: Mesa ${ordenId} eliminada de Supabase.`);
-                
-                // 📣 BROADCAST ASÍNCRONO EN SEGUNDO PLANO (FIRE & FORGET - CERO LAG EN CAJA)
-                (async () => {
-                    try {
-                        const sbBroadcast = createClient(
-                            process.env.NEXT_PUBLIC_SUPABASE_URL,
-                            process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-                        );
-                        const channel = sbBroadcast.channel(`rt-broadcast-${cleanTenant}`);
-                        
-                        channel.subscribe((status) => {
-                            if (status === 'SUBSCRIBED') {
-                                channel.send({
-                                    type: 'broadcast',
-                                    event: 'ORDEN_CAMBIO',
-                                    payload: { timestamp: Date.now(), mesaCerrada: ordenId }
-                                }).then(() => {
-                                    sbBroadcast.removeChannel(channel);
-                                });
-                            }
-                        });
-                    } catch (errBc) {
-                        console.error("⚠️ Error enviando Broadcast asíncrono:", errBc.message);
-                    }
-                })(); // 👈 Se ejecuta de fondo sin hacer 'await'
             }
         }
         // ⚡ PASO C: Procesamos los descuentos de las recetas en paralelo
