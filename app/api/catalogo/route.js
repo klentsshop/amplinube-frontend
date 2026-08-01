@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
 import { NextResponse } from 'next/server';
 import { createClient } from '@sanity/client';
 import { supabaseServer } from '@/lib/supabase'; // 🛡️ CIRUGÍA 1: Importación oficial corregida
