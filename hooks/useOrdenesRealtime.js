@@ -1,69 +1,56 @@
-// 🛠️ hooks/useOrdenesRealtime.js (BROADCAST ULTRA-RÁPIDO)
 'use client';
 
-import { useEffect, useState } from 'react';
-import { createClient } from '@supabase/supabase-js';
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
-const supabaseBrowser = (supabaseUrl && supabaseAnonKey) 
-  ? createClient(supabaseUrl, supabaseAnonKey, {
-      auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false }
-    })
-  : null;
+import { useEffect, useState, useRef } from 'react';
 
 export function useOrdenesRealtime(tenantId, initialOrdenes = [], fetchOrdenesFallback = null) {
   const [ordenes, setOrdenes] = useState(initialOrdenes);
-  const [isConnected, setIsConnected] = useState(false);
+  const [isConnected, setIsConnected] = useState(true);
+  
+  const fetchRef = useRef(fetchOrdenesFallback);
 
+  // Mantenemos la referencia de la función fetch siempre actualizada sin provocar re-renders
   useEffect(() => {
-    if (Array.isArray(initialOrdenes)) setOrdenes(initialOrdenes);
+    fetchRef.current = fetchOrdenesFallback;
+  }, [fetchOrdenesFallback]);
+
+  // Actualización de estado cuando las órdenes iniciales cambian
+  useEffect(() => {
+    if (Array.isArray(initialOrdenes)) {
+      setOrdenes(initialOrdenes);
+    }
   }, [initialOrdenes]);
 
+  // 🛡️ PARACAÍDAS DE EMERGENCIA: REFRRESCO AUTOMÁTICO CADA 4 SEGUNDOS
   useEffect(() => {
-    if (!tenantId || !supabaseBrowser) return;
+    if (!tenantId) return;
 
-    const cleanTenant = tenantId.toLowerCase().trim();
-
-    // Abrimos el canal Broadcast para el restaurante
-    const channel = supabaseBrowser.channel(`rt-broadcast-${cleanTenant}`, {
-      config: { broadcast: { self: true } } // Todos escuchan los cambios
-    });
-
-    channel
-      .on('broadcast', { event: 'ORDEN_CAMBIO' }, async () => {
-        console.log("⚡ [BROADCAST]: Notificación de mesa recibida en vivo");
-        if (fetchOrdenesFallback) {
-          const data = await fetchOrdenesFallback();
-          if (Array.isArray(data)) setOrdenes(data);
+    const interval = setInterval(async () => {
+      if (fetchRef.current) {
+        try {
+          const data = await fetchRef.current();
+          if (Array.isArray(data)) {
+            setOrdenes(data);
+          }
+        } catch (e) {
+          console.warn("⚠️ Error en refresco automático de emergencia:", e);
         }
-      })
-      .subscribe((status) => {
-        if (status === 'SUBSCRIBED') {
-          setIsConnected(true);
-        } else {
-          setIsConnected(false);
-        }
-      });
+      }
+    }, 4000); // 4 segundos: Balance perfecto para 50 dispositivos y consumo casi cero
 
-    return () => {
-      supabaseBrowser.removeChannel(channel);
-      setIsConnected(false);
-    };
-  }, [tenantId, fetchOrdenesFallback]);
+    return () => clearInterval(interval);
+  }, [tenantId]);
 
-  // Función para avisar a todos los dispositivos al guardar o borrar
-  const emitirCambio = () => {
-    if (!tenantId || !supabaseBrowser) return;
-    const cleanTenant = tenantId.toLowerCase().trim();
-    const channel = supabaseBrowser.channel(`rt-broadcast-${cleanTenant}`);
-    channel.send({
-      type: 'broadcast',
-      event: 'ORDEN_CAMBIO',
-      payload: { timestamp: Date.now() }
-    });
+  // Función dummy para mantener compatibilidad total con tus hooks existentes (useOrdenes, useOrdenHandlers)
+  const emitirCambio = async () => {
+    if (fetchRef.current) {
+      try {
+        const data = await fetchRef.current();
+        if (Array.isArray(data)) setOrdenes(data);
+      } catch (e) {
+        console.warn("⚠️ Error al sincronizar cambio local:", e);
+      }
+    }
   };
 
-  return { ordenes, setOrdenes, isConnected, emitirCambio };
+  return { ordenes, setOrdenes, isConnected: true, emitirCambio };
 }

@@ -1,7 +1,6 @@
 'use client';
 import React, { useState, useEffect, useMemo } from 'react';
 import { useCart } from '@/app/context/CartContext';
-import { createClient } from '@supabase/supabase-js';
 
 const normalizarParaImpresora = (texto) => {
     // 1. Forzamos que sea String y manejamos nulos/undefined (Tu lógica original + robustez)
@@ -25,7 +24,7 @@ export function useOrdenHandlers({
     ordenesActivas, esModoCajero, setMostrarCarritoMobile,
     nombreMesero, setNombreMesero,tipoOrden, ordenMesa, setOrdenMesa,
     rep, validarPinAdmin, ordenActivaId, setOrdenActivaId,
-    tenantId
+    tenantId, emitirCambio
     
 }) {
     const { clienteActivo, setClienteActivo } = useCart();
@@ -381,23 +380,10 @@ const platosParaGuardar = cart.map(i => {
                     return; 
                 }
 
-                // 🚀 DISPARO DE BROADCAST DIRECTO DESDE EL NAVEGADOR (A prueba de Netlify)
-                try {
-                    const supabaseBrowser = createClient(
-                        process.env.NEXT_PUBLIC_SUPABASE_URL,
-                        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-                    );
-                    const channel = supabaseBrowser.channel(`rt-broadcast-${tenantId.toLowerCase().trim()}`);
-                    await channel.subscribe();
-                    await channel.send({
-                        type: 'broadcast',
-                        event: 'ORDEN_CAMBIO',
-                        payload: { timestamp: Date.now(), mesaCerrada: idParaCerrar }
-                    });
-                    supabaseBrowser.removeChannel(channel);
-                } catch (errBc) {
-                    console.error("⚠️ Error disparando broadcast en cliente:", errBc);
-                }
+                // 🚀 DISPARO EN SEGUNDO PLANO (Cero retraso en pantalla)
+if (typeof emitirCambio === 'function') {
+    emitirCambio().catch(e => console.warn("Error background sync:", e));
+}
 
                 // ✅ ÉXITO NORMAL: LIMPIEZA Y PREPARACIÓN DE TICKET
                 setOrdenActivaId(null); 
