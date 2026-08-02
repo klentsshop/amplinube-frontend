@@ -73,10 +73,13 @@ export function useOrdenes(providedTenantId) {
       if (!res.ok) throw new Error("Error al guardar en servidor");
       const data = await res.json();
 
+      // Sincronización local rápida
       await fetchOrdenesFrecuentes();
 
-      // Emitir usando el canal abierto persistente
-      await emitirCambio();
+      // Notificar a Railway para que transmita el evento a las demás pantallas del local
+      if (typeof emitirCambio === 'function') {
+        emitirCambio();
+      }
 
       if (tenantId) {
         mutateGlobal(`/api/inventario/list?tenantId=${tenantId}`);
@@ -108,10 +111,13 @@ export function useOrdenes(providedTenantId) {
 
       if (!res.ok) throw new Error("Error al eliminar la orden en Supabase");
 
+      // Actualización optimista inmediata en la UI local
       setOrdenes((prev) => prev.filter((o) => (o._id || o.id) !== ordenId));
 
-      // Emitir usando el canal abierto persistente
-      await emitirCambio();
+      // Notificar a Railway para que los demás dispositivos eliminen la mesa de su pantalla
+      if (typeof emitirCambio === 'function') {
+        emitirCambio();
+      }
 
       if (tenantId) {
         mutateGlobal(`/api/inventario/list?tenantId=${tenantId}`);

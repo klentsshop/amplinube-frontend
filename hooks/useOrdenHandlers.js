@@ -380,10 +380,14 @@ const platosParaGuardar = cart.map(i => {
                     return; 
                 }
 
-                // 🚀 DISPARO EN SEGUNDO PLANO (Cero retraso en pantalla)
-if (typeof emitirCambio === 'function') {
-    emitirCambio().catch(e => console.warn("Error background sync:", e));
-}
+                // 🚀 DISPARO EN SEGUNDO PLANO (Sincronización síncrona/asíncrona protegida)
+                if (typeof emitirCambio === 'function') {
+                    try {
+                        emitirCambio();
+                    } catch (e) {
+                        console.warn("Error background sync:", e);
+                    }
+                }
 
                 // ✅ ÉXITO NORMAL: LIMPIEZA Y PREPARACIÓN DE TICKET
                 setOrdenActivaId(null); 
