@@ -119,88 +119,67 @@ const ventaId = transaccionId ? `venta-${transaccionId}` : `venta-${Date.now()}-
                 }, { status: 400 });
             }
         }
-        // --- 4. 🚀 BÚSQUEDA DE IDS Y RECETAS DESDE EL BÚNKER DE SUPABASE (CON CONTINGENCIA REAL) ---
+        // --- 4. 🚀 BÚSQUEDA DE PLATOS Y RECETAS DIRECTAS EN TABLAS DE SUPABASE ---
         const nombresPlatos = (payload.platosVendidosV2 || []).map(item => item.nombrePlato || item.nombre);
-        let mapeoSanity = [];
-        let usoContingenciaSanity = false;
-        
+        let mapeoPlatosRecetas = [];
+
         try {
-            // Buscamos el catálogo en la caché en piedra de Supabase
-            const { data: cacheRow, error: errCache } = await supabaseServer
-                .from('catalog_cache')
-                .select('payload_json')
-                .eq('tenant_host', tenantId.toLowerCase().trim())
-                .maybeSingle(); // 🛡️ Evita lanzar excepciones ruidosas si la tabla está vacía
+            // 1. Obtener los platos vendidos y sus IDs relacionales
+            const { data: platosDb } = await supabaseServer
+                .from('platos')
+                .select('id, nombre, precio_costo, controla_inventario')
+                .eq('tenant', cleanTenant)
+                .in('nombre', nombresPlatos);
 
-            // Si hay un error en Supabase o el registro no existe, forzamos la caída al catch de contingencia
-            if (errCache || !cacheRow || !cacheRow.payload_json) {
-                throw new Error("Cache miss o error de lectura en Supabase");
+            if (Array.isArray(platosDb) && platosDb.length > 0) {
+                const platoIds = platosDb.map(p => p.id);
+
+                // 2. Traer las recetas asociadas desde public.recetas (Tabla Pivote)
+                const { data: recetasDb } = await supabaseServer
+                    .from('recetas')
+                    .select('plato_id, insumo_id, cantidad')
+                    .eq('tenant', cleanTenant)
+                    .in('plato_id', platoIds);
+
+                const recetasGrupales = recetasDb || [];
+
+                // 3. Mapear estructura
+                mapeoPlatosRecetas = platosDb.map(p => ({
+                    id: p.id,
+                    nombre: p.nombre,
+                    precioCosto: Number(p.precio_costo || 0),
+                    controlaInventario: p.controla_inventario === true,
+                    recetas: recetasGrupales.filter(r => r.plato_id === p.id)
+                }));
             }
-
-            const platosBunker = cacheRow.payload_json.plato || cacheRow.payload_json.platos || [];
-            
-            // Si el búnker existe pero no tiene platos indexados, también es una alerta para usar Sanity
-            if (!Array.isArray(platosBunker) || platosBunker.length === 0) {
-                throw new Error("El búnker no contiene un arreglo de platos válido");
-            }
-
-            // Filtramos en memoria local solo los platos involucrados en esta venta
-            mapeoSanity = platosBunker.filter(p => nombresPlatos.includes(p.nombre)).map(p => ({
-                nombre: p.nombre,
-                _id: p._id,
-                precioCosto: Number(p.precioCosto || 0),
-                controlaInventario: p.controlaInventario || false,
-                insumoVinculadoRef: p.insumoVinculadoRef || p.insumoVinculado?._ref || null,
-                cantidadADescontar: p.cantidadADescontar || 0,
-                recetaInsumos: (p.recetaInsumos || []).map(r => ({
-                    insumoId: r.insumo?._ref || r.insumoId || null,
-                    cantidad: r.cantidad || 0
-                }))
-            }));
-
-            // Si por alguna razón el filtro en memoria nos deja vacíos pero la venta sí trae platos, paracaídas inmediato
-            if (mapeoSanity.length === 0 && nombresPlatos.length > 0) {
-                throw new Error("Platos vendidos no encontrados en la caché de Supabase");
-            }
-
-        } catch (cacheError) {
-            console.warn(`⚠️ Contingencia activada: [${cacheError.message}]. Extrayendo recetas directo de Sanity en caliente...`);
-            usoContingenciaSanity = true;
-
-            const dataFreshSanity = await sanityClientServer.fetch(
-               `*[_type == "plato" && tenant == $tenantId && nombre in $nombres]{
-                    nombre, _id, controlaInventario,
-                    "insumoVinculadoRef": insumoVinculado._ref,
-                    cantidadADescontar,
-                    recetaInsumos[]{ "insumoId": insumo._ref, cantidad }
-                }`,
-                { nombres: nombresPlatos, tenantId },
-                { useCdn: false } // 🔌 En caliente directo al búnker central sin CDN
-            );
-
-            // Homologamos la respuesta de Sanity para que ensamble de forma idéntica con tu lógica del paso D
-            mapeoSanity = (dataFreshSanity || []).map(p => ({
-                nombre: p.nombre,
-                _id: p._id,
-                controlaInventario: p.controlaInventario || false,
-                insumoVinculadoRef: p.insumoVinculadoRef || null,
-                cantidadADescontar: p.cantidadADescontar || 0,
-                recetaInsumos: (p.recetaInsumos || []).map(r => ({
-                    insumoId: r.insumoId || null,
-                    cantidad: r.cantidad || 0
-                }))
-            }));
+        } catch (dbError) {
+            console.error("⚠️ Error consultando recetas relacionales en Supabase:", dbError.message);
         }
 
-        // --- 5. MAPEO DE PLATOS PARA LA VENTA ---
+        // --- 5. MAPEO DE PLATOS PARA LA VENTA Y CÁLCULO DE DESCUENTOS ---
+        const descuentosSupabase = [];
+
         const platosVenta = (payload.platosVendidosV2 || []).map(item => {
             const precioFinal = Number(item.precioUnitario || item.precioNum || item.precio) || 0;
             const cantidadFinal = Number(item.cantidad) || 1;
             const nombreLimpio = item.nombrePlato || item.nombre;
             
-            // 🧠 Cruzamos el nombre vendido con la caché recuperada en el paso 4
-            const platoMatch = (mapeoSanity || []).find(m => m.nombre === nombreLimpio);
-            const costoReal = platoMatch && platoMatch.precioCosto ? platoMatch.precioCosto : Number(item.precioCosto || 0);
+            // Cruzar con la consulta relacional de Supabase
+            const platoMatch = (mapeoPlatosRecetas || []).find(m => m.nombre === nombreLimpio);
+            const costoReal = platoMatch ? platoMatch.precioCosto : Number(item.precioCosto || 0);
+
+            // Si el plato controla inventario, acumular sus descuentos de la tabla pivote public.recetas
+            if (platoMatch && platoMatch.controlaInventario && Array.isArray(platoMatch.recetas)) {
+                platoMatch.recetas.forEach(recetaItem => {
+                    if (recetaItem.insumo_id) {
+                        const montoADescontar = (Number(recetaItem.cantidad) || 1) * cantidadFinal;
+                        descuentosSupabase.push({
+                            insumo_id: recetaItem.insumo_id, // UUID directo de public.inventarios
+                            cantidad: montoADescontar
+                        });
+                    }
+                });
+            }
 
             return {
                 _key: crypto.randomUUID(),
@@ -208,7 +187,7 @@ const ventaId = transaccionId ? `venta-${transaccionId}` : `venta-${Date.now()}-
                 nombrePlato: nombreLimpio,
                 cantidad: cantidadFinal,
                 precioUnitario: precioFinal,
-                precioCosto: Number(costoReal), // 👈 🛡️ ESCUDO MAESTRO: Costo garantizado del Búnker
+                precioCosto: Number(costoReal),
                 subtotal: Number(item.subtotal) || (precioFinal * cantidadFinal),
                 comentario: item.comentario || ""
             };
@@ -232,196 +211,42 @@ const ventaId = transaccionId ? `venta-${transaccionId}` : `venta-${Date.now()}-
             else if (m === 'tarjeta') columnaTarjeta += monto;
             else if (m === 'digital' || m === 'nequi' || m === 'daviplata') columnaDigital += monto;
         });
-
-        // ====================================================================
-        // --- D. 🔥 POPULARIDAD (Sanity) e INVENTARIO HÍBRIDO (Supabase) ---
-        // ====================================================================
-        const descuentosSupabase = [];
-
-        // Ejecutamos los patches de popularidad en Sanity en paralelo de forma ultra veloz
-        if (Array.isArray(payload.platosVendidosV2) && payload.platosVendidosV2.length > 0) {
-            await Promise.all(
-                payload.platosVendidosV2.map(async (p) => {
-                    const nombrePlato = p.nombrePlato || p.nombre;
-                    const match = (mapeoSanity || []).find(m => m.nombre === nombrePlato);
-                    
-                    if (match && match._id) {
-                        try {
-                            // 📈 LE AVISAMOS A SANITY: Suma el contador para que el ProductGrid siga ordenando a la perfección
-                            await sanityClientServer
-                                .patch(match._id)
-                                .setIfMissing({ totalVentas: 0 })
-                                .inc({ totalVentas: Number(p.cantidad) || 1 })
-                                .commit();
-                        } catch (sanityErr) {
-                            console.error(`⚠️ No se pudo actualizar popularidad en Sanity para ${nombrePlato}:`, sanityErr.message);
-                        }
-
-                        // 🥩 LÓGICA DE EXTRACCIÓN: Preparamos los descuentos para Supabase
-                        if (match.controlaInventario) {
-                            const cantVenta = Number(p.cantidad) || 0;
-                            const esPesaje = cantVenta % 1 !== 0; 
-
-                            // Caso 1: Recetas multi-insumo
-                            if (Array.isArray(match.recetaInsumos) && match.recetaInsumos.length > 0) {
-                                match.recetaInsumos.forEach(insumoItem => {
-                                    if (insumoItem.insumoId) {
-                                        const montoFinal = esPesaje ? cantVenta : (Number(insumoItem.cantidad) || 1) * cantVenta;
-                                        descuentosSupabase.push({
-                                            insumo_id: insumoItem.insumoId,
-                                            cantidad: montoFinal
-                                        });
-                                    }
-                                });
-                            } 
-                            // Caso 2: Insumo Vinculado Directo
-                            else if (match.insumoVinculadoRef) {
-                                const montoFinal = esPesaje ? cantVenta : (Number(match.cantidadADescontar) || 1) * cantVenta;
-                                descuentosSupabase.push({
-                                    insumo_id: match.insumoVinculadoRef,
-                                    cantidad: montoFinal
-                                });
-                            }
-                        }
-                    }
-                })
-            );
-        }
         // ==========================================================
-        // 🚀 INYECCIÓN SENIOR EN POSTGRESQL CON TIMEOUT DE 3 SEGUNDOS
+        // 🚀 EJECUCIÓN 100% ATÓMICA EN POSTGRESQL (RPC ÚNICA)
         // ==========================================================
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 3000); 
+        const objetoVentaDb = {
+            transaccion_id: ventaId,
+            folio: folioGenerado,
+            tenant_id: tenantId,
+            mesa: String(mesa),
+            tipo_orden: tipoOrden,
+            mesero: mesero,
+            metodo_pago: (metodoPago === 'mixto_v2' || detallePagosValido.length > 1) ? 'mixto_v2' : metodoPago,
+            total_pagado: totalPagado,
+            propina_recaudada: propinaRecaudada,
+            fecha_iso: fechaUTC,
+            fecha_local: fechaLocal,
+            datos_entrega: datosEntrega || null,
+            detalle_pagos: detallePagosValido,
+            platos_vendidos: platosVenta,
+            pago_efectivo: columnaEfectivo,
+            pago_tarjeta: columnaTarjeta,
+            pago_digital: columnaDigital
+        };
 
-        let supabaseError = null;
-        try {
-            const { error } = await supabaseServer
-                .from('ventas')
-                .insert([{
-                    transaccion_id: ventaId,
-                    folio: folioGenerado,
-                    tenant_id: tenantId,
-                    mesa: String(mesa),
-                    tipo_orden: tipoOrden,
-                    mesero: mesero,
-                    metodo_pago: (metodoPago === 'mixto_v2' || detallePagosValido.length > 1) ? 'mixto_v2' : metodoPago,
-                    total_pagado: totalPagado,
-                    propina_recaudada: propinaRecaudada,
-                    fecha_iso: fechaUTC,
-                    fecha_local: fechaLocal,
-                    datos_entrega: datosEntrega || null,
-                    detalle_pagos: detallePagosValido,
-                    platos_vendidos: platosVenta,
-                    pago_efectivo: columnaEfectivo,
-                    pago_tarjeta: columnaTarjeta,
-                    pago_digital: columnaDigital
-                }])
-                .abortSignal(controller.signal); 
-            
-            supabaseError = error;
-        } catch (fetchErr) {
-            if (fetchErr.name === 'AbortError') {
-                throw new Error("SUPABASE_TIMEOUT: La base de datos tardó más de 3 segundos en responder por lag de red.");
-            }
-            throw fetchErr;
-        } finally {
-            clearTimeout(timeoutId); 
+        const { data: resAtomica, error: errAtomico } = await supabaseServer.rpc('procesar_venta_atomica', {
+            p_venta_data: objetoVentaDb,
+            p_orden_id: ordenId || null,
+            p_abrir_cajon: abrirCajon,
+            p_descuentos: descuentosSupabase
+        });
+
+        if (errAtomico) {
+            console.error('❌ Fallo en la transacción atómica de venta:', errAtomico.message);
+            throw new Error(`TRANSACCION_FALLIDA: ${errAtomico.message}`);
         }
 
-        if (supabaseError) {
-            console.error('❌ Error inyectando venta en Supabase:', supabaseError.message);
-            
-            // 🛡️ CONTROL DE CONCURRENCIA MÁXIMA: Si el folio colisionó (Código 23505), regeneramos ID único al vuelo
-            if (supabaseError.code === '23505') {
-                console.warn('⚠️ Colisión de folio detectada por alta concurrencia. Aplicando paracaídas alfanumérico...');
-                const seedRescate = crypto.randomBytes(2).toString('hex').toUpperCase();
-                const folioRescate = `${prefix}-${datePart}-C${seedRescate}`;
-                
-                const { error: errReintento } = await supabaseServer
-                    .from('ventas')
-                    .insert([{
-                        transaccion_id: `venta-${Date.now()}-${seedRescate}`,
-                        folio: folioRescate,
-                        tenant_id: tenantId,
-                        mesa: String(mesa),
-                        tipo_orden: tipoOrden,
-                        mesero: mesero,
-                        metodo_pago: (metodoPago === 'mixto_v2' || detallePagosValido.length > 1) ? 'mixto_v2' : metodoPago,
-                        total_pagado: totalPagado,
-                        propina_recaudada: propinaRecaudada,
-                        fecha_iso: fechaUTC,
-                        fecha_local: fechaLocal,
-                        datos_entrega: datosEntrega || null,
-                        detalle_pagos: detallePagosValido,
-                        platos_vendidos: platosVenta,
-                        pago_efectivo: columnaEfectivo,
-                        pago_tarjeta: columnaTarjeta,
-                        pago_digital: columnaDigital
-                    }]);
-                if (!errReintento) {
-                    console.log(`🎉 Venta salvada exitosamente bajo el folio de emergencia: ${folioRescate}`);
-                    return NextResponse.json({ 
-                        ok: true, 
-                        message: 'Venta registrada (Resolución por concurrencia)',
-                        folio: folioRescate
-                    }, { status: 201 });
-                }
-            }
-            throw new Error(`SUPABASE_WRITE_FAILED: ${supabaseError.message}`);
-        }
-
-        // --- 🚀 EJECUCIÓN FINAL (MIGRACIÓN SUPABASE - PULSO DE CAJÓN INDEPENDIENTE) ---
-
-        // 🪓 PASO A: Si el pago involucra efectivo, creamos el pulso en Supabase para abrir el cajón
-        // Esto replica exactamente el documento flotante de Sanity, funcionando incluso para caja rápida sin mesa.
-        if (abrirCajon) {
-            const { error: errPulso } = await supabaseServer
-                .from('tickets_caja_pendientes')
-                .insert([{
-                    id: `pulso-${Date.now()}-${seed}`,
-                    tenant_id: tenantId,
-                    tipo_accion: 'ABRIR_CAJON', // ⚡ Indica a la APK que solo debe abrir el monedero sin gastar papel
-                    metodo_pago: metodoPago.toUpperCase(),
-                    mesa: String(mesa),
-                    folio: folioGenerado,
-                    platos_ordenados: [] // 🛡️ Evita nulos en el live stream
-                }]);
-
-            if (errPulso) {
-                console.error('⚠️ No se pudo registrar el pulso de apertura en Supabase:', errPulso.message);
-            }
-        }
-
-        // 🪓 PASO B: LIBERACIÓN DE LA MESA EN SUPABASE (Limpia la mesa física)
-        if (ordenId && ordenId !== "undefined" && ordenId !== "null") {
-            const { error: errBorrarMesa } = await supabaseServer
-                .from('ordenes_activas')
-                .delete()
-                .eq('id', ordenId)
-                .eq('tenant', cleanTenant);
-
-            if (errBorrarMesa) {
-                console.error(`⚠️ Error liberando mesa ${ordenId} en Supabase:`, errBorrarMesa.message);
-            } else {
-                console.log(`🔌 [MESA_LIBERADA]: Mesa ${ordenId} eliminada de Supabase.`);
-            }
-        }
-        // ⚡ PASO C: Procesamos los descuentos de las recetas en paralelo
-        if (descuentosSupabase.length > 0) {
-            await Promise.all(
-                descuentosSupabase.map(async (descuento) => {
-                    const { error: errStock } = await supabaseServer.rpc('descontar_stock_pos', {
-                        p_tenant_id: tenantId,
-                        p_insumo_id: descuento.insumo_id,
-                        p_cantidad: descuento.cantidad
-                    });
-                    
-                    if (errStock) {
-                        console.error(`⚠️ Error descontando stock para insumo ${descuento.insumo_id}:`, errStock.message);
-                    }
-                })
-            );
-        }
+        console.log(`⚡ [VENTA ATÓMICA EXITOSA]: Folio ${folioGenerado} guardado e inventario descontado en <50ms.`);
           
         // 🎉 Retorno limpio al frontend de Next.js
         return NextResponse.json({ 

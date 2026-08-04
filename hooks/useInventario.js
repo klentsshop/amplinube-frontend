@@ -39,8 +39,15 @@ export function useInventario(tenantId, search = '') {
             const nuevoMonto = Number(cantidad);
             if (data && Array.isArray(data)) {
                 const stockOptimista = data.map(insumo => {
-                    if ((insumo.id === insumoId || insumo._id === insumoId)) {
-                        return { ...insumo, stockActual: Number(insumo.stockActual || 0) + nuevoMonto };
+                    const idCoincide = (insumo.id || insumo._id) === insumoId;
+                    if (idCoincide) {
+                        const stockPrevio = Number(insumo.stockActual ?? insumo.stock_actual ?? 0);
+                        const stockCalculado = stockPrevio + nuevoMonto;
+                        return { 
+                            ...insumo, 
+                            stockActual: stockCalculado,
+                            stock_actual: stockCalculado
+                        };
                     }
                     return insumo;
                 });

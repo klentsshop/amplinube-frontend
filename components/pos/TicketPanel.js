@@ -229,7 +229,7 @@ export default function TicketPanel({
     <option value="">👤 Vendedor...</option>
     {esModoCajero && <option value="Caja">💰 Caja (Auto)</option>}
     {listaMeseros?.map(m => (
-        <option key={m._id} value={m.nombre}>{m.nombre}</option>
+        <option key={m.id || m._id} value={m.nombre}>{m.nombre}</option>
     ))}
 </select>
     </div>
@@ -413,19 +413,19 @@ export default function TicketPanel({
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 
                 {/* 1. BOTÓN MÁS (Circular Verde) */}
+                {/* 1. BOTÓN MÁS (Circular Verde) */}
                 <button 
                  onClick={() => {
-                 if (item._key) {
-                // 🛡️ UX Senior: Explicamos por qué no puede sumar aquí
+                 const esItemGuardado = item.esDeOrdenGuardada || item._key;
+                 if (esItemGuardado) {
                  alert(`🚫 Para agregar otro "${item.nombre}", selecciónalo desde el menú de platos para crear una adición.`);
                  } else {
-                agregarAlCarrito(item);
-                }
-                }} 
-                style={{
-            // Ya no lo ponemos opaco, pero le cambiamos el color para indicar "estado especial"
-                        color: item._key ? '#a7f3d0' : '#059669', // Verde clarito si está guardado
-                        border: item._key ? '1px dashed #a7f3d0' : '1px solid #059669',
+                 agregarAlCarrito(item);
+                 }
+                 }} 
+                 style={{
+                        color: (item.esDeOrdenGuardada || item._key) ? '#a7f3d0' : '#059669',
+                        border: (item.esDeOrdenGuardada || item._key) ? '1px dashed #a7f3d0' : '1px solid #059669',
                         borderRadius: '50%', 
                         width: '24px', 
                         height: '24px', 
@@ -437,7 +437,7 @@ export default function TicketPanel({
                         justifyContent: 'center',
                         fontSize: '1rem',
                         lineHeight: 1
-                    }}
+                     }}
                 >
                     +
                 </button>
@@ -450,21 +450,21 @@ export default function TicketPanel({
                 {/* 3. BOTÓN MENOS (Circular Rojo) */}
                 <button 
                   onClick={() => {
-                  if (item._key) {
+                  const esItemGuardado = item.esDeOrdenGuardada || item._key;
+                  if (esItemGuardado) {
                   solicitarEliminacionAdmin(item);
                   } else {
                   quitarDelCarrito(item.lineId);
                   }
                   }} 
                      style={{ 
-                       cursor: (item._key && !esModoCajero) ? 'help' : 'pointer', 
-                       opacity: (item._key && !esModoCajero) ? 0.5 : 1,
+                       cursor: ((item.esDeOrdenGuardada || item._key) && !esModoCajero) ? 'help' : 'pointer', 
+                       opacity: ((item.esDeOrdenGuardada || item._key) && !esModoCajero) ? 0.5 : 1,
                         color: SITE_CONFIG.theme.danger, 
                         border: `1px solid ${SITE_CONFIG.theme.danger}`,
                         borderRadius: '50%', 
                         width: '24px', 
                         height: '24px', 
-                        cursor: 'pointer',
                         background: 'none', 
                         fontWeight: 'bold',
                         display: 'flex',

@@ -114,7 +114,7 @@ export default function MenuPanel({ configNegocio: configInyectada }) {
 }, [mostrarModalClientes, tenantId, busquedaCli]);
 
     const seleccionarParaEditar = (c) => {
-        setIdClienteEditando(c._id); setCliNombre(c.nombre); setCliTelefono(c.telefono); setCliDireccion(c.direccion);
+        setIdClienteEditando(c.id || c._id); setCliNombre(c.nombre); setCliTelefono(c.telefono); setCliDireccion(c.direccion);
     };
 
     const cancelarEdicion = () => {
@@ -319,7 +319,7 @@ useEffect(() => {
         ord.setOrdenMesa(null);
     };
 
-const categoriasParaConfig = useMemo(() => [...new Set(platos.map(p => p.categoria))], [platos]);
+const categoriasParaConfig = useMemo(() => [...new Set(platos.map(p => p.categoria).filter(Boolean))], [platos]);
 if (!tenantId) return <div style={{background: '#111827', height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: '900'}}>IDENTIFICANDO COMERCIO...</div>;   
 
 // 🛡️ CONTROL EXPLÍCITO: Si está en null, congelamos pantalla para evitar parpadeos visuales
@@ -540,11 +540,14 @@ return (
 
             <div className={styles.tablesFooter}>
                 <div style={{ fontWeight: '900', color: 'white', marginRight: '15px', fontSize: '0.75rem' }}>ORDENES ACTIVAS:</div>
-                {ordenesActivas.map((orden) => (
-                    <button key={orden._id} className={`${styles.tableBtn} ${ord.ordenActivaId === orden._id ? styles.tableBtnActive : ''}`} onClick={() => ord.cargarOrden(orden._id)}>
-                        {orden.mesa}
-                    </button>
-                ))}
+                {ordenesActivas.map((orden) => {
+                    const oId = orden.id || orden._id;
+                    return (
+                        <button key={oId} className={`${styles.tableBtn} ${ord.ordenActivaId === oId ? styles.tableBtnActive : ''}`} onClick={() => ord.cargarOrden(oId)}>
+                            {orden.mesa}
+                        </button>
+                    );
+                })}
             </div>
 
             <ListaOrdenesModal isOpen={mostrarListaOrdenes} onClose={() => setMostrarListaOrdenes(false)} ordenes={ordenesActivas} onCargar={(id) => { ord.cargarOrden(id).then(s => s && setMostrarListaOrdenes(false)) }} />

@@ -121,7 +121,7 @@ const generarCierreDia = async () => {
             let porMesero = {};
 
             (data.ventas || []).forEach(v => {
-                const monto = Number(v.totalPagado || 0);
+                const monto = Number(v.totalPagado ?? v.total_pagado ?? 0);
                 ventasTotales += monto;
                 const nombre = v.mesero || "General";
                 porMesero[nombre] = (porMesero[nombre] || 0) + monto;

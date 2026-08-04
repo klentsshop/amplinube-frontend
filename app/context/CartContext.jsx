@@ -73,20 +73,19 @@ export function CartProvider({ children, tenantId }) {
         return;
     }
 
-    // 2. 🛡️ BISTURÍ: Identificamos el origen de los platos
-    const tienePlatosDeSanity = items.some(it => it.esDeOrdenGuardada || it._key);
-    const tienePlatosNuevos = items.some(it => !it.esDeOrdenGuardada && !it._key);
+    // 2. 🛡️ BISTURÍ SUPABASE/SANITY: Identificamos si son platos de una orden persistida
+    const tienePlatosGuardados = items.some(it => it.esDeOrdenGuardada || it._key || it.orden_id);
+    const tienePlatosNuevos = items.some(it => !it.esDeOrdenGuardada && !it._key && !it.orden_id);
 
     const saveTimeout = setTimeout(() => {
       // 🚨 LA REGLA DE ORO CONTRA DUPLICADOS:
-      // Si la tablet cree que NO hay una orden activa (null) pero los platos dicen que
-      // YA venían de Sanity, bloqueamos el guardado. Es un "fantasma" de una mesa ya cobrada.
-      if (tienePlatosDeSanity && !tienePlatosNuevos && !ordenActivaId) {
+      // Si no hay una orden activa registrada pero los platos provienen de la BD, bloqueamos la creación fantasma.
+      if (tienePlatosGuardados && !tienePlatosNuevos && !ordenActivaId) {
           console.warn("🚫 [BLOQUEO_FANTASMA]: Evitando creación de Mesa 0 duplicada.");
           return; 
       }
 
-      // 3. Si pasa el filtro, guardamos normal (Tu lógica original intacta)
+      // 3. Guardado normal en el disco local
       localStorage.setItem(`${tenantId}_cart`, JSON.stringify(items));
       localStorage.setItem(`${tenantId}_tipo_orden`, tipoOrden || 'mesa');
     }, 150);
@@ -180,37 +179,45 @@ setItems(prev => {
     }];
 });
   }, [items, stockLocalCache, cleanPrice]);
-  const setCartFromOrden = (platosOrdenados = [], tipoDeSanity = 'mesa') => {
+  const setCartFromOrden = (platosOrdenados = [], tipoDeOrdenBD = 'mesa') => {
     // 🧹 Limpiamos el rastro del localStorage antes de cargar lo nuevo
-   localStorage.removeItem(`${activeTenantId}_cart`);
+    localStorage.removeItem(`${activeTenantId}_cart`);
     
     // Seteamos el tipo de orden inmediatamente
-    setTipoOrden(tipoDeSanity);
+    setTipoOrden(tipoDeOrdenBD);
 
-    const reconstruido = platosOrdenados.map(p => ({
-      _key: p._key,
-      lineId: p._key || crypto.randomUUID(),
-      _id: p._id || p.id || p.nombrePlato,
-      nombre: p.nombrePlato,
-      precio: cleanPrice(p.precioUnitario),
-      precioCosto: Number(p.precioCosto || 0),
-      cantidad: Number(p.cantidad) || 1,
-      precioNum: cleanPrice(p.precioUnitario),
-      subtotalNum: cleanPrice(p.precioUnitario) * (Number(p.cantidad) || 1),
-      comentario: p.comentario || "",
-      categoria: p.categoria || "",
-      controlaInventario: p.controlaInventario || false,
-      insumoVinculado: p.insumoVinculado || null,
-      seImprime: p.seImprime === true,
-      cantidadADescontar: p.cantidadADescontar || 0,
-      esVentaPorPeso: p.esVentaPorPeso === true
-    }));
+    const reconstruido = platosOrdenados.map(p => {
+      const pId = p.id || p._id || p.producto_id || p.nombrePlato || p.nombre;
+      const nombreFinal = p.nombrePlato || p.nombre_plato || p.nombre || "PLATO";
+      const precioUnit = cleanPrice(p.precioUnitario ?? p.precio_unitario ?? p.precio ?? 0);
+      const cant = Number(p.cantidad) || 1;
 
-    // Actualizamos el estado. El "Amortiguador" del useEffect de arriba 
-    // se encargará de que esto no cause un parpadeo violento.
+      return {
+        ...p,
+        _key: p._key || p.id,
+        lineId: p.lineId || p._key || p.id || crypto.randomUUID(),
+        _id: pId,
+        id: pId,
+        nombre: nombreFinal,
+        nombrePlato: nombreFinal,
+        precio: precioUnit,
+        precioCosto: Number(p.precioCosto || p.precio_costo || 0),
+        cantidad: cant,
+        precioNum: precioUnit,
+        subtotalNum: Number((precioUnit * cant).toFixed(2)),
+        comentario: p.comentario || "",
+        categoria: (p.categoria || "").toString().toUpperCase().trim(),
+        controlaInventario: p.controlaInventario === true || p.controla_inventario === true,
+        insumoVinculado: p.insumoVinculado || p.insumo_id || null,
+        seImprime: p.seImprime !== false && p.se_imprime !== false,
+        cantidadADescontar: Number(p.cantidadADescontar || p.cantidad_a_descontar || 0),
+        esVentaPorPeso: p.esVentaPorPeso === true || p.es_venta_por_peso === true,
+        esDeOrdenGuardada: true
+      };
+    });
+
     setItems(reconstruido);
   };
-
  const decrease = React.useCallback((lineId) => {
   // Entramos directo al set para que la actualización sea atómica en React
   setItems(prev => {

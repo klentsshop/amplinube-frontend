@@ -101,25 +101,24 @@ export default function ConfigImpresionModal({ isOpen, onClose, categorias, tena
    const cargarProductosNegocio = async () => {
         if (!tenantId) return;
         try {
-            // Usamos "categoria->titulo" para traer el nombre real de la referencia de forma síncrona
-            const query = `*[_type == "plato" && tenant == $tenantId] | order(nombre asc) { 
-                _id, 
-                nombre, 
-                precio, 
-                precioCosto,
-                categoria, 
-                "categoriaLabel": categoria->titulo, 
-                disponible, 
-                barcode, 
-                codigoBalanza,
-                controlaInventario,
-                recetaInsumos,
-                esVentaPorPeso
-            }`;
-            const data = await client.fetch(query, { tenantId }, { useCdn: false });
-            setListaProductosCompletas(data || []);
+            const res = await fetch(`/api/admin/productos?tenantId=${tenantId}&_t=${Date.now()}`);
+            const data = await res.json();
+            const items = Array.isArray(data) ? data : (data.data || []);
+            setListaProductosCompletas(items);
         } catch (e) {
-            console.error("🔥 Error descargando catálogo de productos:", e);
+            console.error("🔥 Error descargando catálogo de productos desde Supabase:", e);
+        }
+    };
+
+    const cargarCategoriasNegocio = async () => {
+        if (!tenantId) return;
+        try {
+            const res = await fetch(`/api/admin/categorias?tenantId=${tenantId}&_t=${Date.now()}`);
+            const data = await res.json();
+            const items = Array.isArray(data) ? data : (data.data || []);
+            setListaCategoriasCompletas(items);
+        } catch (e) {
+            console.error("🔥 Error descargando categorías desde Supabase:", e);
         }
     };
 
@@ -185,17 +184,6 @@ export default function ConfigImpresionModal({ isOpen, onClose, categorias, tena
             }
         } catch (e) {
             console.error("Error cargando configuración de negocio:", e);
-        }
-    };
-
-    const cargarCategoriasNegocio = async () => {
-        if (!tenantId) return;
-        try {
-            const query = `*[_type == "categoria" && tenant == $tenantId] | order(titulo asc) { _id, titulo, seImprime }`;
-            const data = await client.fetch(query, { tenantId }, { useCdn: false });
-            setListaCategoriasCompletas(data || []);
-        } catch (e) {
-            console.error("🔥 Error descargando categorías de Sanity:", e);
         }
     };
 
@@ -295,7 +283,7 @@ export default function ConfigImpresionModal({ isOpen, onClose, categorias, tena
         }
     } catch (e) {
         alert('❌ Fallo de comunicación con el servidor al intentar eliminar.');
-    } finally { postElement: setGuardando(false); }
+    } finally { setGuardando(false); }
 };
 
     const activarEdicion = (cat) => {
@@ -304,43 +292,48 @@ export default function ConfigImpresionModal({ isOpen, onClose, categorias, tena
         setEditandoCatId(cat._id);
     };
 
-   const handleGuardarInventario = async (e) => {
+   // 🔄 REEMPLAZO EXACTO DE HANDLEGUARDARINVENTARIO
+    const handleGuardarInventario = async (e) => {
         e.preventDefault();
         if (!invNombre || !invNombre.trim()) return alert("⚠️ El nombre del insumo es obligatorio.");
         setGuardando(true);
         
         try {
-            const metodo = idItemEditando ? 'PUT' : 'POST';
+            const esEdicion = Boolean(idItemEditando);
+            const metodo = esEdicion ? 'PUT' : 'POST';
             
-            // 🛡️ BISTURÍ: Estructuramos el body exacto que espera recibir tu API híbrida
-            const body = {
+            // 🛡️ PAYLOAD NORMALIZADO PARA SUPABASE
+            const payload = {
                 nombre: invNombre.trim(),
-                stockActual: Number(invStockActual) || 0, // 🎯 Reemplazo absoluto para la columna stock_actual de Supabase
-                stockMinimo: Number(invStockMinimo) || 5,  // Sincroniza stockMinimo (Sanity) y stock_minimo (Supabase)
-                barcode: invBarcode && invBarcode.trim() ? invBarcode.trim() : null,
-                codigoBalanza: invCodigoBalanza && invCodigoBalanza.trim() ? invCodigoBalanza.trim() : null,
-                tenantId: tenantId // 🔒 Candado maestro multi-tenant
+                stockActual: Number(invStockActual) || 0,
+                stockMinimo: Number(invStockMinimo) || 5,
+                barcode: invBarcode && invBarcode.trim() ? invBarcode.trim() : "",
+                codigoBalanza: invCodigoBalanza && invCodigoBalanza.trim() ? invCodigoBalanza.trim() : "",
+                tenantId: tenantId
             };
 
-            // Si hay un ID en edición, lo inyectamos como itemId (el _id alfanumérico de Sanity)
-            if (idItemEditando) {
-                body.itemId = idItemEditando;
+            // Inyectamos el ID para el caso de edición
+            if (esEdicion) {
+                payload.itemId = idItemEditando;
             }
 
+            // 🚀 APUNTA A LA API ADMINISTRATIVA DE INVENTARIO
             const res = await fetch('/api/admin/inventario', {
                 method: metodo,
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(body)
+                body: JSON.stringify(payload)
             });
             
             const data = await res.json();
             
-            if (res.ok && (data.ok || data.id || data.item)) {
-                alert(idItemEditando ? '🔄 ¡Insumo en Sanity y Stock en Supabase actualizados al unísono!' : '🚀 ¡Materia prima inicializada correctamente!');
-                cancelarEdicion(); // Limpia los inputs del formulario
+            if (res.ok && (data.ok || data.success)) {
+                alert(esEdicion ? '🔄 ¡Insumo actualizado correctamente!' : '🚀 ¡Materia prima registrada!');
+                cancelarEdicion();
                 if (typeof cargarInventarioAdmin === 'function') {
-                    await cargarInventarioAdmin(); // Refresca la tabla con los datos frescos
+                    await cargarInventarioAdmin();
                 }
+                // Disparar evento para revalidar el POS si es necesario
+                window.dispatchEvent(new Event('inventarioActualizado'));
             } else { 
                 alert(`❌ Error del servidor: ${data.error || 'No se pudo procesar la solicitud.'}`); 
             }
@@ -451,30 +444,40 @@ export default function ConfigImpresionModal({ isOpen, onClose, categorias, tena
             alert('❌ Fallo de comunicación con el servidor.');
         } finally { setGuardando(false); }
     };
+    // 🔄 REEMPLAZO EXACTO DENTRO DE ConfigImpresionModal.jsx
     const activarEdicionProducto = (prod) => {
-    setEditandoProductoId(prod._id);
-    
-    // Normalizamos el esquema complejo del backend al array simple esperado por los inputs hijos
-    const recetaNormalizada = (prod.recetaInsumos || prod.insumosReceta || []).map(item => ({
-        insumoId: item.insumo?._ref || item.insumoId || '',
-        cantidad: Number(item.cantidad || item.amount || item.unidades || item.descuenta || 1)
-    }));
+        const idCorrecto = prod.id || prod._id;
+        setEditandoProductoId(idCorrecto);
+        
+        // 🛡️ Extraer URL de la imagen
+        const urlImagenExistente = typeof prod.imagen === 'string' 
+            ? prod.imagen 
+            : (prod.imagenUrl || prod.imagen?.asset?.url || null);
 
-    setNuevoPlato({
-        nombre: prod.nombre,
-        precio: prod.precio,
-        precioCosto: prod.precioCosto || '',
-        categoria: prod.categoria?._ref || prod.categoria || '',
-        controlaInventario: prod.controlaInventario || false,
-        disponible: prod.disponible !== false,
-        barcode: prod.barcode || '',
-        codigoBalanza: prod.codigoBalanza || '',
-        imagen: prod.imagen || null,
-        insumosReceta: recetaNormalizada,
-        esVentaPorPeso: prod.esVentaPorPeso === true
-    });
-};
+        // 🛡️ Extraer ID de la Categoría de Supabase o Sanity
+        const idCategoria = prod.categoria || prod.categoria_id || prod.categoria?._ref || '';
 
+        const fuenteReceta = Array.isArray(prod.recetas) ? prod.recetas : (prod.insumosReceta || prod.recetaInsumos || []);
+        
+        const recetaNormalizada = fuenteReceta.map(item => ({
+            insumoId: item.insumo_id || item.insumoId || item.insumo?._ref || '',
+            cantidad: Number(item.cantidad || item.amount || 1)
+        }));
+
+        setNuevoPlato({
+            nombre: prod.nombre || '',
+            precio: prod.precio || '',
+            precioCosto: prod.precio_costo ?? prod.precioCosto ?? '',
+            categoria: String(idCategoria), // 👈 Se asigna string directo para coincidir con el <option>
+            controlaInventario: prod.controla_inventario ?? prod.controlaInventario ?? false,
+            disponible: prod.disponible !== false,
+            barcode: prod.barcode || '',
+            codigoBalanza: prod.codigo_balanza || prod.codigoBalanza || '',
+            imagen: urlImagenExistente,
+            insumosReceta: recetaNormalizada,
+            esVentaPorPeso: (prod.es_venta_por_peso ?? prod.esVentaPorPeso) === true
+        });
+    };
     const cancelarEdicionProducto = () => {
         setEditandoProductoId(null);
         setNuevoPlato({
@@ -585,45 +588,37 @@ export default function ConfigImpresionModal({ isOpen, onClose, categorias, tena
         } catch (error) { console.error(error); }
         finally { setGuardando(false); }
     };
-   const subirImagenASanity = async (file) => {
-        if (!file) return null;
+   const subirImagenASupabase = async (file, imagenAnterior = null) => {
         try {
-            // Empaquetamos el archivo binario
             const formData = new FormData();
             formData.append('file', file);
+            if (tenantId) formData.append('tenantId', tenantId);
+            if (imagenAnterior) formData.append('imagenAnterior', imagenAnterior);
 
-            // Llamamos a tu nuevo endpoint local en el servidor
             const res = await fetch('/api/admin/productos/upload', {
                 method: 'POST',
-                body: formData,
+                body: formData
             });
-            
+
             const data = await res.json();
-            
-            if (data.ok) {
-                // Retorna la referencia estructurada que espera Sanity
-                return data.asset; 
-            } else {
-                throw new Error(data.error || 'Error en el servidor de carga');
+            if (res.ok && data.ok) {
+                return data.asset;
             }
+            return null;
         } catch (err) {
-            console.error("🔥 Error subiendo imagen mediante API puente:", err);
+            console.error("Error al subir imagen a Supabase Storage:", err);
             return null;
         }
     };
     const cargarMeserosNegocio = async () => {
         if (!tenantId) return;
         try {
-            // 📊 Expandimos la proyección agregando las 6 nuevas banderas booleanas
-            const query = `*[_type == "mesero" && tenant == $tenantId] | order(nombre asc) { 
-                _id, nombre, activo,
-                verReporte, verAdmin, puedeCargarGasto, verVentas, verInventario, puedeCobrar
-            }`; 
-            const data = await client.fetch(query, { tenantId }, { useCdn: false });
-            setListaMeserosCompletas(data || []);
-        } catch (e) { console.error("🔥 Error cargando vendedores:", e); }
+            const res = await fetch(`/api/admin/meseros?tenantId=${tenantId}&_t=${Date.now()}`);
+            const data = await res.json();
+            const items = Array.isArray(data) ? data : (data.data || []);
+            setListaMeserosCompletas(items);
+        } catch (e) { console.error("🔥 Error cargando vendedores desde Supabase:", e); }
     };
-
     const cargarSeguridadNegocio = async () => {
         if (!tenantId) return;
         try {
@@ -862,7 +857,7 @@ export default function ConfigImpresionModal({ isOpen, onClose, categorias, tena
         listaInventario={listaInventario}
         activarEdicionProducto={activarEdicionProducto}
         editandoProductoId={editandoProductoId} cancelarEdicionProducto={cancelarEdicionProducto}
-        subirImagenASanity={subirImagenASanity}
+        subirImagenASupabase={subirImagenASupabase}
         handleBorrarProducto={handleBorrarProducto}
         tenantId={tenantId}
     />

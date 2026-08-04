@@ -1,210 +1,207 @@
 import { NextResponse } from 'next/server';
-import { sanityClientServer } from '@/lib/sanity'; // Asegúrate de que esta sea tu instancia con write token
+import { supabaseServer } from '@/lib/supabase'; // 🛡️ Instancia directa Postgres
 
+// ⚡ Actualización quirúrgica atómica en la celda catalog_cache
+async function actualizarCacheLocal(tenant, itemDoc, esEliminacion = false) {
+    if (!tenant) return;
+    const cleanTenant = tenant.toLowerCase().trim();
+    const itemId = itemDoc._id || itemDoc.id;
+
+    try {
+        const { data: cacheExistente } = await supabaseServer
+            .from('catalog_cache')
+            .select('payload_json')
+            .eq('tenant_host', cleanTenant)
+            .maybeSingle();
+
+        if (!cacheExistente?.payload_json || !Array.isArray(cacheExistente.payload_json)) return;
+
+        let arrayActualizado = [...cacheExistente.payload_json];
+
+        if (esEliminacion) {
+            arrayActualizado = arrayActualizado.filter(item => item._id !== itemId && item.id !== itemId);
+        } else {
+            let encontrado = false;
+            arrayActualizado = arrayActualizado.map(item => {
+                if (item._id === itemId || item.id === itemId) {
+                    encontrado = true;
+                    return { ...item, ...itemDoc };
+                }
+                return item;
+            });
+            if (!encontrado) arrayActualizado.push(itemDoc);
+        }
+
+        await supabaseServer
+            .from('catalog_cache')
+            .upsert({
+                tenant_host: cleanTenant,
+                payload_json: arrayActualizado,
+                updated_at: new Date().toISOString()
+            }, { onConflict: 'tenant_host' });
+
+        console.log(`⚡ Caché de categoría actualizada para [${cleanTenant}] (ID: ${itemId})`);
+    } catch (err) {
+        console.warn("⚠️ No se pudo actualizar catalog_cache:", err.message);
+    }
+}
+// 📡 GET: Obtener lista de categorías ordenadas
+export async function GET(request) {
+    try {
+        const { searchParams } = new URL(request.url);
+        const tenantId = searchParams.get('tenantId')?.toLowerCase().trim();
+
+        if (!tenantId) {
+            return NextResponse.json({ error: 'Falta parámetro tenantId.' }, { status: 400 });
+        }
+
+        const { data, error } = await supabaseServer
+            .from('categorias')
+            .select('id, tenant, titulo, slug, orden, se_imprime, created_at')
+            .eq('tenant', tenantId)
+            .order('titulo', { ascending: true });
+
+        if (error) throw new Error(`SUPABASE_FETCH_ERROR: ${error.message}`);
+
+        return NextResponse.json({ ok: true, data: data || [] });
+    } catch (error) {
+        console.error('🔥 [API_GET_CATEGORIAS_ERROR]:', error.message);
+        return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+}
+
+// 🚀 POST: Crear nueva categoría en Supabase
 export async function POST(request) {
     try {
         const body = await request.json();
         const { titulo, slug, seImprime, tenantId } = body;
+        const tenantLimpio = tenantId?.toLowerCase().trim();
 
-        // 🛡️ ESCUDO MULTITENANT ADMINISTRATIVO
-        if (!tenantId || tenantId === 'undefined') {
-            return NextResponse.json({ error: 'Identificador de negocio ausente o corrupto.' }, { status: 400 });
+        if (!tenantLimpio || !titulo?.trim()) {
+            return NextResponse.json({ error: 'Identificador de negocio o título ausente.' }, { status: 400 });
         }
 
-        // 🧠 ESTRUCTURA EXACTA COMPATIBLE CON TU SCHEMATYPE
-        const nuevaCategoriaDoc = {
+        const slugLimpio = slug || titulo.trim().toLowerCase().replace(/\s+/g, '-');
+
+        const { data, error } = await supabaseServer
+            .from('categorias')
+            .insert([{
+                tenant: tenantLimpio,
+                titulo: titulo.trim().toUpperCase(),
+                slug: slugLimpio,
+                se_imprime: seImprime !== false,
+                orden: 1
+            }])
+            .select()
+            .single();
+
+       if (error) throw new Error(`SUPABASE_INSERT_ERROR: ${error.message}`);
+
+        // ⚡ Mapear al formato con el que el POS consume las categorías en el JSON
+        const catCache = {
+            _id: data.id,
+            id: data.id,
             _type: 'categoria',
-            titulo: titulo, // Ya viene limpio y en MAYÚSCULAS desde el POS
-            slug: {
-                _type: 'slug',
-                current: slug // Ya viene formateado en minúsculas y con guiones (ej: "jugos-naturales")
-            },
-            seImprime: seImprime ?? true, // Respeta el checkbox del administrador
-            tenant: tenantId // 👈 SE MAPEA AL CAMPO 'tenant' EXIGIDO POR TU SCHEMA
+            tenant: tenantLimpio,
+            titulo: data.titulo,
+            seImprime: data.se_imprime,
+            orden: data.orden || 1,
+            slug: { _type: 'slug', current: data.slug }
         };
 
-         const result = await sanityClientServer.create(nuevaCategoriaDoc);
+        await actualizarCacheLocal(tenantLimpio, catCache, false);
 
-       // ⚡ ACTUALIZACIÓN EN CALIENTE DE LA CACHÉ EN EL ARRAY PLANO (MATCH 100% CON TU JSON)
-        try {
-            const { supabaseServer } = await import('@/lib/supabase');
-            const tenantKey = tenantId.toLowerCase().trim();
-
-            const { data: registroActual } = await supabaseServer
-                .from('catalog_cache')
-                .select('payload_json')
-                .eq('tenant_host', tenantKey)
-                .single();
-
-            const nuevaCategoriaCache = {
-                _id: result._id,
-                _type: 'categoria',
-                titulo: titulo,
-                slug: { _type: 'slug', current: slug },
-                seImprime: seImprime ?? true,
-                tenant: tenantId,
-                _createdAt: new Date().toISOString(),
-                _updatedAt: new Date().toISOString()
-            };
-
-            if (registroActual && Array.isArray(registroActual.payload_json)) {
-                const nuevoPayload = [nuevaCategoriaCache, ...registroActual.payload_json];
-
-                await supabaseServer
-                    .from('catalog_cache')
-                    .upsert({ 
-                        tenant_host: tenantKey, 
-                        payload_json: nuevoPayload, 
-                        updated_at: new Date().toISOString() 
-                    }, { onConflict: 'tenant_host' });
-            } else {
-                await supabaseServer
-                    .from('catalog_cache')
-                    .upsert({ 
-                        tenant_host: tenantKey, 
-                        payload_json: [nuevaCategoriaCache], 
-                        updated_at: new Date().toISOString() 
-                    }, { onConflict: 'tenant_host' });
-            }
-            console.log(`⚡ Categoría inyectada en caliente en el array plano para: ${tenantId}`);
-        } catch (cacheError) {
-            console.warn("⚠️ Falla no-bloqueante al actualizar la caché en POST categorías:", cacheError.message);
-        }
-        return NextResponse.json({ ok: true, id: result._id });
+        console.log(`✅ Categoría creada en Supabase y Caché [${tenantLimpio}]: ${data.titulo}`);
+        return NextResponse.json({ ok: true, id: data.id, item: data });
 
     } catch (error) {
-        console.error('🔥 [API_ADMIN_CATEGORIAS_ERROR]:', error.message);
-        return NextResponse.json({ error: error.message || 'Error interno en el servidor.' }, { status: 500 });
+        console.error('🔥 [API_POST_CATEGORIAS_ERROR]:', error.message);
+        return NextResponse.json({ error: error.message }, { status: 500 });
     }
 }
-// ==========================================
-// 🔄 MÉTODO PUT: ACTUALIZAR CATEGORÍA EXTRAPOLADA
-// ==========================================
+
+// 🔄 PUT: Actualizar categoría existente en Supabase
 export async function PUT(request) {
     try {
         const body = await request.json();
         const { categoriaId, titulo, slug, seImprime, tenantId } = body;
+        const tenantLimpio = tenantId?.toLowerCase().trim();
 
-        // 🛡️ ESCUDO MULTITENANT
-        if (!tenantId || !categoriaId) {
+        if (!tenantLimpio || !categoriaId) {
             return NextResponse.json({ error: 'Faltan parámetros críticos (tenantId o categoriaId).' }, { status: 400 });
         }
 
-        console.log(`🔄 [PATCH_SANITY]: Actualizando ID ${categoriaId} para el Tenant: ${tenantId}`);
+        const slugLimpio = slug || titulo.trim().toLowerCase().replace(/\s+/g, '-');
 
-        // ⚡ TU LÓGICA ORIGINAL INTACTA: Mutación atómica en Sanity
-        const result = await sanityClientServer
-            .patch(categoriaId)
-            .set({
-                titulo: titulo,
-                slug: {
-                    _type: 'slug',
-                    current: slug
-                },
-                seImprime: seImprime === true
+        const { data, error } = await supabaseServer
+            .from('categorias')
+            .update({
+                titulo: titulo.trim().toUpperCase(),
+                slug: slugLimpio,
+                se_imprime: seImprime === true
             })
-            .commit(); // Inyecta y consolida el cambio en la nube
+            .eq('id', categoriaId)
+            .eq('tenant', tenantLimpio)
+            .select()
+            .maybeSingle();
 
-       // ⚡ ACTUALIZACIÓN EN CALIENTE DE LA CACHÉ EN ARRAY PLANO
-        try {
-            const { supabaseServer } = await import('@/lib/supabase');
-            const tenantKey = tenantId.toLowerCase().trim();
+      if (error) throw new Error(`SUPABASE_UPDATE_ERROR: ${error.message}`);
 
-            const { data: registroActual } = await supabaseServer
-                .from('catalog_cache')
-                .select('payload_json')
-                .eq('tenant_host', tenantKey)
-                .single();
+        // ⚡ Mapear actualización quirúrgica para la caché
+        const catCache = {
+            _id: data.id,
+            id: data.id,
+            _type: 'categoria',
+            tenant: tenantLimpio,
+            titulo: data.titulo,
+            seImprime: data.se_imprime,
+            slug: { _type: 'slug', current: data.slug }
+        };
 
-            if (registroActual && Array.isArray(registroActual.payload_json)) {
-                const nuevoPayload = registroActual.payload_json.map(item => {
-                    if (item?._id === categoriaId) {
-                        return {
-                            ...item,
-                            titulo: titulo,
-                            slug: { _type: 'slug', current: slug },
-                            seImprime: seImprime === true,
-                            _updatedAt: new Date().toISOString()
-                        };
-                    }
-                    return item;
-                });
+        await actualizarCacheLocal(tenantLimpio, catCache, false);
 
-                await supabaseServer
-                    .from('catalog_cache')
-                    .upsert({ 
-                        tenant_host: tenantKey, 
-                        payload_json: nuevoPayload, 
-                        updated_at: new Date().toISOString() 
-                    }, { onConflict: 'tenant_host' });
-
-                console.log(`⚡ Categoría actualizada en caliente en array plano para: ${tenantId}`);
-            } else {
-                console.warn(`⚠️ No se pudo actualizar categoría: la caché plana de ${tenantKey} no existe.`);
-            }
-        } catch (cacheError) {
-            console.warn("⚠️ Falla no-bloqueante al actualizar el catálogo desde PUT categorías:", cacheError.message);
-        }
-
-        return NextResponse.json({ ok: true, id: result._id });
+        console.log(`🔄 Categoría actualizada en Supabase y Caché [${tenantLimpio}]: ${categoriaId}`);
+        return NextResponse.json({ ok: true, id: categoriaId, item: data });
 
     } catch (error) {
         console.error('🔥 [API_PUT_CATEGORIAS_ERROR]:', error.message);
-        return NextResponse.json({ error: error.message || 'Error interno en el servidor.' }, { status: 500 });
+        return NextResponse.json({ error: error.message }, { status: 500 });
     }
 }
-// ==========================================
-// 🗑️ MÉTODO DELETE: ELIMINACIÓN SEGURA
-// ==========================================
+
+// 🗑️ DELETE: Eliminar categoría físicamente de Supabase
 export async function DELETE(request) {
     try {
         const body = await request.json();
         const { categoriaId, tenantId } = body;
+        const tenantLimpio = tenantId?.toLowerCase().trim();
 
-        // 🛡️ CONTROL DE SEGURIDAD MULTITENANT
-        if (!tenantId || !categoriaId) {
+        if (!tenantLimpio || !categoriaId) {
             return NextResponse.json({ error: 'Faltan credenciales o el ID para ejecutar el borrado.' }, { status: 400 });
         }
 
-        console.log(`🗑️ [DELETE_SANITY]: Eliminando Categoría ID ${categoriaId} del Tenant: ${tenantId}`);
+        const { error } = await supabaseServer
+            .from('categorias')
+            .delete()
+            .eq('id', categoriaId)
+            .eq('tenant', tenantLimpio);
 
-        // TU LÓGICA ORIGINAL INTACTA: Borrado atómico directo en Sanity
-        await sanityClientServer.delete(categoriaId);
-
-        // ⚡ REMOCIÓN EN CALIENTE DE LA CACHÉ (Evita peticiones masivas a Sanity)
-// ⚡ REMOCIÓN EN CALIENTE DE LA CACHÉ PLANA
-        try {
-            const { supabaseServer } = await import('@/lib/supabase');
-            const tenantKey = tenantId.toLowerCase().trim();
-
-            const { data: registroActual } = await supabaseServer
-                .from('catalog_cache')
-                .select('payload_json')
-                .eq('tenant_host', tenantKey)
-                .single();
-
-            if (registroActual && Array.isArray(registroActual.payload_json)) {
-                const nuevoPayload = registroActual.payload_json.filter(item => item?._id !== categoriaId);
-
-                await supabaseServer
-                    .from('catalog_cache')
-                    .upsert({ 
-                        tenant_host: tenantKey, 
-                        payload_json: nuevoPayload, 
-                        updated_at: new Date().toISOString() 
-                    }, { onConflict: 'tenant_host' });
-
-                console.log(`⚡ Categoría removida del array plano de la caché para: ${tenantId}`);
-            } else {
-                console.log(`ℹ️ Remoción omitida: la caché plana de ${tenantKey} no existía.`);
+        if (error) {
+            // Intercepta error de llave foránea cuando la categoría tiene productos vinculados
+            if (error.code === '23503') {
+                return NextResponse.json({ error: 'REFERRED_BY_PRODUCTS' }, { status: 400 });
             }
-        } catch (cacheError) {
-            console.warn("⚠️ Falla no-bloqueante al remover la categoría de la caché plana:", cacheError.message);
+            throw new Error(`SUPABASE_DELETE_ERROR: ${error.message}`);
         }
+
+     // ⚡ Remover categoría quirúrgicamente del JSON de caché
+        await actualizarCacheLocal(tenantLimpio, { id: categoriaId }, true);
+
+        console.log(`🗑️ Categoría eliminada de Supabase y Caché [${tenantLimpio}]: ${categoriaId}`);
         return NextResponse.json({ ok: true });
 
     } catch (error) {
         console.error('🔥 [API_DELETE_CATEGORIAS_ERROR]:', error.message);
-        return NextResponse.json({ error: error.message || 'Error interno en el servidor.' }, { status: 500 });
+        return NextResponse.json({ error: error.message }, { status: 500 });
     }
 }

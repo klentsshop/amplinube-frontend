@@ -1,7 +1,76 @@
 import { NextResponse } from 'next/server';
-import { sanityClientServer } from '@/lib/sanity';
+import { supabaseServer } from '@/lib/supabase'; // 🛡️ Persistencia directa en Postgres
 
-// ➕ 1. CREAR VENDEDOR
+// ⚡ Actualización quirúrgica atómica en la celda catalog_cache para Meseros
+async function actualizarCacheLocal(tenant, itemDoc, esEliminacion = false) {
+    if (!tenant) return;
+    const cleanTenant = tenant.toLowerCase().trim();
+    const itemId = itemDoc._id || itemDoc.id;
+
+    try {
+        const { data: cacheExistente } = await supabaseServer
+            .from('catalog_cache')
+            .select('payload_json')
+            .eq('tenant_host', cleanTenant)
+            .maybeSingle();
+
+        if (!cacheExistente?.payload_json || !Array.isArray(cacheExistente.payload_json)) return;
+
+        let arrayActualizado = [...cacheExistente.payload_json];
+
+        if (esEliminacion) {
+            arrayActualizado = arrayActualizado.filter(item => item._id !== itemId && item.id !== itemId);
+        } else {
+            let encontrado = false;
+            arrayActualizado = arrayActualizado.map(item => {
+                if (item._id === itemId || item.id === itemId) {
+                    encontrado = true;
+                    return { ...item, ...itemDoc };
+                }
+                return item;
+            });
+            if (!encontrado) arrayActualizado.push(itemDoc);
+        }
+
+        await supabaseServer
+            .from('catalog_cache')
+            .upsert({
+                tenant_host: cleanTenant,
+                payload_json: arrayActualizado,
+                updated_at: new Date().toISOString()
+            }, { onConflict: 'tenant_host' });
+
+        console.log(`⚡ Caché de mesero actualizada para [${cleanTenant}] (ID: ${itemId})`);
+    } catch (err) {
+        console.warn("⚠️ No se pudo actualizar catalog_cache para mesero:", err.message);
+    }
+}
+// 📡 GET: Obtener lista de vendedores ordenados por nombre
+export async function GET(request) {
+    try {
+        const { searchParams } = new URL(request.url);
+        const tenantId = searchParams.get('tenantId')?.toLowerCase().trim();
+
+        if (!tenantId) {
+            return NextResponse.json({ error: 'Falta el parámetro tenantId.' }, { status: 400 });
+        }
+
+        const { data, error } = await supabaseServer
+            .from('meseros')
+            .select('id, tenant, nombre, activo, ver_reporte, ver_admin, puede_cargar_gasto, ver_ventas, ver_inventario, puede_cobrar, created_at')
+            .eq('tenant', tenantId)
+            .order('nombre', { ascending: true });
+
+        if (error) throw new Error(`SUPABASE_FETCH_ERROR: ${error.message}`);
+
+        return NextResponse.json({ ok: true, data: data || [] });
+    } catch (error) {
+        console.error('🔥 [API_GET_MESEROS_ERROR]:', error.message);
+        return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+}
+
+// 🚀 POST: Crear nuevo vendedor en Supabase
 export async function POST(request) {
     try {
         const body = await request.json();
@@ -10,87 +79,60 @@ export async function POST(request) {
             verReporte, verAdmin, puedeCargarGasto, verVentas, verInventario, puedeCobrar 
         } = body;
 
-        if (!tenantId) {
-            return NextResponse.json({ error: 'Identificador de negocio ausente.' }, { status: 400 });
+        const tenantLimpio = tenantId?.toLowerCase().trim();
+
+        if (!tenantLimpio || !nombre?.trim()) {
+            return NextResponse.json({ error: 'Identificador de negocio o nombre ausente.' }, { status: 400 });
         }
 
-        const nuevoMeseroDoc = {
+        const { data, error } = await supabaseServer
+            .from('meseros')
+            .insert([{
+                tenant: tenantLimpio,
+                nombre: nombre.trim().toUpperCase(),
+                activo: activo !== false,
+                ver_reporte: Boolean(verReporte),
+                ver_admin: Boolean(verAdmin),
+                puede_cargar_gasto: Boolean(puedeCargarGasto),
+                ver_ventas: Boolean(verVentas),
+                ver_inventario: Boolean(verInventario),
+                puede_cobrar: Boolean(puedeCobrar)
+            }])
+            .select()
+            .single();
+
+        if (error) throw new Error(`SUPABASE_INSERT_ERROR: ${error.message}`);
+
+        if (error) throw new Error(`SUPABASE_INSERT_ERROR: ${error.message}`);
+
+        // ⚡ Mapear al formato unificado de mesero para el JSON de la caché
+        const meseroCache = {
+            _id: data.id,
+            id: data.id,
             _type: 'mesero',
-            nombre: nombre.trim().toUpperCase(),
-            tenant: tenantId,
-            activo: activo !== false,
-            verReporte: Boolean(verReporte),
-            verAdmin: Boolean(verAdmin),
-            puedeCargarGasto: Boolean(puedeCargarGasto),
-            verVentas: Boolean(verVentas),
-            verInventario: Boolean(verInventario),
-            puedeCobrar: Boolean(puedeCobrar)
+            tenant: tenantLimpio,
+            nombre: data.nombre,
+            activo: data.activo !== false,
+            verReporte: data.ver_reporte ?? false,
+            verAdmin: data.ver_admin ?? false,
+            puedeCargarGasto: data.puede_cargar_gasto ?? false,
+            verVentas: data.ver_ventas ?? false,
+            verInventario: data.ver_inventario ?? false,
+            puedeCobrar: data.puede_cobrar ?? false
         };
 
-        const result = await sanityClientServer.create(nuevoMeseroDoc);
+        await actualizarCacheLocal(tenantLimpio, meseroCache, false);
 
-        try {
-            const { supabaseServer } = await import('@/lib/supabase');
-            const tenantKey = tenantId.toLowerCase().trim();
+        console.log(`✅ Vendedor creado en Supabase y Caché [${tenantLimpio}]: ${data.nombre}`);
+        return NextResponse.json({ ok: true, id: data.id, item: data });
 
-            // 1. Traemos el documento de caché actual
-            const { data: registroActual } = await supabaseServer
-                .from('catalog_cache')
-                .select('payload_json')
-                .eq('tenant_host', tenantKey)
-                .single();
-
-            if (registroActual && Array.isArray(registroActual.payload_json)) {
-                // 2. Preparamos el nuevo objeto simulando la respuesta exacta de Sanity
-                const nuevoMeseroCache = {
-                    _id: result._id,
-                    _type: 'mesero',
-                    nombre: nombre.trim().toUpperCase(),
-                    tenant: tenantId,
-                    activo: activo !== false,
-                    verReporte: Boolean(verReporte),
-                    verAdmin: Boolean(verAdmin),
-                    puedeCargarGasto: Boolean(puedeCargarGasto),
-                    verVentas: Boolean(verVentas),
-                    verInventario: Boolean(verInventario),
-                    puedeCobrar: Boolean(puedeCobrar)
-                };
-
-                // 3. Lo inyectamos al inicio del array plano en memoria
-                const nuevoPayload = [nuevoMeseroCache, ...registroActual.payload_json];
-
-                // 4. Escribimos encima de la fila sin dejarla vacía en ningún milisegundo
-                await supabaseServer
-                    .from('catalog_cache')
-                    .upsert({ 
-                        tenant_host: tenantKey, 
-                        payload_json: nuevoPayload, 
-                        updated_at: new Date().toISOString() 
-                    }, { onConflict: 'tenant_host' });
-                
-                console.log(`⚡ Caché actualizado en caliente tras creación de mesero para: ${tenantId}`);
-            } else {
-                // 🔥 Inicializa el array plano directamente con el primer mesero si la caché venía vacía
-                await supabaseServer
-                    .from('catalog_cache')
-                    .upsert({ 
-                        tenant_host: tenantKey, 
-                        payload_json: [nuevoMeseroCache], 
-                        updated_at: new Date().toISOString() 
-                    }, { onConflict: 'tenant_host' });
-            }
-        } catch (cacheError) {
-            console.warn("⚠️ Falla no-bloqueante al actualizar la caché en POST meseros:", cacheError.message);
-        }
-
-        return NextResponse.json({ ok: true, item: result });
     } catch (error) {
         console.error('🔥 [API_POST_MESEROS_ERROR]:', error.message);
         return NextResponse.json({ error: error.message }, { status: 500 });
     }
 }
 
-// 🔄 2. ACTUALIZAR VENDEDOR
+// 🔄 PUT: Actualizar permisos/datos de un vendedor existente
 export async function PUT(request) {
     try {
         const body = await request.json();
@@ -99,121 +141,84 @@ export async function PUT(request) {
             verReporte, verAdmin, puedeCargarGasto, verVentas, verInventario, puedeCobrar 
         } = body;
 
-        if (!tenantId || !itemId) {
+        const tenantLimpio = tenantId?.toLowerCase().trim();
+
+        if (!tenantLimpio || !itemId) {
             return NextResponse.json({ error: 'Faltan parámetros críticos (tenantId o itemId).' }, { status: 400 });
         }
 
         const camposAActualizar = {};
         if (nombre !== undefined) camposAActualizar.nombre = nombre.trim().toUpperCase();
         if (activo !== undefined) camposAActualizar.activo = Boolean(activo);
-        if (verReporte !== undefined) camposAActualizar.verReporte = Boolean(verReporte);
-        if (verAdmin !== undefined) camposAActualizar.verAdmin = Boolean(verAdmin);
-        if (puedeCargarGasto !== undefined) camposAActualizar.puedeCargarGasto = Boolean(puedeCargarGasto);
-        if (verVentas !== undefined) camposAActualizar.verVentas = Boolean(verVentas);
-        if (verInventario !== undefined) camposAActualizar.verInventario = Boolean(verInventario);
-        if (puedeCobrar !== undefined) camposAActualizar.puedeCobrar = Boolean(puedeCobrar);
+        if (verReporte !== undefined) camposAActualizar.ver_reporte = Boolean(verReporte);
+        if (verAdmin !== undefined) camposAActualizar.ver_admin = Boolean(verAdmin);
+        if (puedeCargarGasto !== undefined) camposAActualizar.puede_cargar_gasto = Boolean(puedeCargarGasto);
+        if (verVentas !== undefined) camposAActualizar.ver_ventas = Boolean(verVentas);
+        if (verInventario !== undefined) camposAActualizar.ver_inventario = Boolean(verInventario);
+        if (puedeCobrar !== undefined) camposAActualizar.puede_cobrar = Boolean(puedeCobrar);
 
-        const result = await sanityClientServer
-            .patch(itemId)
-            .set(camposAActualizar)
-            .commit();
-try {
-            const { supabaseServer } = await import('@/lib/supabase');
-            const tenantKey = tenantId.toLowerCase().trim();
+        const { data, error } = await supabaseServer
+            .from('meseros')
+            .update(camposAActualizar)
+            .eq('id', itemId)
+            .eq('tenant', tenantLimpio)
+            .select()
+            .maybeSingle();
 
-            const { data: registroActual } = await supabaseServer
-                .from('catalog_cache')
-                .select('payload_json')
-                .eq('tenant_host', tenantKey)
-                .single();
+       if (error) throw new Error(`SUPABASE_UPDATE_ERROR: ${error.message}`);
 
-            if (registroActual && Array.isArray(registroActual.payload_json)) {
-                // 1. Mapeamos el array plano reemplazando únicamente las propiedades editadas del mesero coincidente
-                const nuevoPayload = registroActual.payload_json.map(item => {
-                    if (item?._id === itemId) {
-                        return {
-                            ...item,
-                            ...(nombre !== undefined && { nombre: nombre.trim().toUpperCase() }),
-                            ...(activo !== undefined && { activo: Boolean(activo) }),
-                            ...(verReporte !== undefined && { verReporte: Boolean(verReporte) }),
-                            ...(verAdmin !== undefined && { verAdmin: Boolean(verAdmin) }),
-                            ...(puedeCargarGasto !== undefined && { puedeCargarGasto: Boolean(puedeCargarGasto) }),
-                            ...(verVentas !== undefined && { verVentas: Boolean(verVentas) }),
-                            ...(verInventario !== undefined && { verInventario: Boolean(verInventario) }),
-                            ...(puedeCobrar !== undefined && { puedeCobrar: Boolean(puedeCobrar) })
-                        };
-                    }
-                    return item;
-                });
+        // ⚡ Mapear actualización quirúrgica para la caché
+        const meseroCache = {
+            _id: data.id,
+            id: data.id,
+            _type: 'mesero',
+            tenant: tenantLimpio,
+            nombre: data.nombre,
+            activo: data.activo !== false,
+            verReporte: data.ver_reporte ?? false,
+            verAdmin: data.ver_admin ?? false,
+            puedeCargarGasto: data.puede_cargar_gasto ?? false,
+            verVentas: data.ver_ventas ?? false,
+            verInventario: data.ver_inventario ?? false,
+            puedeCobrar: data.puede_cobrar ?? false
+        };
 
-                // 2. Guardamos la nueva lista en Supabase mediante upsert atómico
-                await supabaseServer
-                    .from('catalog_cache')
-                    .upsert({ 
-                        tenant_host: tenantKey, 
-                        payload_json: nuevoPayload, 
-                        updated_at: new Date().toISOString() 
-                    }, { onConflict: 'tenant_host' });
+        await actualizarCacheLocal(tenantLimpio, meseroCache, false);
 
-                console.log(`⚡ Caché actualizado en caliente tras modificación de mesero para: ${tenantId}`);
-            } else {
-                console.warn(`⚠️ No se pudo actualizar mesero en caliente: la caché de ${tenantKey} no existe.`);
-            }
-        } catch (cacheError) {
-            console.warn("⚠️ Falla no-bloqueante al actualizar la caché en PUT meseros:", cacheError.message);
-        }
+        console.log(`🔄 Vendedor actualizado en Supabase y Caché [${tenantLimpio}]: ${itemId}`);
+        return NextResponse.json({ ok: true, id: itemId, item: data });
 
-        return NextResponse.json({ ok: true, id: result._id });
     } catch (error) {
         console.error('🔥 [API_PUT_MESEROS_ERROR]:', error.message);
         return NextResponse.json({ error: error.message }, { status: 500 });
     }
 }
 
-// 🗑️ 3. ELIMINAR VENDEDOR
+// 🗑️ DELETE: Eliminar vendedor físicamente de Supabase
 export async function DELETE(request) {
     try {
         const body = await request.json();
         const { itemId, tenantId } = body;
+        const tenantLimpio = tenantId?.toLowerCase().trim();
 
-        if (!tenantId || !itemId) {
+        if (!tenantLimpio || !itemId) {
             return NextResponse.json({ error: 'Faltan credenciales o el ID para borrar.' }, { status: 400 });
         }
 
-          await sanityClientServer.delete(itemId);
+        const { error } = await supabaseServer
+            .from('meseros')
+            .delete()
+            .eq('id', itemId)
+            .eq('tenant', tenantLimpio);
 
-        try {
-            const { supabaseServer } = await import('@/lib/supabase');
-            const tenantKey = tenantId.toLowerCase().trim();
+        if (error) throw new Error(`SUPABASE_DELETE_ERROR: ${error.message}`);
 
-            const { data: registroActual } = await supabaseServer
-                .from('catalog_cache')
-                .select('payload_json')
-                .eq('tenant_host', tenantKey)
-                .single();
+        // ⚡ Remover mesero quirúrgicamente del JSON de la caché
+        await actualizarCacheLocal(tenantLimpio, { id: itemId }, true);
 
-            if (registroActual && Array.isArray(registroActual.payload_json)) {
-                // 1. Filtramos el array para remover al vendedor eliminado sin tocar el resto del catálogo
-                const nuevoPayload = registroActual.payload_json.filter(item => item?._id !== itemId);
-
-                // 2. Consolidamos el array resultante directamente en Supabase
-                await supabaseServer
-                    .from('catalog_cache')
-                    .upsert({ 
-                        tenant_host: tenantKey, 
-                        payload_json: nuevoPayload, 
-                        updated_at: new Date().toISOString() 
-                    }, { onConflict: 'tenant_host' });
-
-                console.log(`⚡ Mesero removido de la caché en caliente para: ${tenantId}`);
-            } else {
-                console.log(`ℹ️ Remoción omitida: la caché de ${tenantKey} ya se encontraba limpia.`);
-            }
-        } catch (cacheError) {
-            console.warn("⚠️ Falla no-bloqueante al actualizar la caché en DELETE meseros:", cacheError.message);
-        }
-
+        console.log(`🗑️ Vendedor eliminado de Supabase y Caché [${tenantLimpio}]: ${itemId}`);
         return NextResponse.json({ ok: true });
+
     } catch (error) {
         console.error('🔥 [API_DELETE_MESEROS_ERROR]:', error.message);
         return NextResponse.json({ error: error.message }, { status: 500 });

@@ -1,13 +1,6 @@
 import React, { memo, useMemo } from 'react';
 import { formatPrecioDisplay, categoriasMap } from '@/lib/utils';
 
-// 🛡️ RESOLVEDOR DE IMÁGENES SENIOR: Extrae la URL estática sin instanciar el cliente de Sanity
-const getSanityImageUrl = (imageAsset) => {
-    if (!imageAsset || !imageAsset.asset || !imageAsset.asset._ref) return null;
-    const ref = imageAsset.asset._ref; // Formato: image-assetId-dimension-ext
-    const [,, id, dimensions, ext] = ref.split('-');
-    return `https://cdn.sanity.io/images/${process.env.NEXT_PUBLIC_SANITY_PROJECT_ID}/${process.env.NEXT_PUBLIC_SANITY_DATASET}/${id}-${dimensions}.${ext}?w=300`;
-};
 // ✅ Importamos la configuración maestra para la moneda y lógica
 import { SITE_CONFIG } from '@/lib/config';
 import { Settings } from 'lucide-react';
@@ -167,9 +160,11 @@ return (
                             return;
                         }
 
-                        // Creamos un objeto simulado idéntico a la estructura de Sanity
+                        // Creamos un objeto simulado idéntico a la estructura de Supabase/Sanity
+                        const idManual = `manual_${Date.now()}`;
                         const itemSimulado = {
-                            _id: `manual_${Date.now()}`, // ID único temporal
+                            _id: idManual,
+                            id: idManual,
                             nombre: nombreManual.trim().toUpperCase(),
                             precio: Number(precioManual),
                             categoria: (categoriaActiva && categoriaActiva !== 'TODOS') ? categoriaActiva : 'MANUAL',
@@ -205,7 +200,7 @@ return (
                 {/* CONTINÚA EL RENDERIZADO DEL CATÁLOGO REAL */}
                 {platosFinales.map(plato => (
                     <div 
-    key={plato._id} 
+    key={plato.id || plato._id} 
     className={styles.productCard} 
 onClick={() => {
     // 🛡️ Preparamos el objeto con su precio formateado para el multiplicador del Modal
@@ -285,15 +280,18 @@ onClick={() => {
                         <div className={styles.contenedorMesasRapidas}>
                             <span className={styles.etiquetaMesas}>ORDENES ACTIVAS:</span>
                             <div className={styles.scrollMesas}>
-                                {ordenesActivas && ordenesActivas.map((o) => (
-                                    <button 
-                                        key={o._id} 
-                                        className={`${styles.botonMesaRapida} ${ordenActivaId === o._id ? styles.tableBtnActive : ''}`} 
-                                        onClick={() => cargarOrden(o._id)}
-                                    >
-                                        {o.mesa}
-                                    </button>
-                                ))}
+                               {ordenesActivas && ordenesActivas.map((o) => {
+                                    const oId = o.id || o._id;
+                                    return (
+                                        <button 
+                                            key={oId} 
+                                            className={`${styles.botonMesaRapida} ${ordenActivaId === oId ? styles.tableBtnActive : ''}`} 
+                                            onClick={() => cargarOrden(oId)}
+                                        >
+                                            {o.mesa}
+                                        </button>
+                                    );
+                                })}
                             </div>
                         </div>
                     )}

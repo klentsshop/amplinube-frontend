@@ -190,18 +190,19 @@ export function useOrdenHandlers({
 
         localStorage.setItem('ultimoMesero', meseroFinal);
 
-        // ✅ LÓGICA DE INVENTARIO Y MAPEO (INTACTA)
-        // ✅ POR ESTE BLOQUE (Sincroniza el costo nativo antes de enviar a Sanity):
-const platosParaGuardar = cart.map(i => {
-    const platoCatalogo = (rep || []).find(p => p._id === i._id || p.id === i._id);
+     const platosParaGuardar = cart.map(i => {
+    const pId = i.id || i._id;
+    const platoCatalogo = (rep || []).find(p => (p.id || p._id) === pId);
     return { 
-        _id: i._id,
+        _id: pId,
+        id: pId,
         _key: i._key || i.lineId || `new-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`, 
+        lineId: i.lineId || i._key,
         nombrePlato: i.nombre || i.nombrePlato, 
         cantidad: i.cantidad, 
         precioUnitario: i.precioNum,
         precioCosto: Number(platoCatalogo?.precioCosto || i.precioCosto || 0), 
-        subtotal: i.precioNum * i.cantidad,
+        subtotal: Number((i.precioNum * i.cantidad).toFixed(2)),
         comentario: normalizarParaImpresora(i.comentario),
         categoria: (i.categoria || i.categoriaPlato || i.nombreCategoria || "").toString().trim().toUpperCase(),
         seImprime: i.seImprime === true,
@@ -211,7 +212,6 @@ const platosParaGuardar = cart.map(i => {
         cantidadADescontar: i.cantidadADescontar || 0
     };
 });
-
         let datosEntrega = null;
         if (clienteActivo) {
             datosEntrega = datosEntrega = {
@@ -350,14 +350,16 @@ const platosParaGuardar = cart.map(i => {
                     transaccionId, 
                     ordenId: idParaCerrar || null,
                     platosVendidosV2: cart.map(i => {
-    // Buscamos el plato en el catálogo 'rep' usando el ID para extraer el costo real
-    const platoCatalogo = (rep || []).find(p => p._id === i._id || p.id === i._id);
+    const pId = i.id || i._id;
+    const platoCatalogo = (rep || []).find(p => (p.id || p._id) === pId);
     return { 
+        _id: pId,
+        id: pId,
         nombrePlato: i.nombre || i.nombrePlato,
         cantidad: i.cantidad, 
         precioUnitario: i.precioNum, 
         precioCosto: Number(platoCatalogo?.precioCosto || i.precioCosto || 0),
-        subtotal: i.precioNum * i.cantidad,
+        subtotal: Number((i.precioNum * i.cantidad).toFixed(2)),
         comentario: normalizarParaImpresora(i.comentario || "")
     };
 })
@@ -475,16 +477,18 @@ const sincronizarBorradoEnSanity = async (carritoFiltrado) => {
         setMensajeExito(true);
         const mesaReal = ordenMesa || ordenesActivas.find(o => o._id === ordenActivaId)?.mesa;
 
-      const platosParaSanity = carritoFiltrado.map(i => {
-    const platoCatalogo = (rep || []).find(p => p._id === i._id || p.id === i._id);
+     const platosParaSanity = carritoFiltrado.map(i => {
+    const pId = i.id || i._id;
+    const platoCatalogo = (rep || []).find(p => (p.id || p._id) === pId);
     return { 
-        _id: i._id,
+        _id: pId,
+        id: pId,
         _key: i._key || i.lineId, 
         nombrePlato: i.nombre || i.nombrePlato, 
         cantidad: Number(i.cantidad), 
         precioUnitario: Number(i.precioNum || i.precioUnitario), 
         precioCosto: Number(platoCatalogo?.precioCosto || i.precioCosto || 0),
-        subtotal: Number((i.precioNum || i.precioUnitario) * i.cantidad),
+        subtotal: Number(((i.precioNum || i.precioUnitario) * i.cantidad).toFixed(2)),
         comentario: normalizarParaImpresora(i.comentario || ""),
         categoria: (i.categoria || "").toString().trim().toUpperCase(),
         seImprime: i.seImprime === true,
@@ -494,7 +498,7 @@ const sincronizarBorradoEnSanity = async (carritoFiltrado) => {
         insumoVinculado: i.insumoVinculado || null,
         cantidadADescontar: Number(i.cantidadADescontar || 0)
     };    
-   }); 
+   });
         let datosEntrega = null;
 
         if (clienteActivo) {

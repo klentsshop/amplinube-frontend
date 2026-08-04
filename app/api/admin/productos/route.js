@@ -1,296 +1,475 @@
-import { sanityClientServer } from '@/lib/sanity'; // Importamos el cliente con permisos
 import { NextResponse } from 'next/server';
+import { supabaseServer } from '@/lib/supabase'; 
 
-// 🚀 POST: Crear nuevo producto
+// 🧹 Helper para invalidar la caché del tenant y forzar reconstrucción en el próximo GET /api/catalogo
+// ⚡ Actualización quirúrgica directo en la celda catalog_cache
+async function actualizarCacheLocal(tenant, itemDoc, esEliminacion = false) {
+    if (!tenant) return;
+    const cleanTenant = tenant.toLowerCase().trim();
+    const itemId = itemDoc._id || itemDoc.id;
+
+    try {
+        const { data: cacheExistente } = await supabaseServer
+            .from('catalog_cache')
+            .select('payload_json')
+            .eq('tenant_host', cleanTenant)
+            .maybeSingle();
+
+        if (!cacheExistente?.payload_json || !Array.isArray(cacheExistente.payload_json)) return;
+
+        let arrayActualizado = [...cacheExistente.payload_json];
+
+        if (esEliminacion) {
+            arrayActualizado = arrayActualizado.filter(item => item._id !== itemId && item.id !== itemId);
+        } else {
+            let encontrado = false;
+            arrayActualizado = arrayActualizado.map(item => {
+                if (item._id === itemId || item.id === itemId) {
+                    encontrado = true;
+                    return { ...item, ...itemDoc };
+                }
+                return item;
+            });
+            if (!encontrado) arrayActualizado.push(itemDoc);
+        }
+
+        await supabaseServer
+            .from('catalog_cache')
+            .upsert({
+                tenant_host: cleanTenant,
+                payload_json: arrayActualizado,
+                updated_at: new Date().toISOString()
+            }, { onConflict: 'tenant_host' });
+
+        console.log(`⚡ Caché actualizada quirúrgicamente para [${cleanTenant}] (ID: ${itemId})`);
+    } catch (err) {
+        console.warn("⚠️ No se pudo actualizar catalog_cache:", err.message);
+    }
+}
+// 🛡️ HELPER: Convierte el insumo_id legacy (Sanity) en el UUID nativo de Supabase
+async function resolverUuidInsumo(tenantLimpio, idOInsumoId) {
+    if (!idOInsumoId) return null;
+    const targetStr = String(idOInsumoId).trim();
+
+    const { data: insumos } = await supabaseServer
+        .from('inventarios')
+        .select('id, insumo_id')
+        .eq('tenant_id', tenantLimpio);
+
+    if (!insumos || insumos.length === 0) return null;
+
+    const hallado = insumos.find(i => String(i.id) === targetStr || String(i.insumo_id) === targetStr);
+    return hallado ? hallado.id : null;
+}
+// 📡 GET: Búsqueda dinámica y paginación rápida para el Panel Admin
+export async function GET(req) {
+    try {
+        const { searchParams } = new URL(req.url);
+        const tenantId = searchParams.get('tenantId') || searchParams.get('tenant');
+        const buscar = searchParams.get('search')?.trim() || '';
+
+        if (!tenantId || tenantId === 'undefined' || tenantId === 'null') {
+            return NextResponse.json({ ok: false, error: "Tenant ID no proporcionado o inválido" }, { status: 400 });
+        }
+
+        const tenantLimpio = tenantId.toLowerCase().trim();
+
+        // 1. Construir la consulta base en public.platos
+        let query = supabaseServer
+            .from('platos')
+            .select(`
+                id,
+                tenant,
+                nombre,
+                precio,
+                precio_costo,
+                categoria,
+                imagen,
+                es_venta_por_peso,
+                disponible,
+                controla_inventario,
+                receta_insumos,
+                codigo_balanza,
+                barcode,
+                total_ventas,
+                created_at,
+                updated_at
+            `)
+            .eq('tenant', tenantLimpio)
+            .order('nombre', { ascending: true });
+
+        // 2. 🧠 LÓGICA BÚSQUEDA DUAL: Si hay texto de búsqueda, consulta TODA la BD. Si no, solo los primeros 100.
+        if (buscar !== '') {
+            const termino = `%${buscar}%`;
+            if (/^\d+$/.test(buscar)) {
+                // Si digita un número o pasa la pistola, busca en nombre, barcode o balanza
+                query = query.or(`nombre.ilike.${termino},barcode.eq.${buscar},codigo_balanza.eq.${buscar}`);
+            } else {
+                // Búsqueda por coincidencia en texto
+                query = query.ilike('nombre', termino);
+            }
+        } else {
+            // Límite de carga inicial para evitar transferir megabytes en vano
+            query = query.limit(100);
+        }
+
+        const { data: platosDb, error: errPlatos } = await query;
+
+        if (errPlatos) {
+            throw new Error(`SUPABASE_FETCH_PLATOS_ERROR: ${errPlatos.message}`);
+        }
+
+        const platoIds = (platosDb || []).map(p => p.id);
+
+        // 3. Traer únicamente las recetas asociadas a los platos obtenidos
+        let recetasGrupales = [];
+        if (platoIds.length > 0) {
+            const { data: recetasDb } = await supabaseServer
+                .from('recetas')
+                .select('plato_id, insumo_id, cantidad')
+                .eq('tenant', tenantLimpio)
+                .in('plato_id', platoIds);
+
+            recetasGrupales = recetasDb || [];
+        }
+
+        // 4. Mapear y normalizar al formato de la interfaz de React
+        const productosNormalizados = (platosDb || []).map(p => {
+            const recetasDelPlato = recetasGrupales.filter(r => r.plato_id === p.id);
+
+            return {
+                _id: p.id,
+                id: p.id,
+                _type: 'plato',
+                tenant: p.tenant,
+                nombre: p.nombre,
+                precio: Number(p.precio || 0),
+                precioCosto: Number(p.precio_costo || 0),
+                categoria: p.categoria,
+                categoriaRef: p.categoria ? { _ref: p.categoria, _type: 'reference' } : null,
+                imagen: p.imagen ? { _type: 'image', asset: { url: p.imagen } } : null,
+                imagenUrl: p.imagen || null,
+                esVentaPorPeso: p.es_venta_por_peso === true,
+                disponible: p.disponible !== false,
+                controlaInventario: p.controla_inventario === true,
+                barcode: p.barcode || '',
+                codigoBalanza: p.codigo_balanza || '',
+                totalVentas: p.total_ventas || 0,
+                insumosReceta: recetasDelPlato.map(r => ({
+                    insumoId: r.insumo_id,
+                    cantidad: Number(r.cantidad || 1)
+                })),
+                recetaInsumos: p.receta_insumos || []
+            };
+        });
+
+        // 5. Retorno limpio con encabezados anti-caché
+        return new NextResponse(JSON.stringify(productosNormalizados), {
+            status: 200,
+            headers: {
+                'Content-Type': 'application/json',
+                'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0',
+                'Pragma': 'no-cache',
+                'Expires': '0',
+            },
+        });
+
+    } catch (error) {
+        console.error("🔥 Error consultando productos en Supabase:", error.message);
+        return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+    }
+}
+// 🚀 POST: Crear nuevo producto en Supabase
 export async function POST(req) {
     try {
         const data = await req.json();
-        
-        const docProducto = {
-            _type: 'plato',
-            nombre: data.nombre.trim(),
-            precio: Number(data.precio),
-            precioCosto: Number(data.precioCosto || 0),
-            disponible: data.disponible !== false,
-            controlaInventario: data.controlaInventario || false,
-            barcode: data.barcode || null,
-            codigoBalanza: data.codigoBalanza || null,
-            tenant: data.tenantId,
-            esVentaPorPeso: data.esVentaPorPeso === true,
-            categoria: { _type: 'reference', _ref: data.categoria },
-            
-            // 🚀 LÍNEA CORREGIDA MINUCIOSAMENTE: 
-            // Solo si data.imagen tiene contenido real, inyectamos la propiedad.
-            // Si es null o vacío, evitamos enviarlo para que Sanity no arroje error de esquema.
-            ...(data.imagen ? { imagen: data.imagen } : {}),
+        const tenantLimpio = data.tenantId?.toLowerCase().trim();
 
-           recetaInsumos: data.controlaInventario && Array.isArray(data.insumosReceta)
-           ? data.insumosReceta.map((ins, index) => ({
-           // 🚀 AGREGAMOS UN STRING ALEATORIO AL KEY
-          _key: `receta_${Date.now()}_${index}_${Math.random().toString(36).substring(2, 7)}`,
-           _type: 'itemReceta',
-          insumo: { _type: 'reference', _ref: ins.insumoId },
-        // Mapeamos 'cantidad' (del front) al nombre de propiedad del esquema ('amount' o 'cantidad')
-         amount: Number(ins.cantidad) || 1, 
-        cantidad: Number(ins.cantidad) || 1 
-      }))
-    : []
-        };
-      // USAMOS EL CLIENTE CON PERMISOS
-        const resultado = await sanityClientServer.create(docProducto);
+        if (!tenantLimpio || !data.nombre?.trim()) {
+            return NextResponse.json({ ok: false, error: "Datos incompletos (tenantId o nombre)" }, { status: 400 });
+        }
 
-        // ⚡ ACTUALIZACIÓN EN CALIENTE DE LA CACHÉ EN EL ARRAY PLANO (MATCH 100% CON TU JSON)
-        if (data.tenantId) {
-            try {
-                const { supabaseServer } = await import('@/lib/supabase');
-                const tenantKey = data.tenantId.toLowerCase().trim();
+        const urlImagen = typeof data.imagen === 'string' ? data.imagen : (data.imagen?.url || null);
 
-                // 1. Traemos la caché real desde payload_json
-                const { data: registroActual } = await supabaseServer
-                    .from('catalog_cache')
-                    .select('payload_json')
-                    .eq('tenant_host', tenantKey)
-                    .single();
+        // ✅ REEMPLAZO EN POST:
+        const recetaNormalizada = (data.insumosReceta || []).map((ins) => {
+            const idUnico = ins.insumoId || ins.insumo_id || ins.insumo?._ref;
+            return {
+                _key: `receta_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+                _type: 'itemReceta',
+                cantidad: Number(ins.cantidad) || 1,
+                amount: Number(ins.cantidad) || 1,
+                insumoId: idUnico,
+                insumo: {
+                    _ref: idUnico,
+                    _type: 'reference'
+                },
+                nombre: ins.nombre || ''
+            };
+        });
 
-                // 2. Armamos el objeto clonando la respuesta nativa de Sanity
-                // 🛡️ CIRUGÍA SÉNIOR: Extractor estático anticipado para el CDN de Sanity en POST
-                let urlDeImagenInicial = null;
-                if (data.imagen?.asset?._ref) {
-                    try {
-                        const ref = data.imagen.asset._ref;
-                        const parts = ref.split('-');
-                        if (parts.length >= 4) {
-                            const id = parts[1];
-                            const dimensions = parts[2];
-                            const ext = parts[3];
-                            urlDeImagenInicial = `https://cdn.sanity.io/images/${process.env.NEXT_PUBLIC_SANITY_PROJECT_ID}/${process.env.NEXT_PUBLIC_SANITY_DATASET}/${id}-${dimensions}.${ext}`;
-                        }
-                    } catch (e) {
-                        console.error("⚠️ Error extractor estático en POST de productos", e);
-                    }
+        const { data: productoCreado, error: dbError } = await supabaseServer
+            .from('platos')
+            .insert([{
+                tenant: tenantLimpio,
+                nombre: data.nombre.trim().toUpperCase(),
+                precio: Number(data.precio) || 0,
+                precio_costo: Number(data.precioCosto || 0),
+                categoria: data.categoria || null,
+                imagen: urlImagen,
+                es_venta_por_peso: data.esVentaPorPeso === true,
+                disponible: data.disponible !== false,
+                controla_inventario: data.controlaInventario || false,
+                receta_insumos: recetaNormalizada,
+                codigo_balanza: data.codigoBalanza?.trim() || null,
+                barcode: data.barcode?.trim() || null,
+                updated_at: new Date().toISOString()
+            }])
+            .select()
+            .single();
+
+        if (dbError) throw new Error(`SUPABASE_INSERT_ERROR: ${dbError.message}`);
+
+        // ✅ BLOQUE CORREGIDO EN POST:
+        // 2. Inserción relacional M:N en la tabla pivote public.recetas resolviendo UUIDs nativos
+        if (data.controlaInventario && Array.isArray(data.insumosReceta) && data.insumosReceta.length > 0) {
+            const filasReceta = [];
+
+            for (const ins of data.insumosReceta) {
+                const rawId = ins.insumoId || ins.insumo_id;
+                const uuidReal = await resolverUuidInsumo(tenantLimpio, rawId);
+
+                if (uuidReal) {
+                    filasReceta.push({
+                        tenant: tenantLimpio,
+                        plato_id: productoCreado.id,
+                        insumo_id: uuidReal,
+                        cantidad: Number(ins.cantidad) || 1
+                    });
                 }
+            }
 
-                const nuevoProductoCache = {
-                    _id: resultado._id,
-                    _type: 'plato',
-                    nombre: data.nombre.trim(),
-                    precio: Number(data.precio),
-                    precioCosto: Number(data.precioCosto || 0),
-                    tenant: data.tenantId,
-                    barcode: data.barcode || null,
-                    categoria: { _type: 'reference', _ref: data.categoria },
-                    ...(urlDeImagenInicial ? { imagenUrl: urlDeImagenInicial } : {}), // ⚡ Inyectada en caliente con seguridad
-                    ...(data.imagen ? { imagen: data.imagen } : {}),
-                    _createdAt: new Date().toISOString(),
-                    _updatedAt: new Date().toISOString(),
-                    disponible: data.disponible !== false,
-                    totalVentas: 0,
-                    codigoBalanza: data.codigoBalanza || null,
-                    recetaInsumos: resultado.recetaInsumos || docProducto.recetaInsumos,
-                    controlaInventario: data.controlaInventario || false,
-                    esVentaPorPeso: data.esVentaPorPeso === true
-                };
+            if (filasReceta.length > 0) {
+                const { error: errorReceta } = await supabaseServer
+                    .from('recetas')
+                    .insert(filasReceta);
 
-                if (registroActual && Array.isArray(registroActual.payload_json)) {
-                    // 3. Lo inyectamos directo en la raíz del array plano
-                    const nuevoPayload = [nuevoProductoCache, ...registroActual.payload_json];
-
-                    await supabaseServer
-                        .from('catalog_cache')
-                        .upsert({ 
-                            tenant_host: tenantKey, 
-                            payload_json: nuevoPayload, 
-                            updated_at: new Date().toISOString() 
-                        }, { onConflict: 'tenant_host' });
-                } else {
-                    // Paracaídas si el negocio es completamente nuevo
-                    await supabaseServer
-                        .from('catalog_cache')
-                        .upsert({ 
-                            tenant_host: tenantKey, 
-                            payload_json: [nuevoProductoCache], 
-                            updated_at: new Date().toISOString() 
-                        }, { onConflict: 'tenant_host' });
-                }
-                console.log(`⚡ Producto inyectado en caliente en el array plano para: ${data.tenantId}`);
-            } catch (cacheError) {
-                console.warn("⚠️ Falla no-bloqueante al actualizar el catálogo desde POST productos:", cacheError.message);
+                if (errorReceta) throw new Error(`SUPABASE_RECETAS_INSERT_ERROR: ${errorReceta.message}`);
             }
         }
 
-        return NextResponse.json({ ok: true, id: resultado._id });
+        // 3. ⚡ Actualizar la caché quirúrgicamente sin tumbarla
+        const platoCache = {
+            _id: productoCreado.id,
+            id: productoCreado.id,
+            _type: 'plato',
+            tenant: tenantLimpio,
+            nombre: productoCreado.nombre,
+            precio: productoCreado.precio,
+            precioCosto: productoCreado.precio_costo,
+            disponible: productoCreado.disponible,
+            barcode: productoCreado.barcode,
+            codigoBalanza: productoCreado.codigo_balanza,
+            imagenUrl: urlImagen,
+            imagen: urlImagen ? { _type: 'image', asset: { url: urlImagen } } : null,
+            categoria: { _ref: productoCreado.categoria, _type: 'reference' },
+            recetaInsumos: productoCreado.receta_insumos || [],
+            esVentaPorPeso: productoCreado.es_venta_por_peso,
+            controlaInventario: productoCreado.controla_inventario,
+            totalVentas: 0
+        };
+
+        await actualizarCacheLocal(tenantLimpio, platoCache, false);
+
+        console.log(`✅ Producto y Receta registrados en Supabase [${tenantLimpio}]: ${productoCreado.nombre}`);
+        return NextResponse.json({ ok: true, id: productoCreado.id, item: productoCreado });
     } catch (error) {
-        console.error("Error en POST:", error);
+        console.error("🔥 Error en POST de productos:", error);
         return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
     }
 }
 
-// 🔄 PUT: Actualizar producto existente
+// 🔄 PUT: Actualizar producto existente en Supabase
+// 🔄 PUT: Actualizar producto existente en Supabase con Auto-Limpieza de Storage
 export async function PUT(req) {
     try {
         const data = await req.json();
-        if (!data.productoId) throw new Error("Falta productoId");
+        if (!data.productoId) throw new Error("Falta el parámetro productoId");
 
-        // 🧠 Construimos minuciosamente la estructura base dinámica
+        const tenantLimpio = data.tenantId?.toLowerCase().trim();
+
+        // 🛡️ 1. CONSULTA PREVIA: Traemos la foto actual guardada en BD antes de actualizarla
+        const { data: platoActual } = await supabaseServer
+            .from('platos')
+            .select('imagen')
+            .eq('id', data.productoId)
+            .eq('tenant', tenantLimpio)
+            .maybeSingle();
+
+        const imagenViejaBD = platoActual?.imagen || null;
+
+        // Normalizar receta
+        const recetaNormalizada = (data.insumosReceta || []).map((ins) => {
+            const idUnico = ins.insumoId || ins.insumo_id || ins.insumo?._ref;
+            return {
+                _key: `receta_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+                _type: 'itemReceta',
+                cantidad: Number(ins.cantidad) || 1,
+                amount: Number(ins.cantidad) || 1,
+                insumoId: idUnico,
+                insumo: {
+                    _ref: idUnico,
+                    _type: 'reference'
+                },
+                nombre: ins.nombre || ''
+            };
+        });
+
         const camposAActualizar = {
-            nombre: data.nombre.trim(),
-            precio: Number(data.precio),
-            precioCosto: Number(data.precioCosto || 0),
-            categoria: { _type: 'reference', _ref: data.categoria },
-            disponible: data.disponible,
-            controlaInventario: data.controlaInventario,
-            barcode: data.barcode,
-            codigoBalanza: data.codigoBalanza,
-            esVentaPorPeso: data.esVentaPorPeso === true,
-            recetaInsumos: data.controlaInventario && Array.isArray(data.insumosReceta)
-            ? data.insumosReceta.map((ins, index) => ({
-           // 🚀 LLAVE ULTRA ÚNICA TAMBIÉN AL ACTUALIZAR
-           _key: `receta_${Date.now()}_${index}_${Math.random().toString(36).substring(2, 7)}`,
-           _type: 'itemReceta',
-            insumo: { _type: 'reference', _ref: ins.insumoId },
-            amount: Number(ins.cantidad) || 1,
-            cantidad: Number(ins.cantidad) || 1
-            }))
-          : []
+            nombre: data.nombre.trim().toUpperCase(),
+            precio: Number(data.precio) || 0,
+            precio_costo: Number(data.precioCosto || 0),
+            disponible: data.disponible !== false,
+            controla_inventario: data.controlaInventario || false,
+            barcode: data.barcode?.trim() || null,
+            codigo_balanza: data.codigoBalanza?.trim() || null,
+            es_venta_por_peso: data.esVentaPorPeso === true,
+            receta_insumos: recetaNormalizada,
+            updated_at: new Date().toISOString()
         };
 
-        // 🚀 LÍNEA CORREGIDA MINUCIOSAMENTE:
-        // Solo si el usuario seleccionó una imagen nueva, se añade al objeto de actualización.
-        // Si no se tocó la imagen, preservamos intacta la que ya estaba guardada en Sanity.
-         if (data.imagen?.asset?._ref) {
-            camposAActualizar.imagen = data.imagen;
-        } else {
-            delete camposAActualizar.imagen; // 🔥 Remoción segura: Sanity no tocará la foto existente
+        if (data.categoria) {
+            camposAActualizar.categoria = data.categoria;
         }
 
-        // USAMOS EL CLIENTE CON PERMISOS PARA CONFIRMAR EL CAMBIO
-        await sanityClientServer.patch(data.productoId)
-            .set(camposAActualizar)
-            .commit();
+        let nuevaImagenUrl = null;
+        if (data.imagen !== undefined && data.imagen !== null && data.imagen !== '') {
+            nuevaImagenUrl = typeof data.imagen === 'string' ? data.imagen : (data.imagen?.url || null);
+            camposAActualizar.imagen = nuevaImagenUrl;
+        }
 
-        // ⚡ ACTUALIZACIÓN EN CALIENTE DE LA CACHÉ EN ARRAY PLANO
-        if (data.tenantId) {
-            try {
-                const { supabaseServer } = await import('@/lib/supabase');
-                const tenantKey = data.tenantId.toLowerCase().trim();
+        // 2. Actualizar datos base del plato en public.platos
+        const { data: productoActualizado, error: dbError } = await supabaseServer
+            .from('platos')
+            .update(camposAActualizar)
+            .eq('id', data.productoId)
+            .eq('tenant', tenantLimpio)
+            .select()
+            .maybeSingle();
 
-                const { data: registroActual } = await supabaseServer
-                    .from('catalog_cache')
-                    .select('payload_json')
-                    .eq('tenant_host', tenantKey)
-                    .single();
+        if (dbError) throw new Error(`SUPABASE_UPDATE_ERROR: ${dbError.message}`);
 
-                     if (registroActual && Array.isArray(registroActual.payload_json)) {
-                    // Mapeamos el array plano buscando por _id directo en la raíz del array
-                    const nuevoPayload = registroActual.payload_json.map(item => {
-                        if (item?._id === data.productoId) {
-                            let nuevaUrlDeImagen = item.imagenUrl; // Por defecto hereda la URL vieja
-                            let nuevoNodoImagen = item.imagen;     // Por defecto hereda el nodo viejo
+        // 🗑️ 3. AUTO-LIMPIEZA DE STORAGE: Si la foto cambió y existía una anterior, la borramos
+        if (imagenViejaBD && nuevaImagenUrl && imagenViejaBD !== nuevaImagenUrl) {
+            if (imagenViejaBD.includes('/storage/v1/object/public/productos/')) {
+                try {
+                    // Extrae la ruta interna (ej: "demo/1785967..." o "platos/1785967...")
+                    const rutaRelativa = imagenViejaBD.split('/productos/')[1];
+                    if (rutaRelativa) {
+                        const { error: errStorage } = await supabaseServer
+                            .storage
+                            .from('productos')
+                            .remove([decodeURIComponent(rutaRelativa)]);
 
-                            // Solo recalculamos si el cliente realmente envió un archivo nuevo de imagen
-                            // 🚀 PARCHE EN CALIENTE RESILIENTE (Evita descalces de destructuración)
-                            if (data.imagen?.asset?._ref) {
-                                nuevoNodoImagen = data.imagen;
-                                try {
-                                    const ref = data.imagen.asset._ref;
-                                    const parts = ref.split('-');
-                                    if (parts.length >= 4) {
-                                        const id = parts[1];
-                                        const dimensions = parts[2];
-                                        const ext = parts[3];
-                                        nuevaUrlDeImagen = `https://cdn.sanity.io/images/${process.env.NEXT_PUBLIC_SANITY_PROJECT_ID}/${process.env.NEXT_PUBLIC_SANITY_DATASET}/${id}-${dimensions}.${ext}`;
-                                    }
-                                } catch (e) {
-                                    console.error("⚠️ Error extractor estático en PUT de productos", e);
-                                }
-                            }
-
-                            return {
-                                ...item,
-                                nombre: data.nombre.trim(),
-                                precio: Number(data.precio),
-                                precioCosto: Number(data.precioCosto || 0),
-                                categoria: { _type: 'reference', _ref: data.categoria },
-                                disponible: data.disponible,
-                                controlaInventario: data.controlaInventario,
-                                barcode: data.barcode,
-                                codigoBalanza: data.codigoBalanza,
-                                recetaInsumos: camposAActualizar.recetaInsumos,
-                                esVentaPorPeso: data.esVentaPorPeso === true,
-                                imagen: nuevoNodoImagen, // 🛡️ Hidratado por arrastre (conserva o actualiza)
-                                imagenUrl: nuevaUrlDeImagen, // 🛡️ Hidratado por arrastre (conserva o actualiza)
-                                _updatedAt: new Date().toISOString(),
-                            };
+                        if (errStorage) {
+                            console.warn("⚠️ Error eliminando archivo en Storage:", errStorage.message);
+                        } else {
+                            console.log(`🗑️ Foto previa [${rutaRelativa}] eliminada exitosamente del bucket productos.`);
                         }
-                        return item;
-                    });
-
-                    await supabaseServer
-                        .from('catalog_cache')
-                        .upsert({ 
-                            tenant_host: tenantKey, 
-                            payload_json: nuevoPayload, 
-                            updated_at: new Date().toISOString() 
-                        }, { onConflict: 'tenant_host' });
-                    
-                    console.log(`⚡ Producto actualizado en caliente en array plano para: ${data.tenantId}`);
-                } else {
-                    console.warn(`⚠️ No se pudo actualizar producto: la caché plana de ${tenantKey} no existe.`);
+                    }
+                } catch (errClean) {
+                    console.warn("⚠️ No se pudo procesar el borrado de la foto anterior:", errClean.message);
                 }
-            } catch (cacheError) {
-                console.warn("⚠️ Falla no-bloqueante al actualizar el catálogo desde PUT productos:", cacheError.message);
             }
         }
 
-        return NextResponse.json({ ok: true });
+        // 4. Estrategia Atómica: Delete + Insert sobre public.recetas
+        const { error: deleteRecetaErr } = await supabaseServer
+            .from('recetas')
+            .delete()
+            .eq('plato_id', data.productoId)
+            .eq('tenant', tenantLimpio);
+
+        if (deleteRecetaErr) throw new Error(`SUPABASE_RECETAS_DELETE_ERROR: ${deleteRecetaErr.message}`);
+
+        if (data.controlaInventario && Array.isArray(data.insumosReceta) && data.insumosReceta.length > 0) {
+            const filasReceta = [];
+
+            for (const ins of data.insumosReceta) {
+                const rawId = ins.insumoId || ins.insumo_id;
+                const uuidReal = await resolverUuidInsumo(tenantLimpio, rawId);
+
+                if (uuidReal) {
+                    filasReceta.push({
+                        tenant: tenantLimpio,
+                        plato_id: data.productoId,
+                        insumo_id: uuidReal,
+                        cantidad: Number(ins.cantidad) || 1
+                    });
+                }
+            }
+
+            if (filasReceta.length > 0) {
+                const { error: insertRecetaErr } = await supabaseServer
+                    .from('recetas')
+                    .insert(filasReceta);
+
+                if (insertRecetaErr) throw new Error(`SUPABASE_RECETAS_REINSERT_ERROR: ${insertRecetaErr.message}`);
+            }
+        }
+
+        // 5. ⚡ Actualizar la caché quirúrgicamente
+        const platoCache = {
+            _id: productoActualizado.id,
+            id: productoActualizado.id,
+            _type: 'plato',
+            tenant: tenantLimpio,
+            nombre: productoActualizado.nombre,
+            precio: productoActualizado.precio,
+            precioCosto: productoActualizado.precio_costo,
+            disponible: productoActualizado.disponible,
+            barcode: productoActualizado.barcode,
+            codigoBalanza: productoActualizado.codigo_balanza,
+            imagenUrl: productoActualizado.imagen,
+            imagen: productoActualizado.imagen ? { _type: 'image', asset: { url: productoActualizado.imagen } } : null,
+            categoria: { _ref: productoActualizado.categoria, _type: 'reference' },
+            recetaInsumos: productoActualizado.receta_insumos || [],
+            esVentaPorPeso: productoActualizado.es_venta_por_peso,
+            controlaInventario: productoActualizado.controla_inventario
+        };
+
+        await actualizarCacheLocal(tenantLimpio, platoCache, false);
+
+        console.log(`✅ Producto y Receta actualizados en Supabase [${tenantLimpio}]: ${data.productoId}`);
+        return NextResponse.json({ ok: true, item: productoActualizado });
     } catch (error) {
-        console.error("Error en PUT:", error);
+        console.error("🔥 Error en PUT de productos:", error);
         return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
     }
 }
-// 🗑️ DELETE: Eliminar producto de forma segura en Sanity
+// 🗑️ DELETE: Eliminar producto físicamente de Supabase
 export async function DELETE(req) {
     try {
         const data = await req.json();
         
-        if (!data.productoId) {
-            return NextResponse.json({ ok: false, error: "Falta el parámetro productoId" }, { status: 400 });
+        if (!data.productoId || !data.tenantId) {
+            return NextResponse.json({ ok: false, error: "Falta productoId o tenantId" }, { status: 400 });
         }
-        // 🛡️ Conexión directa a Sanity usando el token con permisos plenos de escritura
-        await sanityClientServer.delete(data.productoId);
 
-        // ⚡ REMOCIÓN EN CALIENTE DE LA CACHÉ PLANA
-        if (data.tenantId) {
-            try {
-                const { supabaseServer } = await import('@/lib/supabase');
-                const tenantKey = data.tenantId.toLowerCase().trim();
+        const tenantLimpio = data.tenantId.toLowerCase().trim();
 
-                const { data: registroActual } = await supabaseServer
-                    .from('catalog_cache')
-                    .select('payload_json')
-                    .eq('tenant_host', tenantKey)
-                    .single();
+        const { error: dbError } = await supabaseServer
+            .from('platos')
+            .delete()
+            .eq('id', data.productoId)
+            .eq('tenant', tenantLimpio);
 
-                if (registroActual && Array.isArray(registroActual.payload_json)) {
-                    // Filtramos directamente sobre la raíz del array plano para remover el _id del plato
-                    const nuevoPayload = registroActual.payload_json.filter(item => item?._id !== data.productoId);
+        if (dbError) throw new Error(`SUPABASE_DELETE_ERROR: ${dbError.message}`);
 
-                    await supabaseServer
-                        .from('catalog_cache')
-                        .upsert({ 
-                            tenant_host: tenantKey, 
-                            payload_json: nuevoPayload, 
-                            updated_at: new Date().toISOString() 
-                        }, { onConflict: 'tenant_host' });
-                    
-                    console.log(`⚡ Producto removido del array plano de la caché para: ${data.tenantId}`);
-                } else {
-                    console.log(`ℹ️ Remoción omitida: la caché plana de ${tenantKey} no existía.`);
-                }
-            } catch (cacheError) {
-                console.warn("⚠️ Falla no-bloqueante al remover el producto de la caché plana:", cacheError.message);
-            }
-        }
+       // ⚡ Remover producto del JSON de caché quirúrgicamente
+        await actualizarCacheLocal(tenantLimpio, { id: data.productoId }, true);
+
+        console.log(`🗑️ Producto eliminado de Supabase [${tenantLimpio}]: ${data.productoId}`);
         return NextResponse.json({ ok: true });
     } catch (error) {
         console.error("🔥 Error en DELETE de productos:", error);

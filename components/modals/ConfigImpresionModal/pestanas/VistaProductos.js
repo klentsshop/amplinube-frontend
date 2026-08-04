@@ -5,10 +5,18 @@ import { PlusCircle } from 'lucide-react';
 export default function VistaProductos({
     nuevoPlato, setNuevoPlato, categorias, handleCrearProducto, guardando, 
     setPestanaActiva, listaProductosCompletas, busquedaProd, setBusquedaProd,
-    listaInventario, activarEdicionProducto, editandoProductoId, cancelarEdicionProducto, subirImagenASanity,
+    listaInventario, activarEdicionProducto, editandoProductoId, cancelarEdicionProducto, subirImagenASupabase: subirImagen,
     handleBorrarProducto, tenantId
 }) {
+    
     const [imagen, setImagen] = useState(null);
+    React.useEffect(() => {
+        if (nuevoPlato?.imagen) {
+            setEstadoImagen("🖼️ Imagen guardada");
+        } else {
+            setEstadoImagen("");
+        }
+    }, [nuevoPlato?.imagen, editandoProductoId]);
     const fileInputRef = useRef(null);
     const [estadoImagen, setEstadoImagen] = useState('');
     const timerBusquedaRef = useRef(null);
@@ -88,7 +96,7 @@ export default function VistaProductos({
     </div>
 </div>
 
-{/* 📐 FILA 1B: COSTO Y CATEGORÍA (Diseño responsive 50/50 justo abajo) */}
+               {/* 📐 FILA 1B: COSTO Y CATEGORÍA (Diseño responsive 50/50 justo abajo) */}
 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '2px' }}>
     <div>
         <label style={{ fontSize: '0.7rem', fontWeight: 'bold', color: '#6b7280', display: 'block', marginBottom: '4px' }}>Precio Costo ($)</label>
@@ -96,9 +104,16 @@ export default function VistaProductos({
     </div>
     <div>
         <label style={{ fontSize: '0.7rem', fontWeight: 'bold', color: '#6b7280', display: 'block', marginBottom: '4px' }}>Categoría</label>
-        <select value={nuevoPlato.categoria} onChange={(e) => setNuevoPlato({...nuevoPlato, categoria: e.target.value})} style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #ccc', fontSize: '0.9rem', outline: 'none' }}>
+        <select 
+            value={nuevoPlato.categoria || ''} 
+            onChange={(e) => setNuevoPlato({...nuevoPlato, categoria: e.target.value})} 
+            style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #ccc', fontSize: '0.9rem', outline: 'none' }}
+        >
             <option value="">Categoría...</option>
-            {categorias.map(c => <option key={c._id} value={c._id}>{c.titulo}</option>)}
+            {categorias.map(c => {
+                const catId = String(c.id || c._id || c.categoria_id || '');
+                return <option key={catId} value={catId}>{c.titulo || c.nombre}</option>;
+            })}
         </select>
     </div>
 </div>
@@ -113,30 +128,41 @@ export default function VistaProductos({
                         <label style={{ fontSize: '0.7rem', fontWeight: 'bold', color: '#6b7280', display: 'block', marginBottom: '4px' }}>Balanza (PLU)</label>
                         <input type="text" maxLength={5} placeholder="Ej: 00123" value={nuevoPlato.codigoBalanza || ''} onChange={(e) => setNuevoPlato({...nuevoPlato, codigoBalanza: e.target.value})} style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #ccc', fontSize: '0.9rem', outline: 'none' }} />
                     </div>
-                    <div>
-                        <label style={{ fontSize: '0.7rem', fontWeight: 'bold', color: '#6b7280', display: 'block', marginBottom: '4px' }}>Foto Producto</label>
-                        <input 
-                            ref={fileInputRef}
-                            type="file" 
-                            accept="image/*"
-                            onChange={async (e) => {
-                                const file = e.target.files[0];
-                                if (file) {
-                                    setEstadoImagen("⏳ Subiendo..."); 
-                                    const imagenRef = await subirImagenASanity(file);
-                                    if (imagenRef) {
-                                        setNuevoPlato({...nuevoPlato, imagen: imagenRef});
-                                        setEstadoImagen("✅ Lista."); 
-                                    } else {
-                                        setEstadoImagen("❌ Error.");
-                                        if (fileInputRef.current) fileInputRef.current.value = "";
-                                    }
-                                }
-                            }}
-                            style={{ width: '100%', padding: '6px', borderRadius: '6px', border: '1px solid #e5e7eb', fontSize: '0.8rem', backgroundColor: 'white' }} 
-                        />
-                    </div>
-                </div>
+                      <div>
+    <label style={{ fontSize: '0.7rem', fontWeight: 'bold', color: '#6b7280', display: 'block', marginBottom: '4px' }}>Foto Producto</label>
+    <input 
+        ref={fileInputRef}
+        type="file" 
+        accept="image/*"
+        onChange={async (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                setEstadoImagen("⏳ Subiendo..."); 
+                try {
+                    // 🛡️ Soporte híbrido: Busca la función ejecutable en subirImagen o subirImagenASupabase
+                    const fnSubida = typeof subirImagen === 'function' ? subirImagen : (typeof subirImagenASupabase === 'function' ? subirImagenASupabase : null);
+                    
+                    const urlPublica = fnSubida ? await fnSubida(file) : null;
+
+                    if (urlPublica) {
+                        const urlLimpia = typeof urlPublica === 'string' ? urlPublica : (urlPublica.asset || urlPublica.url);
+                        setNuevoPlato(prev => ({ ...prev, imagen: urlLimpia }));
+                        setEstadoImagen("✅ Lista."); 
+                    } else {
+                        setEstadoImagen("❌ Error al subir.");
+                        if (fileInputRef.current) fileInputRef.current.value = "";
+                    }
+                } catch (err) {
+                    console.error("🔥 Error al procesar imagen:", err);
+                    setEstadoImagen("❌ Error.");
+                    if (fileInputRef.current) fileInputRef.current.value = "";
+                }
+            }
+        }}
+        style={{ width: '100%', padding: '6px', borderRadius: '6px', border: '1px solid #e5e7eb', fontSize: '0.8rem', backgroundColor: 'white' }} 
+    />
+</div>
+                                    </div>
 
                 {/* INDICADOR VISUAL TEXTUAL DINÁMICO */}
                 {estadoImagen && (
@@ -378,45 +404,51 @@ export default function VistaProductos({
                             <th style={{ padding: '10px', width: '50px', textAlign: 'center' }}></th>
                         </tr>
                     </thead>
+                  
                     <tbody>
-    {productosFiltrados.map(p => (
-        <tr key={p._id} onClick={() => {
-            const recetaNormalizada = (p.recetaInsumos || []).map(item => {
-                const idInsumo = item.insumo?._ref || item.insumoId;
-                const coincidencia = listaInventario.find(i => i._id === idInsumo || i.id === idInsumo || i.insumo_id === idInsumo);
+    {productosFiltrados.map(p => {
+        const idProducto = p.id || p._id;
+        return (
+            <tr key={idProducto} onClick={() => {
+                // 🧠 Soporte híbrido: Lee el arreglo relacional 'recetas' de Supabase o 'recetaInsumos' de Sanity
+                const fuenteReceta = Array.isArray(p.recetas) ? p.recetas : (p.recetaInsumos || []);
                 
-                return {
-                    insumoId: idInsumo,
-                    cantidad: item.cantidad || item.amount || 1,
-                    nombre: coincidencia ? coincidencia.nombre : 'Insumo guardado',
-                    stockActual: coincidencia ? (coincidencia.stockActual ?? coincidencia.stock_actual ?? 0) : 0
-                };
-            });
+                const recetaNormalizada = fuenteReceta.map(item => {
+                    const idInsumo = item.insumo_id || item.insumoId || item.insumo?._ref;
+                    const coincidencia = listaInventario.find(i => i.id === idInsumo || i.insumo_id === idInsumo || i._id === idInsumo);
+                    
+                    return {
+                        insumoId: idInsumo,
+                        cantidad: Number(item.cantidad) || 1,
+                        nombre: coincidencia ? coincidencia.nombre : 'Insumo guardado',
+                        stockActual: coincidencia ? (coincidencia.stock_actual ?? coincidencia.stockActual ?? 0) : 0
+                    };
+                });
 
-         activarEdicionProducto({ ...p, insumosReceta: recetaNormalizada });
-            
-            const inputReceta = document.getElementById('buscador-insumo-receta');
-            if (inputReceta) inputReceta.value = "";
-            setSubPestana('formulario'); // 🎯 VIAJE AUTOMÁTICO: Manda al usuario al formulario al tocar la fila
-        }} style={{ borderBottom: '1px solid #e5e7eb', cursor: 'pointer' }}>
-            <td style={{ padding: '10px', fontWeight: '500', color: '#111827', textTransform: 'uppercase' }}>{p.nombre}</td>
-            <td style={{ padding: '10px', textAlign: 'right', fontWeight: 'bold', color: '#059669' }}>${Number(p.precio || 0).toLocaleString('es-CO')}</td>
-            {/* 🗑️ BOTÓN DE DESTRUCCIÓN DIRECTA */}
-            <td style={{ padding: '10px', textAlign: 'center' }}>
-                <button 
-                    onClick={(e) => { 
-                        e.stopPropagation(); // 🛡️ Evita que se abra el formulario de edición al borrar
-                        if (confirm(`¿Seguro que deseas eliminar el producto "${p.nombre}"?`)) {
-                            handleBorrarProducto(p._id); 
-                        }
-                    }} 
-                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', fontSize: '1rem' }}
-                >
-                    🗑️
-                </button>
-            </td>
-        </tr>
-    ))}
+                activarEdicionProducto({ ...p, insumosReceta: recetaNormalizada });
+                
+                const inputReceta = document.getElementById('buscador-insumo-receta');
+                if (inputReceta) inputReceta.value = "";
+                setSubPestana('formulario');
+            }} style={{ borderBottom: '1px solid #e5e7eb', cursor: 'pointer' }}>
+                <td style={{ padding: '10px', fontWeight: '500', color: '#111827', textTransform: 'uppercase' }}>{p.nombre}</td>
+                <td style={{ padding: '10px', textAlign: 'right', fontWeight: 'bold', color: '#059669' }}>${Number(p.precio || 0).toLocaleString('es-CO')}</td>
+                <td style={{ padding: '10px', textAlign: 'center' }}>
+                    <button 
+                        onClick={(e) => { 
+                            e.stopPropagation();
+                            if (confirm(`¿Seguro que deseas eliminar el producto "${p.nombre}"?`)) {
+                                handleBorrarProducto(idProducto); 
+                            }
+                        }} 
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', fontSize: '1rem' }}
+                    >
+                        🗑️
+                    </button>
+                </td>
+            </tr>
+        );
+    })}
           </tbody>
                 </table>
             </div>

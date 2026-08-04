@@ -46,20 +46,25 @@ export default function VistaCategorias({
 
             <label style={{ display: 'block', fontWeight: 'bold', fontSize: '0.8rem', color: '#374151', marginBottom: '8px', textTransform: 'uppercase' }}>Categorías del Negocio</label>
             <div style={{ maxHeight: '140px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '6px', paddingRight: '4px' }}>
-                {listaCategoriasCompletas.map(cat => (
-                    <div key={cat._id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px', borderRadius: '8px', border: '1px solid #f3f4f6', backgroundColor: '#fff' }}>
-                        <div style={{ display: 'flex', flexDirection: 'column' }}>
-                            <span style={{ fontWeight: '600', color: '#1f2937', fontSize: '0.9rem' }}>{cat.titulo}</span>
-                            <span style={{ fontSize: '0.7rem', color: cat.seImprime ? '#10b981' : '#ef4444', fontWeight: 'bold' }}>
-                                {cat.seImprime ? '🖨️ SE IMPRIME' : '🚫 NO IMPRIME'}
-                            </span>
+                {listaCategoriasCompletas.map(cat => {
+                    const idCat = cat.id || cat._id;
+                    const imprime = cat.se_imprime ?? cat.seImprime ?? true;
+
+                    return (
+                        <div key={idCat} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px', borderRadius: '8px', border: '1px solid #f3f4f6', backgroundColor: '#fff' }}>
+                            <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                <span style={{ fontWeight: '600', color: '#1f2937', fontSize: '0.9rem' }}>{cat.titulo}</span>
+                                <span style={{ fontSize: '0.7rem', color: imprime ? '#10b981' : '#ef4444', fontWeight: 'bold' }}>
+                                    {imprime ? '🖨️ SE IMPRIME' : '🚫 NO IMPRIME'}
+                                </span>
+                            </div>
+                            <div style={{ display: 'flex', gap: '6px' }}>
+                                <button onClick={() => activarEdicion(cat)} style={{ border: 'none', background: '#f3f4f6', color: '#4b5563', padding: '6px 10px', borderRadius: '6px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 'bold' }}>✏️</button>
+                                <button onClick={() => handleEliminarCategoria(idCat, cat.titulo)} style={{ border: 'none', background: '#fef2f2', color: '#ef4444', padding: '6px 10px', borderRadius: '6px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 'bold' }}>🗑️</button>
+                            </div>
                         </div>
-                        <div style={{ display: 'flex', gap: '6px' }}>
-                            <button onClick={() => activarEdicion(cat)} style={{ border: 'none', background: '#f3f4f6', color: '#4b5563', padding: '6px 10px', borderRadius: '6px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 'bold' }}>✏️</button>
-                            <button onClick={() => handleEliminarCategoria(cat._id, cat.titulo)} style={{ border: 'none', background: '#fef2f2', color: '#ef4444', padding: '6px 10px', borderRadius: '6px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 'bold' }}>🗑️</button>
-                        </div>
-                    </div>
-                ))}
+                    );
+                })}
                 {listaCategoriasCompletas.length === 0 && (
                     <p style={{ fontSize: '0.85rem', color: '#9ca3af', textAlign: 'center', margin: '10px 0' }}>No hay categorías creadas aún.</p>
                 )}

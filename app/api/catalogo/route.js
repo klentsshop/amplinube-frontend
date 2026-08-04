@@ -2,157 +2,158 @@ export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 import { NextResponse } from 'next/server';
 import { createClient } from '@sanity/client';
-import { supabaseServer } from '@/lib/supabase'; // 🛡️ CIRUGÍA 1: Importación oficial corregida
-import imageUrlBuilder from '@sanity/image-url'; // 🚀 SENIOR: Constructor de imágenes oficial
+import { supabaseServer } from '@/lib/supabase';
 
-// 🔌 Inicialización limpia de Sanity con control de versionamiento
+// 🔌 Client de Sanity residual para PINes, Estaciones y Negocio
 const sanityClient = createClient({
     projectId: process.env.NEXT_PUBLIC_SANITY_PROJECT_ID,
     dataset: process.env.NEXT_PUBLIC_SANITY_DATASET,
-    useCdn: false, // 🛡️ Garantiza consistencia absoluta en el Cache Miss
+    useCdn: false,
     apiVersion: '2026-03-01',
     token: process.env.SANITY_API_TOKEN
 });
 
-// 🚀 SENIOR: Inicializamos el constructor de imágenes en el backend
-const builder = imageUrlBuilder(sanityClient);
-
-/**
- * 🛰️ EXTRACTOR DE TENANT LIMPIO (Espejo del comportamiento de lib/config.js)
- */
 const extractTenantAlias = (hostHeader) => {
-    if (!hostHeader) return process.env.NEXT_PUBLIC_TENANT_ID || "demo";
-
-    // Separamos el host del puerto (ej: localhost:3000 -> localhost)
+    if (!hostHeader) return (process.env.NEXT_PUBLIC_TENANT_ID || "demo").toLowerCase().trim();
     const hostname = hostHeader.split(':')[0].toLowerCase().trim();
 
-    // 1. Aislamiento para entorno de desarrollo local
     if (hostname === 'localhost' || hostname === '127.0.0.1') {
         return (process.env.NEXT_PUBLIC_TENANT_ID || "demo").toLowerCase().trim();
     }
-
-    // 2. Blindaje para URLs técnicas de Netlify (ej: rama--proyecto.netlify.app)
     if (hostname.includes('--')) {
-        const parts = hostname.split('--');
+        return hostname.split('--')[0].toLowerCase().trim();
+    }
+    const parts = hostname.split('.');
+    if (parts.length >= 3 && !['www', 'app', 'api'].includes(parts[0])) {
         return parts[0].toLowerCase().trim();
     }
-
-    // 3. Extracción estricta del subdominio en producción (ej: talanquera.sociopos.com)
-    const parts = hostname.split('.');
-    if (parts.length >= 3) {
-        const subdomain = parts[0];
-        // Evitamos falsos positivos con subdominios técnicos globales
-        if (subdomain !== 'www' && subdomain !== 'app' && subdomain !== 'api') {
-            return subdomain.toLowerCase().trim();
-        }
-    }
-
     return (process.env.NEXT_PUBLIC_TENANT_ID || "demo").toLowerCase().trim();
 };
 
 export async function GET(request) {
     try {
-        // 🎯 Capturamos el Host Header e inmediatamente lo sanitizamos al Alias oficial
         const hostHeader = request.headers.get('host') || '';
         const tenantAlias = extractTenantAlias(hostHeader);
 
-        console.log(`🛡️ Escudo procesando petición para el Tenant: [${tenantAlias}]`);
+        console.log(`🛡️ Escudo procesando petición para Tenant: [${tenantAlias}]`);
 
-        // 🛡️ BÚNKER PERSISTENTE: CIRUGÍA 2 -> Usamos supabaseServer
+        // 1. LECTURA RÁPIDA DEL BÚNKER (Cache HIT $0 Impacto)
         const { data: cacheExistente, error: errCache } = await supabaseServer
             .from('catalog_cache')
             .select('payload_json')
             .eq('tenant_host', tenantAlias)
-            .maybeSingle(); // 💡 Senior Tip: maybeSingle() evita lanzar excepciones ruidosas si no existe el registro
+            .maybeSingle();
 
-        // 💸 IMPACTO CERO ($0): Si el registro en piedra existe, se sirve de inmediato.
-        if (cacheExistente && !errCache) {
+        if (cacheExistente && !errCache && Array.isArray(cacheExistente.payload_json) && cacheExistente.payload_json.length > 0) {
             return NextResponse.json(cacheExistente.payload_json, {
                 headers: { 'X-Cache-Status': 'HIT' }
             });
         }
 
-        // 📡 CACHE MISS: Una sola consulta masiva y estructurada a Sanity
-        const dataFresh = await sanityClient.fetch(
-    `*[
-        (_type in ["plato", "categoria", "inventario", "estacionPC", "mesero", "seguridad"] && tenant == $tenantAlias) ||
-        (_type == "negocio" && slug.current == $tenantAlias)
-    ]`, 
-    { tenantAlias }
-        );
+        // 2. CACHE MISS: CONSULTA TRIPLE A SUPABASE (PLATOS, CATEGORIAS, MESEROS) + SANITY
+        console.log(`🔄 Cache Miss para [${tenantAlias}]. Construyendo payload unificado desde Supabase...`);
 
-        // 🛡️ BLINDAJE ANTI-CAMPOS BLANCOS / ARREGLOS VACÍOS
-        // Si Sanity viene vacío, nulo o no es un arreglo válido, aplicamos paracaídas inmediato
-        if (!dataFresh || !Array.isArray(dataFresh) || dataFresh.length === 0) {
-            console.warn(`⚠️ Sanity devolvió un catálogo vacío para [${tenantAlias}]. Bloqueando persistencia para evitar sobreescritura fantasma.`);
-            
-            // Intentamos recuperar lo último que hubiera en Supabase aunque errCache haya dicho algo antes,
-            // o simplemente servimos lo que haya sin romper el POS del cliente.
-            if (cacheExistente && cacheExistente.payload_json) {
-                return NextResponse.json(cacheExistente.payload_json, {
-                    headers: { 'X-Cache-Status': 'HIT-PARACHUTE' }
-                });
-            }
-            
-            // Si de verdad no hay nada en ningún lado, respondemos vacío pero NO lo guardamos en Supabase
-            return NextResponse.json([], { headers: { 'X-Cache-Status': 'MISS-EMPTY' } });
-        }
+        const [resPlatos, resCategorias, resMeseros, resSanity] = await Promise.all([
+            // A. Platos desde public.platos
+            supabaseServer.from('platos').select('*').eq('tenant', tenantAlias),
+            // B. Categorías desde public.categorias
+            supabaseServer.from('categorias').select('*').eq('tenant', tenantAlias),
+            // C. Meseros desde public.meseros
+            supabaseServer.from('meseros').select('*').eq('tenant', tenantAlias),
+            // D. Residual de Sanity (Negocio, Estaciones, Seguridad)
+            sanityClient.fetch(
+                `*[( _type in ["estacionPC", "seguridad"] && tenant == $tenantAlias ) || ( _type == "negocio" && slug.current == $tenantAlias )]`,
+                { tenantAlias }
+            ).catch(err => {
+                console.warn("⚠️ Error leyendo Sanity en Miss:", err.message);
+                return [];
+            })
+        ]);
 
-        // 🎯 NUEVO BLINDAJE: Extracción y llenado automático de la tabla 'negocios'
-        const docNegocio = dataFresh.find(item => item._type === 'negocio');
-        if (docNegocio) {
-            await supabaseServer
-                .from('negocios')
-                .upsert({
-                    tenant: tenantAlias,
-                    nombre: docNegocio.nombre || 'RESTAURANTE',
-                    nit: docNegocio.nit || '',
-                    direccion: docNegocio.direccion || '',
-                    telefono: docNegocio.telefono || '',
-                    colordark: docNegocio.colordark || '#000A6F',
-                    updated_at: new Date().toISOString()
-                }, { onConflict: 'tenant' });
+        const platosSupabase = resPlatos.data || [];
+        const categoriasSupabase = resCategorias.data || [];
+        const meserosSupabase = resMeseros.data || [];
+        const datosSanity = Array.isArray(resSanity) ? resSanity : [];
 
-            console.log(`🏛️ Tabla 'negocios' sincronizada correctamente para: [${tenantAlias}]`);
-        }
+        // 3. NORMALIZACIÓN EXACTA AL FORMATO DEL ESCUDO POS
+        const categoriasProcesadas = categoriasSupabase.map(c => ({
+            _id: c.id,
+            id: c.id,
+            _type: 'categoria',
+            tenant: tenantAlias,
+            titulo: c.titulo || 'GENERAL',
+            seImprime: c.se_imprime ?? true,
+            orden: c.orden || 1,
+            slug: { _type: 'slug', current: c.slug || (c.titulo || 'gen').toLowerCase().replace(/\s+/g, '-') }
+        }));
 
-        // 🚀 SENIOR: Aplanamos y resolvemos las imágenes en el servidor de forma ultra segura antes de guardar
-        const dataProcesada = dataFresh.map(item => {
-            if (item._type === 'plato' && item.imagen?.asset?._ref) {
-                try {
-                    return {
-                        ...item,
-                        imagenUrl: builder.image(item.imagen).url() // Inyectamos el string de la URL limpia
-                    };
-                } catch (imgError) {
-                    console.error(`⚠️ No se pudo procesar la imagen del plato: ${item.nombre}`, imgError);
-                }
-            }
-            return item;
+        const productosProcesados = platosSupabase.map(p => {
+            const catVinculada = categoriasProcesadas.find(c => c._id === p.categoria || c.id === p.categoria);
+            const urlImagen = typeof p.imagen === 'string' ? p.imagen : (p.imagen?.url || null);
+
+            return {
+                _id: p.id,
+                id: p.id,
+                _type: 'plato',
+                tenant: tenantAlias,
+                nombre: p.nombre,
+                precio: Number(p.precio) || 0,
+                precioCosto: Number(p.precio_costo || 0),
+                disponible: p.disponible !== false,
+                barcode: p.barcode || null,
+                codigoBalanza: p.codigo_balanza || null,
+                imagenUrl: urlImagen,
+                imagen: urlImagen ? { _type: 'image', asset: { url: urlImagen } } : null,
+                categoria: catVinculada 
+                    ? { _ref: catVinculada._id, _type: 'reference' } 
+                    : (p.categoria ? { _ref: p.categoria, _type: 'reference' } : "COCINA"),
+                recetaInsumos: p.receta_insumos || [],
+                esVentaPorPeso: p.es_venta_por_peso === true,
+                controlaInventario: p.controla_inventario === true,
+                totalVentas: p.total_ventas || 0
+            };
         });
 
-        // 💾 ALMACENAMIENTO EN PIEDRA SEGURIZADO: Guardamos el payload ya procesado con las URLs listas
-        const { error: upsertError } = await supabaseServer
-            .from('catalog_cache')
-            .upsert({ 
-                tenant_host: tenantAlias, 
-                payload_json: dataProcesada, // Guardamos la data limpia procesada
-                updated_at: new Date().toISOString()
-            }, { onConflict: 'tenant_host' });
+        const meserosProcesados = meserosSupabase.map(m => ({
+            _id: m.id,
+            id: m.id,
+            _type: 'mesero',
+            tenant: tenantAlias,
+            nombre: m.nombre,
+            activo: m.activo !== false,
+            verReporte: m.ver_reporte ?? false,
+            verAdmin: m.ver_admin ?? false,
+            puedeCargarGasto: m.puede_cargar_gasto ?? false,
+            verVentas: m.ver_ventas ?? false,
+            verInventario: m.ver_inventario ?? false,
+            puedeCobrar: m.puede_cobrar ?? false
+        }));
 
-        if (upsertError) {
-            console.error("⚠️ Falla no-bloqueante al writear el caché en Supabase:", upsertError);
+        // 4. UNIFICACIÓN COMPLETA
+        const payloadUnificado = [
+            ...categoriasProcesadas,
+            ...productosProcesados,
+            ...meserosProcesados,
+            ...datosSanity
+        ];
+
+        // 5. GUARDADO EN CATALOG_CACHE
+        if (payloadUnificado.length > 0) {
+            await supabaseServer
+                .from('catalog_cache')
+                .upsert({
+                    tenant_host: tenantAlias,
+                    payload_json: payloadUnificado,
+                    updated_at: new Date().toISOString()
+                }, { onConflict: 'tenant_host' });
         }
 
-        return NextResponse.json(dataProcesada, {
-            headers: { 'X-Cache-Status': 'MISS' }
+        return NextResponse.json(payloadUnificado, {
+            headers: { 'X-Cache-Status': 'MISS-REBUILT' }
         });
 
     } catch (error) {
-        console.error("🔥 Error crítico estructural en el escudo de catálogo:", error);
-        return NextResponse.json(
-            { error: "Error interno del servidor de datos" }, 
-            { status: 500 }
-        );
+        console.error("🔥 Error crítico en API /catalogo:", error);
+        return NextResponse.json({ error: "Error interno del servidor de datos" }, { status: 500 });
     }
 }

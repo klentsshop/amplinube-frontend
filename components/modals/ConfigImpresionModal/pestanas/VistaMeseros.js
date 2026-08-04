@@ -43,14 +43,15 @@ export default function VistaMeseros({
             setVerInventario(false);
             setPuedeCobrar(false);
         } else {
-            const meseroMatch = meserosFiltrados.find(m => m._id === editandoMeseroId);
+            const idBuscado = editandoMeseroId;
+            const meseroMatch = meserosFiltrados.find(m => (m.id || m._id) === idBuscado);
             if (meseroMatch) {
-                setVerReporte(meseroMatch.verReporte || false);
-                setVerAdmin(meseroMatch.verAdmin || false);
-                setPuedeCargarGasto(meseroMatch.puedeCargarGasto || false);
-                setVerVentas(meseroMatch.verVentas || false);
-                setVerInventario(meseroMatch.verInventario || false);
-                setPuedeCobrar(meseroMatch.puedeCobrar || false);
+                setVerReporte(meseroMatch.ver_reporte ?? meseroMatch.verReporte ?? false);
+                setVerAdmin(meseroMatch.ver_admin ?? meseroMatch.verAdmin ?? false);
+                setPuedeCargarGasto(meseroMatch.puede_cargar_gasto ?? meseroMatch.puedeCargarGasto ?? false);
+                setVerVentas(meseroMatch.ver_ventas ?? meseroMatch.verVentas ?? false);
+                setVerInventario(meseroMatch.ver_inventario ?? meseroMatch.verInventario ?? false);
+                setPuedeCobrar(meseroMatch.puede_cobrar ?? meseroMatch.puedeCobrar ?? false);
             }
         }
     }, [editandoMeseroId, meserosFiltrados]);
@@ -226,14 +227,15 @@ export default function VistaMeseros({
                             </thead>
                             <tbody>
                                 {meserosFiltrados.map((item) => {
-                                    const siendoEditado = editandoMeseroId === item._id;
+                                    const idMesero = item.id || item._id;
+                                    const siendoEditado = editandoMeseroId === idMesero;
                                     
                                     return (
                                         <tr 
-                                            key={item._id} 
+                                            key={idMesero} 
                                             onClick={() => {
                                                 seleccionarMeseroParaEditar(item);
-                                                setSubPestana('formulario'); // Abre automáticamente la pestaña de edición
+                                                setSubPestana('formulario');
                                             }}
                                             style={{ 
                                                 borderBottom: '1px solid #f3f4f6', 
@@ -247,14 +249,13 @@ export default function VistaMeseros({
                                             <td style={{ padding: '10px', fontWeight: 'bold', color: item.activo !== false ? '#374151' : '#9ca3af', textTransform: 'uppercase' }}>
                                                 👤 {item.nombre} 
                                                 {siendoEditado && <span style={{ color: '#2563eb', fontSize: '0.75rem', fontWeight: 'normal' }}> (en formulario)</span>}
-                                                {/* 🚀 INDICADOR DE ESTADO EN LA LISTA */}
                                                 {item.activo === false && <span style={{ color: '#ef4444', fontSize: '0.7rem', marginLeft: '6px', fontWeight: 'normal', background: '#fee2e2', padding: '2px 6px', borderRadius: '4px' }}>🚫 INACTIVO EN POS</span>}
                                             </td>
                                             <td style={{ padding: '10px', textAlign: 'center' }}>
                                                 <button 
                                                     onClick={(e) => { 
                                                         e.stopPropagation(); 
-                                                        handleBorrarMesero(item._id); 
+                                                        handleBorrarMesero(idMesero); 
                                                     }} 
                                                     style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', fontSize: '1rem' }}
                                                 >

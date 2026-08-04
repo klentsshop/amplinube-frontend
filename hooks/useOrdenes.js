@@ -87,7 +87,8 @@ export function useOrdenes(providedTenantId) {
         mutateGlobal(`/api/clientes/list?tenantId=${tenantId}`);
       }
 
-      return data;
+      // Normalización de respuesta para compatibilidad fluida en Supabase y Sanity
+      return data ? { ...data, _id: data._id || data.id, id: data.id || data._id } : data;
     } catch (err) {
       console.error("❌ Error guardarOrden:", err);
       throw err;

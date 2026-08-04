@@ -98,12 +98,15 @@ export default function VistaEstacion({
                 
                 <div style={{ maxHeight: '180px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '6px', paddingRight: '4px' }}>
                     {categorias && categorias.length > 0 ? (
-                        categorias.map(cat => {
-                            const estaSeleccionada = categoriasSeleccionadas.includes(cat);
+                        categorias.map((catItem) => {
+                            const nombreCat = typeof catItem === 'string' ? catItem : (catItem.titulo || catItem.nombre || '');
+                            const keyCat = typeof catItem === 'string' ? catItem : (catItem.id || catItem._id || nombreCat);
+                            const estaSeleccionada = categoriasSeleccionadas.includes(nombreCat) || categoriasSeleccionadas.includes(keyCat);
+
                             return (
                                 <div 
-                                    key={cat} 
-                                    onClick={() => toggleCategoria(cat)} 
+                                    key={keyCat} 
+                                    onClick={() => toggleCategoria(nombreCat)} 
                                     style={{ 
                                         display: 'flex', 
                                         alignItems: 'center', 
@@ -117,7 +120,7 @@ export default function VistaEstacion({
                                     }}
                                 >
                                     <span style={{ fontWeight: '700', color: '#1f2937', fontSize: '0.85rem' }}>
-                                        {cat?.toUpperCase()}
+                                        {nombreCat?.toUpperCase()}
                                     </span>
                                     {estaSeleccionada && <CheckCircle size={18} color="#10b981" />}
                                 </div>

@@ -127,7 +127,18 @@ export default function VistaInventario({
     return (
         <tr 
             key={idReal} 
-            onClick={() => { seleccionarParaEditar(item); setSubPestana('formulario'); }}
+            onClick={() => { 
+    seleccionarParaEditar({
+        ...item,
+        id: idReal,
+        _id: idReal,
+        stockActual: item.stockActual ?? item.stock_actual ?? 0,
+        stockMinimo: item.stockMinimo ?? item.stock_minimo ?? 5,
+        barcode: item.barcode ?? item.codigoBarras ?? '',
+        codigoBalanza: item.codigoBalanza ?? item.codigo_balanza ?? ''
+    }); 
+    setSubPestana('formulario'); 
+}}
             style={{ 
                 borderBottom: '1px solid #f3f4f6', 
                 cursor: 'pointer', 

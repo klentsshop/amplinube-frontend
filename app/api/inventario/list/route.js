@@ -17,12 +17,13 @@ export async function GET(request) {
 
         const tenantLimpio = tenantId.toLowerCase().trim();
         console.log(`🔍 Listando inventario maestro desde Supabase para el Tenant: ${tenantLimpio}`);
+
         // 1. Inicializamos la query con la selección de campos exacta
         let query = supabaseServer
             .from('inventarios')
             .select(`
-                _id:insumo_id,
-                id:insumo_id,
+                id,
+                insumo_id,
                 nombre,
                 stockActual:stock_actual,
                 stockMinimo:stock_minimo,
@@ -30,9 +31,10 @@ export async function GET(request) {
                 barcode,
                 codigoBalanza:codigo_balanza
             `)
-            .eq('tenant_id', tenantLimpio);
+            .eq('tenant_id', tenantLimpio)
+            .order('nombre', { ascending: true });
 
-        // ⚡ Aplicamos el filtro de búsqueda de manera directa sobre la query viva
+        // ⚡ LÓGICA DE ALTO RENDIMIENTO: Búsqueda global vs Límite inicial de 100
         if (buscar.trim() !== '') {
             const valor = buscar.trim();
             const termino = `%${valor}%`;
@@ -41,81 +43,32 @@ export async function GET(request) {
                 // Si son números, busca por coincidencia en nombre o igualdad exacta en códigos
                 query = query.or(`nombre.ilike.${termino},barcode.eq.${valor},codigo_balanza.eq.${valor}`);
             } else {
-                // Si es texto (ej: RICOSTILLA), busca puramente por coincidencia en el nombre
+                // Si es texto, busca coincidencia pura sobre la BD entera
                 query = query.ilike('nombre', termino);
             }
+        } else {
+            // 🚀 ESCUDO DE RENDIMIENTO: Al abrir el inventario sin buscar nada, solo trae los primeros 100
+            query = query.limit(100);
         }
 
-        // Ejecutamos el ordenamiento y traemos los datos en una sola línea limpia
-        let { data: insumos, error } = await query.order('nombre', { ascending: true });
+        // Ejecutamos la consulta
+        let { data: insumos, error } = await query;
 
         if (error) throw error;
 
-       // 🚀 2. AUTO-POBLADO DESDE EL ESCUDO DE SUPABASE (Zero llamadas a Sanity)
+        // Mapeo defensivo para compatibilidad total de IDs
+        insumos = (insumos || []).map(i => ({
+            ...i,
+            _id: i.insumo_id || i.id,
+            id: i.insumo_id || i.id
+        }));
+
+        // 🚀 2. VERIFICACIÓN DE EXISTENCIA EN SUPABASE
         if ((!insumos || insumos.length === 0) && buscar.trim() === '') {
-            console.log("🌱 Tabla vacía detectada. Sincronizando catálogo de insumos desde el búnker central...");
-            
-            try {
-                // Consultamos el JSON maestro que el Escudo ya clonó en Supabase para el POS
-                const { data: cacheRow } = await supabaseServer
-                    .from('catalog_cache')
-                    .select('payload_json')
-                    .eq('tenant_host', tenantLimpio) // 👈 Cambiado a tenantLimpio
-                    .maybeSingle(); 
-
-                // 🛡️ Extraemos los insumos filtrando el array plano de la caché por su _type nativo
-const arrayPlanoCache = cacheRow?.payload_json;
-const catalogoInsumosBunker = Array.isArray(arrayPlanoCache)
-    ? arrayPlanoCache.filter(item => item?._type === 'inventario')
-    : [];
-
-                if (catalogoInsumosBunker && catalogoInsumosBunker.length > 0) {
-                    // Preparamos los registros masivos para inyectar en la tabla viva de stock
-                   // Preparamos los registros masivos para inyectar en la tabla viva de stock
-                    const filasParaInyectar = catalogoInsumosBunker.map(insumo => ({
-                        tenant_id: tenantLimpio, // 👈 Cambiado a tenantLimpio
-                        insumo_id: insumo._id,
-                        nombre: (insumo.nombre || "Insumo sin nombre").toUpperCase().trim(),
-                        barcode: insumo.barcode || "",
-                        codigo_balanza: insumo.codigoBalanza || insumo.codigo_balanza || "",
-                        unidad_medida: insumo.unidadMedida || insumo.unidad_medida || "unidades",
-                        stock_minimo: Number(insumo.stockMinimo || insumo.stock_minimo || 5),
-                        stock_actual: 0.000 
-                    }));
-
-                    // Inserción masiva veloz
-                    const { error: errorSincro } = await supabaseServer
-                        .from('inventarios')
-                        .insert(filasParaInyectar);
-
-                    if (!errorSincro) {
-                        // Recargamos los insumos inyectados directamente de Supabase
-                        const { data: recarga } = await supabaseServer
-                            .from('inventarios')
-                            .select(`
-                                _id:insumo_id,
-                                id:insumo_id,
-                                nombre,
-                                stockActual:stock_actual,
-                                stockMinimo:stock_minimo,
-                                unidadMedida:unidad_medida,
-                                barcode,
-                                codigoBalanza:codigo_balanza
-                            `)
-                            .eq('tenant_id', tenantLimpio) // 👈 Cambiado a tenantLimpio
-                            .order('nombre', { ascending: true });
-                        
-                        insumos = recarga;
-                    }
-                } else {
-                    console.log("⚠️ El búnker del tenant no contiene colecciones de inventario estático.");
-                }
-            } catch (cacheError) {
-                console.error("❌ Falló la auto-población desde el búnker central:", cacheError.message);
-            }
+            console.log(`ℹ️ El inventario maestro en Supabase para el tenant [${tenantLimpio}] no contiene insumos o está listo para nuevos registros.`);
         }
 
-        // 3. ✅ RESPUESTA INMEDIATA CON HEADERS ANTI-CACHÉ
+        // 3. ✅ RESPUESTA INMEDIATA CON HEADERS ANTI-CACHÉ (Array plano en la raíz)
         return new NextResponse(JSON.stringify(insumos || []), {
             status: 200,
             headers: {

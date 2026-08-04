@@ -2,7 +2,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useInventario } from '@/hooks/useInventario';
-import { sanityClientServer } from '@/lib/sanity'; // 🛡️ Importamos para el Plan B de rescate del escáner
 
 export default function InventarioModal({ isOpen, onClose, tenantId }) {
     
@@ -121,16 +120,17 @@ export default function InventarioModal({ isOpen, onClose, tenantId }) {
         if (insumo) {
             handleCargar(insumo.id || insumo._id, 1);
             setBusqueda('');
-        } else {
-            // 🔥 PLAN B DE RESCATE: Solo consulta a Sanity al presionar Enter controlado
+        } else if (busqueda.trim()) {
+            // Plan B Supabase: Búsqueda dinámica vía API
             try {
-                const rescate = await sanityClientServer.fetch(
-                    `*[_type == "inventario" && tenant == $tenantId && (barcode == $busqueda || codigoBalanza == $busqueda)][0]{ _id }`,
-                    { tenantId, busqueda: busqueda.trim() }
-                );
-                if (rescate?._id) {
-                    handleCargar(rescate._id, 1);
-                    setBusqueda('');
+                const res = await fetch(`/api/inventario/list?tenantId=${tenantId}&search=${encodeURIComponent(busqueda.trim())}`);
+                if (res.ok) {
+                    const data = await res.json();
+                    const rescate = Array.isArray(data) ? data[0] : null;
+                    if (rescate) {
+                        handleCargar(rescate.id || rescate._id, 1);
+                        setBusqueda('');
+                    }
                 }
             } catch (err) {
                 console.error("⚠️ Error en rescate de código por Enter:", err);

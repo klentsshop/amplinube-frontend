@@ -1,18 +1,15 @@
 import { NextResponse } from 'next/server';
 import { supabaseServer } from '@/lib/supabase'; // 🛡️ Base de datos relacional maestra
-import { sanityClientServer } from '@/lib/sanity'; // 🛡️ WebSockets en vivo para las tablets
 
 export const dynamic = 'force-dynamic';
 
 export async function POST(request) {
-    console.log("====== 📦 INICIANDO ACTUALIZACIÓN HÍBRIDA DE INVENTARIO ======");
-
     try {
         const body = await request.json();
         const { insumoId, cantidadASumar, tenantId } = body;
         const tenant = tenantId || body.tenant;
 
-        // 1. 🛡️ Escudo de validación inicial estricto
+        // 1. 🛡️ Escudo de validación inicial
         if (!insumoId || cantidadASumar === undefined || !tenant || tenant === 'undefined') {
             return NextResponse.json({ error: "Faltan datos requeridos (insumoId, cantidad o tenant)" }, { status: 400 });
         }
@@ -22,130 +19,92 @@ export async function POST(request) {
             return NextResponse.json({ error: "La cantidad a sumar debe ser un número válido" }, { status: 400 });
         }
 
-        // 2. 📡 CONSULTA HÍBRIDA PARALELA: Traemos la configuración de Sanity y el stock vivo de Supabase
-        // 2. 📡 CONSULTA DE ALTA VELOCIDAD DESDE SUPABASE (Costo Sanity de lectura: $0)
-        const { data: insumoSupabase, error: errorDb } = await supabaseServer
+        const tenantLimpio = tenant.toLowerCase().trim();
+
+        // 2. 🔍 BÚSQUEDA BLINDADA DEL INSUMO (Soporta UUID 'id' o string 'insumo_id')
+        let insumoExistente = null;
+
+        // Intento A: Por id UUID
+        const { data: resById } = await supabaseServer
             .from('inventarios')
-            .select('nombre, stock_actual, stock_minimo, barcode, codigo_balanza, unidad_medida')
-            .eq('insumo_id', insumoId)
-            .eq('tenant_id', tenant)
+            .select('id, insumo_id, nombre, stock_actual, stock_minimo')
+            .eq('id', insumoId)
+            .eq('tenant_id', tenantLimpio)
             .maybeSingle();
 
-        if (errorDb) throw new Error(`Supabase Fetch Error: ${errorDb.message}`);
+        if (resById) {
+            insumoExistente = resById;
+        } else {
+            // Intento B: Por insumo_id (String legacy)
+            const { data: resByInsumoId } = await supabaseServer
+                .from('inventarios')
+                .select('id, insumo_id, nombre, stock_actual, stock_minimo')
+                .eq('insumo_id', insumoId)
+                .eq('tenant_id', tenantLimpio)
+                .maybeSingle();
 
-        // Declaramos las variables base heredadas de Supabase
-        let nombreInsumo = insumoSupabase?.nombre || "Insumo POS";
-        let barcodeInsumo = insumoSupabase?.barcode || "";
-        let codigoBalanzaInsumo = insumoSupabase?.codigo_balanza || "";
-        let unidadMedidaInsumo = insumoSupabase?.unidad_medida || "unidades";
-        let stockMinimoInsumo = insumoSupabase?.stock_minimo ? Number(insumoSupabase.stock_minimo) : 5;
-        
-        const stockActualBase = insumoSupabase?.stock_actual ? Number(insumoSupabase.stock_actual) : 0;
-        const nuevoStockCalculado = stockActualBase + monto;
-
-        // 🧠 RESPALDO PROACTIVO: Si el insumo es nuevo en la tabla, extraemos metadatos del búnker
-        if (!insumoSupabase) {
-            try {
-                const { data: cacheRow } = await supabaseServer
-                    .from('catalog_cache')
-                    .select('payload_json')
-                    .eq('tenant_host', tenant.toLowerCase().trim())
-                    .single();
-                
-                const p = cacheRow?.payload_json;
-                const catalogoInsumosBunker = p?.inventario || p?.inventarios || [];
-                const insumoBunker = catalogoInsumosBunker.find(i => i._id === insumoId);
-
-                if (insumoBunker) {
-                    nombreInsumo = insumoBunker.nombre || nombreInsumo;
-                    barcodeInsumo = insumoBunker.barcode || barcodeInsumo;
-                    codigoBalanzaInsumo = insumoBunker.codigoBalanza || codigoBalanzaInsumo;
-                    unidadMedidaInsumo = insumoBunker.unidadMedida || unidadMedidaInsumo;
-                    stockMinimoInsumo = insumoBunker.stockMinimo ? Number(insumoBunker.stockMinimo) : stockMinimoInsumo;
-                }
-            } catch (e) {
-                console.warn("⚠️ Metadatos no hallados en el búnker, usando valores por defecto.");
-            }
+            insumoExistente = resByInsumoId;
         }
 
-        // 3. 🚀 UPSERT MAESTRO EN POSTGRESQL (Inserta si es primer escaneo, actualiza si ya existe)
-        const { data: insumoActualizado, error: errorUpdate } = await supabaseServer
-            .from('inventarios')
-            .upsert({ 
-                tenant_id: tenant,
-                insumo_id: insumoId,
-                nombre: nombreInsumo.toUpperCase().trim(),
-                barcode: barcodeInsumo,
-                codigo_balanza: codigoBalanzaInsumo,
-                unidad_medida: unidadMedidaInsumo,
-                stock_minimo: stockMinimoInsumo,
-                stock_actual: nuevoStockCalculado,
-                updated_at: new Date().toISOString()
-            }, { onConflict: 'tenant_id, insumo_id' })
-            .select('stock_actual')
-            .single();
-        if (errorUpdate) throw new Error(`Supabase Upsert Error: ${errorUpdate.message}`);
+        // 3. 🚀 ACTUALIZACIÓN ATÓMICA O CREACIÓN
+        let nuevoStockGuardado = 0;
+        let stockMinimo = 5;
 
-        console.log(`✅ Supabase actualizado. Producto: ${nombreInsumo} | Stock: ${insumoActualizado.stock_actual}`);
+        if (insumoExistente) {
+            // A. SI EL INSUMO EXISTE: Calculamos de forma segura el nuevo stock
+            stockMinimo = Number(insumoExistente.stock_minimo || 5);
+            const stockBase = Number(insumoExistente.stock_actual || 0);
+            nuevoStockGuardado = stockBase + monto;
 
-        // 4. 🧠 RECUENTO DE ALERTAS EN VIVO (Mapeo desde la base de datos veloz)
-        const { data: todosLosStocks, error: errorCriticos } = await supabaseServer
-            .from('inventarios')
-            .select('insumo_id, nombre, stock_actual, stock_minimo')
-            .eq('tenant_id', tenant);
+            const { error: errUpdate } = await supabaseServer
+                .from('inventarios')
+                .update({
+                    stock_actual: nuevoStockGuardado,
+                    updated_at: new Date().toISOString()
+                })
+                .eq('id', insumoExistente.id)
+                .eq('tenant_id', tenantLimpio);
 
-        if (errorCriticos) {
-            console.error("⚠️ No se pudo procesar la lista de críticos, pero el stock maestro ya fue salvado.");
+            if (errUpdate) throw new Error(`Error actualizando stock: ${errUpdate.message}`);
+
+        } else {
+            // B. SI ES UN INSUMO NUEVO: Hacemos Inserción Limpia
+            stockMinimo = body.stockMinimo ? Number(body.stockMinimo) : 5;
+            nuevoStockGuardado = monto;
+
+            const { data: nuevoInsumo, error: errInsert } = await supabaseServer
+                .from('inventarios')
+                .insert([{
+                    tenant_id: tenantLimpio,
+                    insumo_id: insumoId,
+                    nombre: (body.nombre || "Insumo POS").toUpperCase().trim(),
+                    barcode: body.barcode || "",
+                    codigo_balanza: body.codigoBalanza || "",
+                    unidad_medida: body.unidadMedida || "unidades",
+                    stock_minimo: stockMinimo,
+                    stock_actual: nuevoStockGuardado,
+                    updated_at: new Date().toISOString()
+                }])
+                .select('stock_actual')
+                .single();
+
+            if (errInsert) throw new Error(`Error creando insumo: ${errInsert.message}`);
+            nuevoStockGuardado = Number(nuevoInsumo.stock_actual);
         }
 
-        // Filtramos de manera segura en el servidor Next para calcular alertas reales
-        const filtradosCriticos = (todosLosStocks || []).filter(
-            item => Number(item.stock_actual) <= Number(item.stock_minimo)
-        );
+        // 4. 🧠 CÁLCULO DE ALERTA DE STOCK EN TIEMPO REAL
+        const enAlerta = nuevoStockGuardado <= stockMinimo;
 
-        // 5. 📡 SINCRONIZACIÓN EN TIEMPO REAL VÍA WEB_SOCKET A SANITY
-        const arrayAlertasSanity = filtradosCriticos.map(c => ({
-            _key: `alerta_${c.insumo_id}_${Date.now()}`,
-            productoId: c.insumo_id,
-            nombre: c.nombre,
-            stockDisponible: Number(c.stock_actual)
-        }));
+        console.log(`✅ Stock cargado [${tenantLimpio}]: ${insumoExistente?.nombre || body.nombre} | Nuevo Stock: ${nuevoStockGuardado}`);
 
-        const idDocumentoSanity = `inventario-critico-${tenant}`;
-
-        console.log("⚡ Transmitiendo ráfaga de stock crítico a Sanity para las tablets...");
-
-        // Sincronizamos de forma asincrónica el documento único del restaurante
-        await sanityClientServer
-            .createIfNotExists({
-                _id: idDocumentoSanity,
-                _type: 'inventarioCritico', // Esquema del tablero de notificaciones en vivo
-                tenant: tenant
-            })
-            .then(() => {
-                return sanityClientServer
-                    .patch(idDocumentoSanity)
-                    .set({
-                        productosCriticos: arrayAlertasSanity,
-                        ultimaSincronizacion: new Date().toISOString()
-                    })
-                    .commit({ visibility: 'async' }); // 'async' evita congelamientos en ráfagas de comanda
-            })
-            .catch(err => {
-                console.error("⚠️ Sincronización de alertas Sanity omitida:", err.message);
-                // No disparamos un error 500 para que el POS no se detenga si Sanity parpadea
-            });
-
-       
-        // 💰 Retorno de éxito exacto esperado por el hook y componentes React
         return NextResponse.json({ 
             success: true, 
-            nuevoStock: insumoActualizado.stock_actual,
-            enAlerta: nuevoStockCalculado <= stockMinimoInsumo
+            nuevoStock: nuevoStockGuardado,
+            enAlerta: enAlerta
         });
 
     } catch (error) {
-        console.error("❌ Error en POST /api/inventario/update/route.js:", error.message);
+        console.error("❌ Error en POST /api/inventario/update:", error.message);
         return NextResponse.json({ error: error.message }, { status: 500 });
     }
 }
