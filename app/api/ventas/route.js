@@ -92,31 +92,32 @@ const folioGenerado = `${prefix}-${datePart}-${seed}`;
 // Mantenemos el transaccionId únicamente para el ID único del registro en la base de datos si existe
 const ventaId = transaccionId ? `venta-${transaccionId}` : `venta-${Date.now()}-${seed}`;
         
-        // --- 3. 🛡️ ESCUDO ANTI-FANTASMAS (EL BLOQUEO MAESTRO EN SUPABASE) ---
+        // --- 3. 🛡️ ESCUDO ANTI-FANTASMAS (SOPORTE DUAL DE IDs) ---
+        let idOrdenARemover = null;
+
         if (ordenId && ordenId !== "undefined" && ordenId !== "null") {
-            const { data: mesaExiste, error: errCheckMesa } = await supabaseServer
+            const { data: mesaExiste } = await supabaseServer
                 .from('ordenes_activas')
                 .select('id')
                 .eq('id', ordenId)
                 .eq('tenant', cleanTenant)
                 .maybeSingle();
             
-            if (errCheckMesa || !mesaExiste) {
-                console.warn(`⚠️ Cobro duplicado evitado o mesa inexistente en Supabase: ${ordenId}`);
-                return NextResponse.json({ 
-                    ok: true, 
-                    yaProcesada: true, 
-                    message: 'Esta mesa ya fue cerrada anteriormente.' 
-                }, { status: 200 });
+            if (mesaExiste) {
+                idOrdenARemover = mesaExiste.id;
             }
-        } else {
-            const esCajaRapida = mesa === '0' || mesa === 'General' || mesa === '';
-            if (!esCajaRapida) {
-                return NextResponse.json({ 
-                    ok: false, 
-                    error: 'REFERENCIA_PERDIDA', 
-                    message: 'No se puede cobrar una mesa guardada sin su ID original.' 
-                }, { status: 400 });
+        }
+
+        if (!idOrdenARemover && mesa && mesa !== '0' && mesa !== 'General' && mesa !== '') {
+            const { data: mesaPorNumero } = await supabaseServer
+                .from('ordenes_activas')
+                .select('id')
+                .eq('mesa', String(mesa).trim())
+                .eq('tenant', cleanTenant)
+                .maybeSingle();
+
+            if (mesaPorNumero) {
+                idOrdenARemover = mesaPorNumero.id;
             }
         }
         // --- 4. 🚀 BÚSQUEDA DE PLATOS Y RECETAS DIRECTAS EN TABLAS DE SUPABASE ---
@@ -236,7 +237,7 @@ const ventaId = transaccionId ? `venta-${transaccionId}` : `venta-${Date.now()}-
 
         const { data: resAtomica, error: errAtomico } = await supabaseServer.rpc('procesar_venta_atomica', {
             p_venta_data: objetoVentaDb,
-            p_orden_id: ordenId || null,
+            p_orden_id: idOrdenARemover || null,
             p_abrir_cajon: abrirCajon,
             p_descuentos: descuentosSupabase
         });
