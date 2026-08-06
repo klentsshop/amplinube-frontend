@@ -110,7 +110,7 @@ export async function GET(req) {
             }
         } else {
             // Límite de carga inicial para evitar transferir megabytes en vano
-            query = query.limit(100);
+            query = query.eq('disponible', true);
         }
 
         const { data: platosDb, error: errPlatos } = await query;

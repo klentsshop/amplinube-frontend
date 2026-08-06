@@ -30,6 +30,42 @@ const extractTenantAlias = (hostHeader) => {
     return (process.env.NEXT_PUBLIC_TENANT_ID || "demo").toLowerCase().trim();
 };
 
+/**
+ * Función auxiliar para paginar la extracción de platos de Supabase en lotes
+ * Evita recortes de respuesta por límites de API/RAM en catálogos extensos.
+ */
+async function obtenerTodosLosPlatos(tenantAlias) {
+    let todosLosPlatos = [];
+    let desde = 0;
+    const paso = 1000;
+    let hayMas = true;
+
+    while (hayMas) {
+        const { data, error } = await supabaseServer
+            .from('platos')
+            .select('*')
+            .eq('tenant', tenantAlias)
+            .range(desde, desde + paso - 1);
+
+        if (error) {
+            console.error(`🔥 Error leyendo bloque de platos (${desde} - ${desde + paso}):`, error.message);
+            throw error;
+        }
+
+        if (data && data.length > 0) {
+            todosLosPlatos = todosLosPlatos.concat(data);
+        }
+
+        if (!data || data.length < paso) {
+            hayMas = false;
+        } else {
+            desde += paso;
+        }
+    }
+
+    return todosLosPlatos;
+}
+
 export async function GET(request) {
     try {
         const hostHeader = request.headers.get('host') || '';
@@ -50,17 +86,17 @@ export async function GET(request) {
             });
         }
 
-        // 2. CACHE MISS: CONSULTA TRIPLE A SUPABASE (PLATOS, CATEGORIAS, MESEROS) + SANITY
-        console.log(`🔄 Cache Miss para [${tenantAlias}]. Construyendo payload unificado desde Supabase...`);
+        // 2. CACHE MISS: CONSULTA TRIPLE A SUPABASE + SANITY
+        console.log(`🔄 Cache Miss para [${tenantAlias}]. Construyendo payload unificado...`);
 
-        const [resPlatos, resCategorias, resMeseros, resSanity] = await Promise.all([
-            // A. Platos desde public.platos
-            supabaseServer.from('platos').select('*').eq('tenant', tenantAlias),
+        const [platosSupabase, resCategorias, resMeseros, resSanity] = await Promise.all([
+            // A. Extracción Paginada Completa de Platos (1600+ productos)
+            obtenerTodosLosPlatos(tenantAlias),
             // B. Categorías desde public.categorias
             supabaseServer.from('categorias').select('*').eq('tenant', tenantAlias),
             // C. Meseros desde public.meseros
             supabaseServer.from('meseros').select('*').eq('tenant', tenantAlias),
-            // D. Residual de Sanity (Negocio, Estaciones, Seguridad)
+            // D. Residual de Sanity
             sanityClient.fetch(
                 `*[( _type in ["estacionPC", "seguridad"] && tenant == $tenantAlias ) || ( _type == "negocio" && slug.current == $tenantAlias )]`,
                 { tenantAlias }
@@ -70,25 +106,53 @@ export async function GET(request) {
             })
         ]);
 
-        const platosSupabase = resPlatos.data || [];
         const categoriasSupabase = resCategorias.data || [];
         const meserosSupabase = resMeseros.data || [];
         const datosSanity = Array.isArray(resSanity) ? resSanity : [];
 
-        // 3. NORMALIZACIÓN EXACTA AL FORMATO DEL ESCUDO POS
-        const categoriasProcesadas = categoriasSupabase.map(c => ({
-            _id: c.id,
-            id: c.id,
-            _type: 'categoria',
-            tenant: tenantAlias,
-            titulo: c.titulo || 'GENERAL',
-            seImprime: c.se_imprime ?? true,
-            orden: c.orden || 1,
-            slug: { _type: 'slug', current: c.slug || (c.titulo || 'gen').toLowerCase().replace(/\s+/g, '-') }
-        }));
+        // 3. NORMALIZACIÓN EXACTA Y MAPEO DE CATEGORÍAS
+        const categoriasProcesadas = categoriasSupabase.map(c => {
+            const idVal = String(c.id || c._id || '');
+            const tituloVal = c.titulo || c.nombre || 'GENERAL';
+            const slugVal = c.slug || tituloVal.toLowerCase().trim().replace(/\s+/g, '-');
+
+            return {
+                _id: idVal,
+                id: idVal,
+                _type: 'categoria',
+                tenant: tenantAlias,
+                titulo: tituloVal,
+                nombre: tituloVal,
+                seImprime: c.se_imprime ?? c.seImprime ?? true,
+                orden: c.orden || 1,
+                slug: { _type: 'slug', current: slugVal }
+            };
+        });
 
         const productosProcesados = platosSupabase.map(p => {
-            const catVinculada = categoriasProcesadas.find(c => c._id === p.categoria || c.id === p.categoria);
+            // Extraer el identificador o slug almacenado en el plato
+            let rawCat = '';
+            if (typeof p.categoria === 'string') {
+                rawCat = p.categoria;
+            } else if (p.categoria && typeof p.categoria === 'object') {
+                rawCat = p.categoria._ref || p.categoria.current || p.categoria.nombre || '';
+            }
+
+            // Normalizador de cadenas para prevenir fallos por guiones duplicados o espacios extra
+            const normalizarCadena = (str) => String(str || '').toLowerCase().trim().replace(/--+/g, '-');
+            const catRefLimpio = normalizarCadena(rawCat);
+
+            // Matcheo profundo: Busca si coincide por UUID, Slug o Título exacto/normalizado
+            const catVinculada = categoriasProcesadas.find(c => {
+                const idCat = normalizarCadena(c.id);
+                const slugCat = normalizarCadena(c.slug?.current);
+                const tituloCat = normalizarCadena(c.titulo);
+
+                return idCat === catRefLimpio || 
+                       slugCat === catRefLimpio || 
+                       tituloCat === catRefLimpio;
+            });
+
             const urlImagen = typeof p.imagen === 'string' ? p.imagen : (p.imagen?.url || null);
 
             return {
@@ -106,7 +170,7 @@ export async function GET(request) {
                 imagen: urlImagen ? { _type: 'image', asset: { url: urlImagen } } : null,
                 categoria: catVinculada 
                     ? { _ref: catVinculada._id, _type: 'reference' } 
-                    : (p.categoria ? { _ref: p.categoria, _type: 'reference' } : "COCINA"),
+                    : { _ref: "3e75de88-a39a-49cd-9a7f-80f0bfe4f9eb", _type: 'reference' }, // Fallback para registros huérfanos
                 recetaInsumos: p.receta_insumos || [],
                 esVentaPorPeso: p.es_venta_por_peso === true,
                 controlaInventario: p.controla_inventario === true,
@@ -129,7 +193,7 @@ export async function GET(request) {
             puedeCobrar: m.puede_cobrar ?? false
         }));
 
-        // 4. UNIFICACIÓN COMPLETA
+        // 4. UNIFICACIÓN COMPLETA DE PAYLOAD
         const payloadUnificado = [
             ...categoriasProcesadas,
             ...productosProcesados,
@@ -137,7 +201,7 @@ export async function GET(request) {
             ...datosSanity
         ];
 
-        // 5. GUARDADO EN CATALOG_CACHE
+        // 5. ACTUALIZACIÓN DE CATALOG_CACHE
         if (payloadUnificado.length > 0) {
             await supabaseServer
                 .from('catalog_cache')
