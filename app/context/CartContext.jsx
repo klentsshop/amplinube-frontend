@@ -95,13 +95,16 @@ export function CartProvider({ children, tenantId }) {
     // 🛡️ RECUERDA: Agregamos ordenActivaId a las dependencias para que el radar funcione
   }, [items, tipoOrden, ordenActivaId, CART_KEY, TYPE_KEY]);
 
-  // 🚀 CONECTOR RELACIONAL: Alimenta el mapa de memoria rápido desde Supabase
+  // 🚀 CONECTOR RELACIONAL: Memoriza Stock Actual + stock_minimo de Supabase
   const actualizarCacheStockMasivo = React.useCallback((listaInsumosSupabase) => {
       if (!Array.isArray(listaInsumosSupabase)) return;
       listaInsumosSupabase.forEach(insumo => {
-          const idReal = insumo.id || insumo._id;
+          const idReal = insumo.id || insumo._id || insumo.insumo_id;
           if (idReal) {
-              stockLocalCache.set(idReal, Number(insumo.stockActual || 0));
+              stockLocalCache.set(idReal, {
+                  stockActual: Number(insumo.stockActual ?? insumo.stock_actual ?? 0),
+                  stockMinimo: Number(insumo.stockMinimo ?? insumo.stock_minimo ?? 5) // 👈 Columna exacta de Supabase
+              });
           }
       });
   }, [stockLocalCache]);
@@ -121,9 +124,13 @@ export function CartProvider({ children, tenantId }) {
 
         if (receta.length > 0) {
             for (const rec of receta) {
-                const stockDisponible = stockLocalCache.get(rec.insumoId);
+                const infoInsumo = stockLocalCache.get(rec.insumoId);
                 
-                if (stockDisponible !== undefined) {
+                if (infoInsumo !== undefined) {
+                    // Mapeo defensivo por si infoInsumo es objeto o número legado
+                    const stockDisponible = typeof infoInsumo === 'object' ? infoInsumo.stockActual : Number(infoInsumo);
+                    const stockMinimoBD = typeof infoInsumo === 'object' ? infoInsumo.stockMinimo : 5;
+
                     // Calculamos cuánto insumo ya está comprometido por este producto en el carrito actual
                     const yaEnCarrito = items.reduce((acc, it) => {
                         if ((it._id === pId || it.id === pId)) {
@@ -134,9 +141,17 @@ export function CartProvider({ children, tenantId }) {
 
                     const necesidadTotal = yaEnCarrito + (rec.cantidad * cantAAgregar);
 
+                    // 🛑 1. FRENAZO SI SE AGOTA COMPLETAMENTE
                     if (stockDisponible < necesidadTotal) {
                         alert(`🚫 AGOTADO EN COCINA: No puedes agregar más "${product.nombre || product.nombrePlato}". Quedan ${stockDisponible} unidades disponibles en el inventario.`);
-                        return; // 🛑 Frenazo en seco: sale de la función sin tocar el carrito
+                        return; 
+                    }
+
+                    // ⚠️ 2. ALERTA DE STOCK MÍNIMO BASADA EN LA COLUMNA DE SUPABASE
+                    const stockRestante = stockDisponible - necesidadTotal;
+                    if (stockRestante <= stockMinimoBD && !avisosDados.has(pId)) {
+                        avisosDados.add(pId); // Marcamos el aviso para evitar disparos repetitivos
+                        alert(`⚠️ ¡ATENCIÓN MESERO!: "${product.nombre || product.nombrePlato}" ha alcanzado el límite mínimo (${stockRestante} unidades restantes).`);
                     }
                 }
             }

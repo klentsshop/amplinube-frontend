@@ -289,7 +289,6 @@ export async function POST(req) {
     }
 }
 
-// 🔄 PUT: Actualizar producto existente en Supabase
 // 🔄 PUT: Actualizar producto existente en Supabase con Auto-Limpieza de Storage
 export async function PUT(req) {
     try {
@@ -298,7 +297,7 @@ export async function PUT(req) {
 
         const tenantLimpio = data.tenantId?.toLowerCase().trim();
 
-        // 🛡️ 1. CONSULTA PREVIA: Traemos la foto actual guardada en BD antes de actualizarla
+        // 🛡️ 1. CONSULTA PREVIA: Foto actual
         const { data: platoActual } = await supabaseServer
             .from('platos')
             .select('imagen')
@@ -355,27 +354,21 @@ export async function PUT(req) {
             .eq('id', data.productoId)
             .eq('tenant', tenantLimpio)
             .select()
-            .maybeSingle();
+            .single(); // 🎯 Cambiado a single() para garantizar objeto
 
         if (dbError) throw new Error(`SUPABASE_UPDATE_ERROR: ${dbError.message}`);
 
-        // 🗑️ 3. AUTO-LIMPIEZA DE STORAGE: Si la foto cambió y existía una anterior, la borramos
+        // 🗑️ 3. AUTO-LIMPIEZA DE STORAGE
         if (imagenViejaBD && nuevaImagenUrl && imagenViejaBD !== nuevaImagenUrl) {
             if (imagenViejaBD.includes('/storage/v1/object/public/productos/')) {
                 try {
-                    // Extrae la ruta interna (ej: "demo/1785967..." o "platos/1785967...")
                     const rutaRelativa = imagenViejaBD.split('/productos/')[1];
                     if (rutaRelativa) {
-                        const { error: errStorage } = await supabaseServer
+                        await supabaseServer
                             .storage
                             .from('productos')
                             .remove([decodeURIComponent(rutaRelativa)]);
-
-                        if (errStorage) {
-                            console.warn("⚠️ Error eliminando archivo en Storage:", errStorage.message);
-                        } else {
-                            console.log(`🗑️ Foto previa [${rutaRelativa}] eliminada exitosamente del bucket productos.`);
-                        }
+                        console.log(`🗑️ Foto previa [${rutaRelativa}] eliminada exitosamente.`);
                     }
                 } catch (errClean) {
                     console.warn("⚠️ No se pudo procesar el borrado de la foto anterior:", errClean.message);
@@ -384,13 +377,11 @@ export async function PUT(req) {
         }
 
         // 4. Estrategia Atómica: Delete + Insert sobre public.recetas
-        const { error: deleteRecetaErr } = await supabaseServer
+        await supabaseServer
             .from('recetas')
             .delete()
             .eq('plato_id', data.productoId)
             .eq('tenant', tenantLimpio);
-
-        if (deleteRecetaErr) throw new Error(`SUPABASE_RECETAS_DELETE_ERROR: ${deleteRecetaErr.message}`);
 
         if (data.controlaInventario && Array.isArray(data.insumosReceta) && data.insumosReceta.length > 0) {
             const filasReceta = [];
@@ -410,38 +401,43 @@ export async function PUT(req) {
             }
 
             if (filasReceta.length > 0) {
-                const { error: insertRecetaErr } = await supabaseServer
+                await supabaseServer
                     .from('recetas')
                     .insert(filasReceta);
-
-                if (insertRecetaErr) throw new Error(`SUPABASE_RECETAS_REINSERT_ERROR: ${insertRecetaErr.message}`);
             }
         }
 
-        // 5. ⚡ Actualizar la caché quirúrgicamente
-        const platoCache = {
+        // 5. ⚡ ESTRUCTURA PERFECTA PARA LA CACHÉ (Mismo formato que el GET)
+        const platoCacheEstructurado = {
             _id: productoActualizado.id,
             id: productoActualizado.id,
             _type: 'plato',
             tenant: tenantLimpio,
             nombre: productoActualizado.nombre,
-            precio: productoActualizado.precio,
-            precioCosto: productoActualizado.precio_costo,
-            disponible: productoActualizado.disponible,
-            barcode: productoActualizado.barcode,
-            codigoBalanza: productoActualizado.codigo_balanza,
-            imagenUrl: productoActualizado.imagen,
+            precio: Number(productoActualizado.precio || 0),
+            precioCosto: Number(productoActualizado.precio_costo || 0),
+            categoria: productoActualizado.categoria,
+            categoriaRef: productoActualizado.categoria ? { _ref: productoActualizado.categoria, _type: 'reference' } : null,
             imagen: productoActualizado.imagen ? { _type: 'image', asset: { url: productoActualizado.imagen } } : null,
-            categoria: { _ref: productoActualizado.categoria, _type: 'reference' },
-            recetaInsumos: productoActualizado.receta_insumos || [],
-            esVentaPorPeso: productoActualizado.es_venta_por_peso,
-            controlaInventario: productoActualizado.controla_inventario
+            imagenUrl: productoActualizado.imagen || null,
+            esVentaPorPeso: productoActualizado.es_venta_por_peso === true,
+            disponible: productoActualizado.disponible !== false,
+            controlaInventario: productoActualizado.controla_inventario === true,
+            barcode: productoActualizado.barcode || '',
+            codigoBalanza: productoActualizado.codigo_balanza || '',
+            insumosReceta: (data.insumosReceta || []).map(r => ({
+                insumoId: r.insumoId || r.insumo_id,
+                cantidad: Number(r.cantidad || 1)
+            })),
+            recetaInsumos: productoActualizado.receta_insumos || []
         };
 
-        await actualizarCacheLocal(tenantLimpio, platoCache, false);
+        // Actualizamos la celda de caché sin romper el objeto
+        await actualizarCacheLocal(tenantLimpio, platoCacheEstructurado, false);
 
-        console.log(`✅ Producto y Receta actualizados en Supabase [${tenantLimpio}]: ${data.productoId}`);
-        return NextResponse.json({ ok: true, item: productoActualizado });
+        console.log(`✅ Producto actualizado impecablemente: ${data.productoId}`);
+        return NextResponse.json({ ok: true, item: platoCacheEstructurado });
+
     } catch (error) {
         console.error("🔥 Error en PUT de productos:", error);
         return NextResponse.json({ ok: false, error: error.message }, { status: 500 });

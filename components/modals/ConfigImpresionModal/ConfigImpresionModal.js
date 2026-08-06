@@ -444,40 +444,48 @@ export default function ConfigImpresionModal({ isOpen, onClose, categorias, tena
             alert('❌ Fallo de comunicación con el servidor.');
         } finally { setGuardando(false); }
     };
-    // 🔄 REEMPLAZO EXACTO DENTRO DE ConfigImpresionModal.jsx
-    const activarEdicionProducto = (prod) => {
-        const idCorrecto = prod.id || prod._id;
-        setEditandoProductoId(idCorrecto);
-        
-        // 🛡️ Extraer URL de la imagen
-        const urlImagenExistente = typeof prod.imagen === 'string' 
-            ? prod.imagen 
-            : (prod.imagenUrl || prod.imagen?.asset?.url || null);
+    // 🔄 FUNCIÓN CORREGIDA SIN VARIABLES HUÉRFANAS
+const activarEdicionProducto = (prod) => {
+    const idCorrecto = prod.id || prod._id;
+    setEditandoProductoId(idCorrecto);
+    
+    // 🛡️ Extraer URL de la imagen
+    const urlImagenExistente = typeof prod.imagen === 'string' 
+        ? prod.imagen 
+        : (prod.imagenUrl || prod.imagen?.asset?.url || null);
 
-        // 🛡️ Extraer ID de la Categoría de Supabase o Sanity
-        const idCategoria = prod.categoria || prod.categoria_id || prod.categoria?._ref || '';
+    // 🎯 RESOLUCIÓN ESTÁNDAR A UUID DE SUPABASE
+    const catValorRaw = String(prod.categoria || prod.categoria_id || prod.categoria?._ref || '').toLowerCase().trim();
 
-        const fuenteReceta = Array.isArray(prod.recetas) ? prod.recetas : (prod.insumosReceta || prod.recetaInsumos || []);
-        
-        const recetaNormalizada = fuenteReceta.map(item => ({
-            insumoId: item.insumo_id || item.insumoId || item.insumo?._ref || '',
-            cantidad: Number(item.cantidad || item.amount || 1)
-        }));
+    const catCoincidente = (listaCategoriasCompletas || []).find(c => 
+        String(c.id || c._id).toLowerCase() === catValorRaw ||
+        String(c.slug || c.slug?.current).toLowerCase() === catValorRaw ||
+        String(c.titulo || c.nombre).toLowerCase() === catValorRaw
+    );
 
-        setNuevoPlato({
-            nombre: prod.nombre || '',
-            precio: prod.precio || '',
-            precioCosto: prod.precio_costo ?? prod.precioCosto ?? '',
-            categoria: String(idCategoria), // 👈 Se asigna string directo para coincidir con el <option>
-            controlaInventario: prod.controla_inventario ?? prod.controlaInventario ?? false,
-            disponible: prod.disponible !== false,
-            barcode: prod.barcode || '',
-            codigoBalanza: prod.codigo_balanza || prod.codigoBalanza || '',
-            imagen: urlImagenExistente,
-            insumosReceta: recetaNormalizada,
-            esVentaPorPeso: (prod.es_venta_por_peso ?? prod.esVentaPorPeso) === true
-        });
-    };
+    const idCategoria = catCoincidente ? String(catCoincidente.id || catCoincidente._id) : catValorRaw;
+
+    const fuenteReceta = Array.isArray(prod.recetas) ? prod.recetas : (prod.insumosReceta || prod.recetaInsumos || []);
+    
+    const recetaNormalizada = fuenteReceta.map(item => ({
+        insumoId: item.insumo_id || item.insumoId || item.insumo?._ref || '',
+        cantidad: Number(item.cantidad || item.amount || 1)
+    }));
+
+    setNuevoPlato({
+        nombre: prod.nombre || '',
+        precio: prod.precio || '',
+        precioCosto: prod.precio_costo ?? prod.precioCosto ?? '',
+        categoria: idCategoria, // 👈 Usa 'idCategoria' sin ReferenceError
+        controlaInventario: prod.controla_inventario ?? prod.controlaInventario ?? false,
+        disponible: prod.disponible !== false,
+        barcode: prod.barcode || '',
+        codigoBalanza: prod.codigo_balanza || prod.codigoBalanza || '',
+        imagen: urlImagenExistente,
+        insumosReceta: recetaNormalizada,
+        esVentaPorPeso: (prod.es_venta_por_peso ?? prod.esVentaPorPeso) === true
+    });
+};
     const cancelarEdicionProducto = () => {
         setEditandoProductoId(null);
         setNuevoPlato({

@@ -22,11 +22,16 @@ export default function VistaProductos({
     const timerBusquedaRef = useRef(null);
     const [subPestana, setSubPestana] = useState(editandoProductoId ? 'formulario' : 'listado');
     
-    // Filtrado de productos en tiempo real con blindaje contra valores nulos
-    const productosFiltrados = listaProductosCompletas.filter(p => 
-        (p.nombre || "").toLowerCase().includes((busquedaProd || "").toLowerCase())
-    );
+    // 🧠 ESTADOS PARA BÚSQUEDA AUTÓNOMA EN TODA LA BASE DE DATOS
+    const [productosVisuales, setProductosVisuales] = useState(listaProductosCompletas);
+    const timerBusquedaTablaRef = useRef(null);
 
+    // Sincronizar la carga inicial con lo que entrega el Padre
+    React.useEffect(() => {
+        if (!busquedaProd || busquedaProd.trim() === '') {
+            setProductosVisuales(listaProductosCompletas);
+        }
+    }, [listaProductosCompletas, busquedaProd]);
     return (
     /* 📱 CONTENEDOR PADRE BLINDADO: Bloquea el scroll general para mantener las pestañas fijas arriba */
     <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', maxHeight: 'calc(100vh - 140px)', overflowY: 'hidden' }}>
@@ -38,7 +43,7 @@ export default function VistaProductos({
                 onClick={() => setSubPestana('listado')}
                 style={{ flex: 1, padding: '12px', fontSize: '0.85rem', fontWeight: 'bold', border: 'none', backgroundColor: subPestana === 'listado' ? '#fff' : '#f3f4f6', color: subPestana === 'listado' ? '#10b981' : '#6b7280', borderBottom: subPestana === 'listado' ? '3px solid #10b981' : 'none', cursor: 'pointer', transition: 'all 0.2s' }}
             >
-                📋 LISTADO DE PRODUCTOS ({productosFiltrados.length})
+                📋 LISTADO DE PRODUCTOS ({productosVisuales.length})
             </button>
            <button 
                 type="button"
@@ -104,17 +109,27 @@ export default function VistaProductos({
     </div>
     <div>
         <label style={{ fontSize: '0.7rem', fontWeight: 'bold', color: '#6b7280', display: 'block', marginBottom: '4px' }}>Categoría</label>
-        <select 
-            value={nuevoPlato.categoria || ''} 
-            onChange={(e) => setNuevoPlato({...nuevoPlato, categoria: e.target.value})} 
-            style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #ccc', fontSize: '0.9rem', outline: 'none' }}
-        >
-            <option value="">Categoría...</option>
-            {categorias.map(c => {
-                const catId = String(c.id || c._id || c.categoria_id || '');
-                return <option key={catId} value={catId}>{c.titulo || c.nombre}</option>;
-            })}
-        </select>
+       <select 
+    value={(() => {
+        if (!nuevoPlato.categoria) return '';
+        const catVal = String(nuevoPlato.categoria).toLowerCase().trim();
+        // 🎯 Resuelve dinámicamente el UUID si el producto trae slug/texto
+        const encontrada = categorias.find(c => 
+            String(c.id || c._id).toLowerCase() === catVal ||
+            String(c.slug || c.slug?.current).toLowerCase() === catVal ||
+            String(c.titulo || c.nombre).toLowerCase() === catVal
+        );
+        return encontrada ? String(encontrada.id || encontrada._id) : nuevoPlato.categoria;
+    })()} 
+    onChange={(e) => setNuevoPlato({...nuevoPlato, categoria: e.target.value})} 
+    style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #ccc', fontSize: '0.9rem', outline: 'none' }}
+>
+    <option value="">Categoría...</option>
+    {categorias.map(c => {
+        const catId = String(c.id || c._id || c.categoria_id || '');
+        return <option key={catId} value={catId}>{(c.titulo || c.nombre || '').toUpperCase()}</option>;
+    })}
+</select>
     </div>
 </div>
                 
@@ -385,13 +400,34 @@ export default function VistaProductos({
             {/* 🎯 CONVERGENCIA SENIOR: Si la pestaña es listado, renderizamos la tabla */}
             {subPestana === 'listado' && (
             <>
-            {/* BUSCADOR Y TABLA */}
+            {/* BUSCADOR AUTÓNOMO QUE ESCANEA LOS 1,600 PRODUCTOS EN BD */}
             <input 
                 type="text" 
-                placeholder="🔍 Buscar producto por nombre..." 
+                placeholder="🔍 Buscar producto en toda la BD (Ej: Marlboro, Agua)..." 
                 value={busquedaProd} 
-                onChange={(e) => setBusquedaProd(e.target.value)} 
-                style={{ padding: '8px 10px', borderRadius: '6px', border: '1px solid #d1d5db', fontSize: '0.85rem', backgroundColor: '#fff', flexShrink: 0, outline: 'none' }} 
+                onChange={(e) => {
+                    const texto = e.target.value;
+                    setBusquedaProd(texto);
+
+                    if (timerBusquedaTablaRef.current) clearTimeout(timerBusquedaTablaRef.current);
+
+                    timerBusquedaTablaRef.current = setTimeout(() => {
+                        const termino = texto.trim();
+                        if (!termino) {
+                            setProductosVisuales(listaProductosCompletas);
+                            return;
+                        }
+
+                        fetch(`/api/admin/productos?tenantId=${tenantId}&search=${encodeURIComponent(termino)}`)
+                            .then(res => res.json())
+                            .then(data => {
+                                const resultados = Array.isArray(data) ? data : (data.data || []);
+                                setProductosVisuales(resultados);
+                            })
+                            .catch(err => console.error("🔥 Error buscando en BD:", err));
+                    }, 300);
+                }} 
+                style={{ padding: '8px 10px', borderRadius: '6px', border: '1px solid #3b82f6', fontSize: '0.85rem', backgroundColor: '#fff', flexShrink: 0, outline: 'none' }} 
             />
             
             {/* 📈 TABLA INTELIGENTE */}
@@ -406,11 +442,10 @@ export default function VistaProductos({
                     </thead>
                   
                     <tbody>
-    {productosFiltrados.map(p => {
+    {productosVisuales.map(p => {
         const idProducto = p.id || p._id;
         return (
             <tr key={idProducto} onClick={() => {
-                // 🧠 Soporte híbrido: Lee el arreglo relacional 'recetas' de Supabase o 'recetaInsumos' de Sanity
                 const fuenteReceta = Array.isArray(p.recetas) ? p.recetas : (p.recetaInsumos || []);
                 
                 const recetaNormalizada = fuenteReceta.map(item => {

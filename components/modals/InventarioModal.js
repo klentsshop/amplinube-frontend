@@ -8,7 +8,7 @@ export default function InventarioModal({ isOpen, onClose, tenantId }) {
     const [busqueda, setBusqueda] = useState('');
     const [cantidades, setCantidades] = useState({});
     const [confirmacion, setConfirmacion] = useState({});
-    const { insumos, cargarStock, cargando } = useInventario(tenantId, busqueda);
+    const { insumos, cargarStock, cargando } = useInventario(tenantId, busqueda, isOpen);
     const [procesandoId, setProcesandoId] = useState(null);
     
     const inputBusquedaRef = useRef(null);

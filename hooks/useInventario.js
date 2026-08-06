@@ -20,24 +20,25 @@ const fetcher = async (url) => {
     return res.json();
 };
 
-export function useInventario(tenantId, search = '') {
-    const { refreshStockLocal, actualizarCacheStockMasivo } = useCart();
+export function useInventario(tenantId, search = '', activo = false) {
+    const { refreshStockLocal } = useCart();
 
+    // 1️⃣ Carga limpia e instantánea al abrir el modal (Cero caché rancia)
     const { data, error, mutate, isLoading } = useSWR(
-        tenantId ? `/api/inventario/list?tenantId=${tenantId}&search=${encodeURIComponent(search.trim())}` : null,
+        (tenantId && activo) ? `/api/inventario/list?tenantId=${tenantId}&search=${encodeURIComponent(search.trim())}` : null,
         fetcher, 
         {
-            refreshInterval: 0,          // 🛑 CRÍTICO: Desactivado. Cero llamadas repetitivas a Netlify
-            revalidateOnFocus: false,
-            revalidateOnMount: true,     
-            dedupingInterval: 4000,      // Permite cambios instantáneos al mutar
-            revalidateIfStale: false     // Elimina destellos de datos viejos en la UI
+            refreshInterval: 0,          // Cero polling redundante
+            revalidateOnFocus: true,     // Revalida si cambias de pestaña
+            revalidateOnMount: 'always', // 🚀 OBLIGATORIO: Fuerza traer el stock fresco descontado por ventas al abrir
+            dedupingInterval: 0,         // Cero bloqueo de caché en aperturas
+            revalidateIfStale: true      // Revalida si hay data almacenada previamente
         }
     );
 
-    // 2️⃣ 🚀 SUSCRIPCIÓN EN TIEMPO REAL DIRECTA A SUPABASE (Con depuración F12)
+    // 2️⃣ 🚀 SUSCRIPCIÓN CONEXIÓN "LAZY" (Solo activa si la vista está ABIERTA)
     useEffect(() => {
-        if (!tenantId) return;
+        if (!tenantId || !activo) return;
 
         const tenantLimpio = tenantId.toLowerCase().trim();
 
@@ -52,7 +53,6 @@ export function useInventario(tenantId, search = '') {
                     filter: `tenant_id=eq.${tenantLimpio}`
                 },
                 (payload) => {
-                    console.log('⚡ Cambio en Inventario detectado vía Realtime:', payload);
                     const insumoCambia = payload.new;
                     if (!insumoCambia) return;
 
@@ -94,15 +94,18 @@ export function useInventario(tenantId, search = '') {
                     }, false);
                 }
             )
-            .subscribe((status, err) => {
-                console.log(`📡 Estado suscripción Inventario (${tenantLimpio}):`, status);
-                if (err) console.error("❌ Error en suscripción Realtime:", err);
+            .subscribe((status) => {
+                if (status === 'SUBSCRIBED') {
+                    console.log(`🟢 Realtime Inventario CONECTADO [${tenantLimpio}]`);
+                }
             });
 
+        // 🛡️ DESCONEXIÓN AUTOMÁTICA: Al cerrar el modal, destruye la suscripción en Supabase
         return () => {
+            console.log(`🔴 Realtime Inventario DESCONECTADO [${tenantLimpio}]`);
             supabaseClient.removeChannel(channel);
         };
-    }, [tenantId, mutate]);
+    }, [tenantId, activo, mutate]);
 
     // 3️⃣ Carga manual / Actualización directa de stock desde el frontend
     const cargarStock = async (insumoId, cantidad, tenantId) => {
