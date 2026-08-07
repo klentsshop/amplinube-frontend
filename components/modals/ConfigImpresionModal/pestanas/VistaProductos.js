@@ -26,12 +26,19 @@ export default function VistaProductos({
     const [productosVisuales, setProductosVisuales] = useState(listaProductosCompletas);
     const timerBusquedaTablaRef = useRef(null);
 
-    // Sincronizar la carga inicial con lo que entrega el Padre
-    React.useEffect(() => {
-        if (!busquedaProd || busquedaProd.trim() === '') {
-            setProductosVisuales(listaProductosCompletas);
-        }
-    }, [listaProductosCompletas, busquedaProd]);
+   React.useEffect(() => {
+    if (busquedaProd && busquedaProd.trim() !== '') {
+        // Si hay una búsqueda activa, filtra sobre la lista fresca del padre
+        const termino = busquedaProd.toLowerCase().trim();
+        const filtrados = listaProductosCompletas.filter(p => 
+            (p.nombre || '').toLowerCase().includes(termino)
+        );
+        setProductosVisuales(filtrados);
+    } else {
+        // Si no hay búsqueda, refleja directamente la lista del padre
+        setProductosVisuales(listaProductosCompletas);
+    }
+}, [listaProductosCompletas, busquedaProd]);
     return (
     /* 📱 CONTENEDOR PADRE BLINDADO: Bloquea el scroll general para mantener las pestañas fijas arriba */
     <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', maxHeight: 'calc(100vh - 140px)', overflowY: 'hidden' }}>

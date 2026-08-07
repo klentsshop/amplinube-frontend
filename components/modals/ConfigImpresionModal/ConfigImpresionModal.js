@@ -286,11 +286,13 @@ export default function ConfigImpresionModal({ isOpen, onClose, categorias, tena
     } finally { setGuardando(false); }
 };
 
-    const activarEdicion = (cat) => {
-        setNuevaCatTitulo(cat.titulo);
-        setNuevaCatSeImprime(cat.seImprime ?? true);
-        setEditandoCatId(cat._id);
-    };
+   // 🎯 BISTURÍ: Normalización de ID para evitar que caiga en 'undefined'
+const activarEdicion = (cat) => {
+    const idReal = cat.id || cat._id;
+    setNuevaCatTitulo(cat.titulo || '');
+    setNuevaCatSeImprime(cat.se_imprime ?? cat.seImprime ?? true);
+    setEditandoCatId(idReal);
+};
 
    // 🔄 REEMPLAZO EXACTO DE HANDLEGUARDARINVENTARIO
     const handleGuardarInventario = async (e) => {
@@ -514,6 +516,8 @@ const activarEdicionProducto = (prod) => {
             const data = await res.json();
             if (data.ok) {
                 if (editandoProductoId === productoId) cancelarEdicionProducto();
+                // ⚡ ELIMINACIÓN OPTIMISTA EN MEMORIA: Lo remueve del estado del padre de inmediato
+            setListaProductosCompletas(prev => prev.filter(p => (p.id || p._id) !== productoId));
                 await cargarProductosNegocio();
                 window.dispatchEvent(new Event('inventarioActualizado'));
             } else {

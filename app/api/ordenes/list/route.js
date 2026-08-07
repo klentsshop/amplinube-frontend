@@ -140,65 +140,77 @@ export async function POST(request) {
 
         const cleanTenant = tenantId.toLowerCase().trim();
 
-        // 🛡️ CONTROL DE CATEGORÍAS NO IMPRIMIBLES DESDE CATALOG_CACHE
-        let categoriasNoImprimibles = [];
-        const { data: cacheRow } = await supabaseServer
-            .from('catalog_cache')
-            .select('payload_json')
-            .eq('tenant_host', cleanTenant)
-            .maybeSingle();
+        // =========================================================================
+// 🛡️ CONTROL DE CATEGORÍAS NO IMPRIMIBLES DESDE CATALOG_CACHE / SUPABASE
+// =========================================================================
+let categoriasNoImprimibles = [];
 
-        if (cacheRow?.payload_json) {
-            const catalogo = cacheRow.payload_json;
-            const categorias = catalogo.filter(item => item._type === 'categoria');
-            categoriasNoImprimibles = categorias.filter(c => c.seImprime === false);
-        }
+const { data: cacheRow } = await supabaseServer
+    .from('catalog_cache')
+    .select('payload_json')
+    .eq('tenant_host', cleanTenant)
+    .maybeSingle();
 
-        const idsExcluidos = new Set(categoriasNoImprimibles.map(c => String(c._id).trim()));
-        const titulosExcluidos = new Set(categoriasNoImprimibles.map(c => String(c.titulo).trim().toUpperCase()));
+if (cacheRow?.payload_json && Array.isArray(cacheRow.payload_json)) {
+    const catalogo = cacheRow.payload_json;
+    const categorias = catalogo.filter(item => item._type === 'categoria');
+    
+    // 🧠 BISTURÍ: Soporta tanto 'se_imprime' (DB) como 'seImprime' (CamelCase)
+    categoriasNoImprimibles = categorias.filter(c => c.se_imprime === false || c.seImprime === false);
+}
 
-        const estacionesSet = new Set();
-        const platosNormalizados = platosOrdenados.map(p => {
-            const catIdOriginal = typeof p.categoria === 'object' ? (p.categoria?._ref || p.categoria?._id) : p.categoria;
-            const catIdLimpio = String(catIdOriginal || "").trim();
-            const catLabelLimpia = String(p.categoriaLabel || p.categoria || "").trim().toUpperCase();
-            
-            const esCategoriaExcluida = idsExcluidos.has(catIdLimpio) || titulosExcluidos.has(catLabelLimpia);
-            const debeImprimirPlato = p.seImprime === true && !esCategoriaExcluida;
-            const categoriaFinal = p.categoriaLabel ? String(p.categoriaLabel).trim().toUpperCase() : catLabelLimpia;
-            
-            if (debeImprimirPlato && categoriaFinal) {
-                estacionesSet.add(categoriaFinal);
-            }
+// Creamos colecciones de normalización en Mayúsculas para macheo perfecto
+const idsExcluidos = new Set(categoriasNoImprimibles.map(c => String(c._id || c.id || "").trim().toLowerCase()));
+const titulosExcluidos = new Set(categoriasNoImprimibles.map(c => String(c.titulo || c.nombre || "").trim().toUpperCase()));
+const slugsExcluidos = new Set(categoriasNoImprimibles.map(c => String(c.slug?.current || c.slug || "").trim().toLowerCase()));
 
-            // 🛡️ BISTURÍ: Empaquetamos los datos de inventario dentro del comentario para no romper tu base de datos física
-            let comentarioFinal = p.comentario || "";
-            if (p.controlaInventario && p.insumoVinculado) {
-                comentarioFinal = JSON.stringify({
-                    comentarioOriginal: p.comentario || "",
-                    insumo: p.insumoVinculado
-                });
-            }
+const estacionesSet = new Set();
 
-            // Enviaremos estrictamente las columnas que creamos en el script SQL de public.platos_ordenados
-            const payloadPlato = {
-                line_id: p._key || p.lineId || Math.random().toString(36).substring(2, 9),
-                plato_id: p._id,
-                nombre_plato: p.nombrePlato || p.nombre,
-                cantidad: Number(p.cantidad) || 1,
-                precio_unitario: Number(p.precioUnitario || p.precioNum) || 0,
-                subtotal: (Number(p.precioUnitario || p.precioNum) || 0) * (Number(p.cantidad) || 1),
-                comentario: comentarioFinal,
-                categoria: categoriaFinal
-            };
+const platosNormalizados = platosOrdenados.map(p => {
+    const catIdOriginal = typeof p.categoria === 'object' ? (p.categoria?._ref || p.categoria?._id) : p.categoria;
+    const catIdLimpio = String(catIdOriginal || "").trim().toLowerCase();
+    const catLabelLimpia = String(p.categoriaLabel || p.categoria || "").trim().toUpperCase();
+    const catSlugLimpio = String(p.categoriaSlug || p.slug || "").trim().toLowerCase();
 
-            // 🛡️ PRESERVACIÓN CRONOLÓGICA: Si la línea ya existía y trae timestamp, lo mantenemos
-            if (p.created_at || p.createdAt) {
-                payloadPlato.created_at = p.created_at || p.createdAt;
-            }
+    // 🎯 VALIDACIÓN TRIPLE: Si el ID, el Título o el Slug coinciden con una categoría NO imprimible, se apaga
+    const esCategoriaExcluida = idsExcluidos.has(catIdLimpio) || titulosExcluidos.has(catLabelLimpia) || slugsExcluidos.has(catSlugLimpio);
 
-            return payloadPlato;
+    // 🚀 REGLA DE ORO: Si la categoría NO es excluida, SE AGREGA A LA IMPRESIÓN
+    const debeImprimir = !esCategoriaExcluida && p.seImprime !== false;
+
+    const categoriaFinal = p.categoriaLabel ? String(p.categoriaLabel).trim().toUpperCase() : catLabelLimpia;
+
+    // Solo si 'debeImprimir' es verdadero y tiene categoría válida, entra a la comanda de cocina
+    if (debeImprimir && categoriaFinal) {
+        estacionesSet.add(categoriaFinal);
+    }
+
+    // 🛡️ BISTURÍ: Empaquetamos los datos de inventario dentro del comentario
+    let comentarioFinal = p.comentario || "";
+    if (p.controlaInventario && p.insumoVinculado) {
+        comentarioFinal = JSON.stringify({
+            comentarioOriginal: p.comentario || "",
+            insumo: p.insumoVinculado
         });
+    }
+
+    const payloadPlato = {
+        line_id: p._key || p.lineId || Math.random().toString(36).substring(2, 9),
+        plato_id: p._id || p.id,
+        nombre_plato: p.nombrePlato || p.nombre,
+        cantidad: Number(p.cantidad) || 1,
+        precio_unitario: Number(p.precioUnitario || p.precioNum) || 0,
+        subtotal: (Number(p.precioUnitario || p.precioNum) || 0) * (Number(p.cantidad) || 1),
+        comentario: comentarioFinal,
+        categoria: categoriaFinal
+    };
+
+    if (p.created_at || p.createdAt) {
+        payloadPlato.created_at = p.created_at || p.createdAt;
+    }
+
+    return payloadPlato;
+});
         const estacionesPendientes = Array.from(estacionesSet);
         const valorSolicitada = body.hasOwnProperty('imprimirSolicitada') ? body.imprimirSolicitada : true;
         const valorCliente = body.hasOwnProperty('imprimirCliente') ? body.imprimirCliente : false;
