@@ -132,18 +132,20 @@ export async function POST(request) {
     }
 }
 
-// 🔄 PUT: Actualizar permisos/datos de un vendedor existente
+// 🔄 PUT: Actualizar permisos/datos de un vendedor existente sin duplicar
 export async function PUT(request) {
     try {
         const body = await request.json();
         const { 
-            itemId, nombre, activo, tenantId,
+            itemId, id, _id, nombre, activo, tenantId,
             verReporte, verAdmin, puedeCargarGasto, verVentas, verInventario, puedeCobrar 
         } = body;
 
         const tenantLimpio = tenantId?.toLowerCase().trim();
+        // 🛡️ BISTURÍ: Rescatar el ID real de cualquier propiedad posible
+        const idDefinitivo = itemId || id || _id;
 
-        if (!tenantLimpio || !itemId) {
+        if (!tenantLimpio || !idDefinitivo) {
             return NextResponse.json({ error: 'Faltan parámetros críticos (tenantId o itemId).' }, { status: 400 });
         }
 
@@ -160,12 +162,16 @@ export async function PUT(request) {
         const { data, error } = await supabaseServer
             .from('meseros')
             .update(camposAActualizar)
-            .eq('id', itemId)
+            .eq('id', idDefinitivo)
             .eq('tenant', tenantLimpio)
             .select()
             .maybeSingle();
 
-       if (error) throw new Error(`SUPABASE_UPDATE_ERROR: ${error.message}`);
+        if (error) throw new Error(`SUPABASE_UPDATE_ERROR: ${error.message}`);
+
+        if (!data) {
+            return NextResponse.json({ error: 'El mesero especificado no fue encontrado para actualizar.' }, { status: 404 });
+        }
 
         // ⚡ Mapear actualización quirúrgica para la caché
         const meseroCache = {
@@ -185,8 +191,8 @@ export async function PUT(request) {
 
         await actualizarCacheLocal(tenantLimpio, meseroCache, false);
 
-        console.log(`🔄 Vendedor actualizado en Supabase y Caché [${tenantLimpio}]: ${itemId}`);
-        return NextResponse.json({ ok: true, id: itemId, item: data });
+        console.log(`🔄 Vendedor actualizado en Supabase y Caché [${tenantLimpio}]: ${idDefinitivo}`);
+        return NextResponse.json({ ok: true, id: idDefinitivo, item: data });
 
     } catch (error) {
         console.error('🔥 [API_PUT_MESEROS_ERROR]:', error.message);

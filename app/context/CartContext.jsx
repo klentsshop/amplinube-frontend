@@ -179,11 +179,11 @@ setItems(prev => {
         return copy;
     }
 
-    return [...prev, { 
+    // ✅ AHORA (Entra de PRIMERO arriba):
+    return [{ 
       ...product, 
       _id: pId, 
       lineId: crypto.randomUUID(), 
-      // 🌟 Conservamos la cantidad exacta con decimales que viene de la báscula/modal
       cantidad: Number(cantAAgregar), 
       precioNum, 
       precioCosto: Number(product.precioCosto || 0),
@@ -191,7 +191,7 @@ setItems(prev => {
       comentario: product.comentario || '', 
       categoria: (product.categoria || "").toString().toUpperCase().trim(),
       seImprime: product.seImprime ?? true 
-    }];
+    }, ...prev];
 });
   }, [items, stockLocalCache, cleanPrice]);
   const setCartFromOrden = (platosOrdenados = [], tipoDeOrdenBD = 'mesa') => {

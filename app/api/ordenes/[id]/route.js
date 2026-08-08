@@ -20,6 +20,12 @@ export async function GET(request, { params }) {
             return NextResponse.json({ error: 'ID de orden faltante' }, { status: 400 });
         }
 
+        // 🛡️ BISTURÍ: Validar que sea un UUID v4 legítimo (36 caracteres)
+        const esUUIDValido = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(ordenId);
+        if (!esUUIDValido) {
+            return NextResponse.json({ error: `Identificador de orden no válido: ${ordenId}`, exists: false }, { status: 400 });
+        }
+
         const cleanTenant = tenantId.toLowerCase().trim();
 
         // 1. Consultar la cabecera en Supabase
@@ -121,6 +127,12 @@ export async function DELETE(request, { params }) {
 
         if (!ordenId || !tenantId || tenantId === 'undefined') {
             return NextResponse.json({ error: 'ordenId y tenantId requeridos' }, { status: 400 });
+        }
+
+        // 🛡️ BISTURÍ: Validar que sea un UUID v4 legítimo (36 caracteres)
+        const esUUIDValido = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(ordenId);
+        if (!esUUIDValido) {
+            return NextResponse.json({ error: `Identificador de orden no válido: ${ordenId}` }, { status: 400 });
         }
 
         const cleanTenant = tenantId.toLowerCase().trim();

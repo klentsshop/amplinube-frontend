@@ -367,36 +367,26 @@ export default function TicketPanel({
                 ) : (
                     [...cart]
                        .sort((a, b) => {
-    // 1. Normalizamos categorías para comparar sin errores de mayúsculas
+    // 1. Normalizamos categorías y nombres a minúsculas
     const catA = (a.categoria || "").toLowerCase();
     const catB = (b.categoria || "").toLowerCase();
+    const nomA = (a.nombre || "").toLowerCase();
+    const nomB = (b.nombre || "").toLowerCase();
 
-    // 2. Lógica Multitenant: Identificamos "bebidas" por palabra clave, no por ID fijo
-    // Esto hace que funcione para cualquier cliente (Pescadería, Bar, Restaurante)
-    const esBebidaA = catA.includes('bebida') || catA.includes('toma') || catA.includes('gaseosa');
-    const esBebidaB = catB.includes('bebida') || catB.includes('toma') || catB.includes('gaseosa');
+    // 2. Palabras clave que identifican bebidas/jugos/líquidos
+    const palabrasBebida = ['bebida', 'toma', 'gaseosa', 'jugo', 'jugos', 'refresco', 'cerveza', 'licor', 'agua', 'limonada', 'soda'];
 
-    // Mandamos las bebidas al final del ticket (estándar de logística de despacho)
+    const esBebidaA = palabrasBebida.some(p => catA.includes(p) || nomA.includes(p));
+    const esBebidaB = palabrasBebida.some(p => catB.includes(p) || nomB.includes(p));
+
+    // 🍹 Mandamos todas las bebidas, jugos y gaseosas al FINAL del ticket
     if (esBebidaA && !esBebidaB) return 1;
     if (!esBebidaA && esBebidaB) return -1;
 
-    // 3. Prioridad por nombre (Ej: platos que contienen "Promoción" o "Especial")
-    const nameA = (a.nombre || "").toLowerCase();
-    const nameB = (b.nombre || "").toLowerCase();
-    
-    // Si quieres mantener palabras de prioridad, mejor definirlas en un array local 
-    // o pasarlas por props para que no dependan de un archivo externo.
-    const palabrasPrioridad = ['especial', 'combo', 'promo'];
-    const esPriA = palabrasPrioridad.some(k => nameA.includes(k));
-    const esPriB = palabrasPrioridad.some(k => nameB.includes(k));
-
-    if (esPriA && !esPriB) return -1;
-    if (!esPriA && esPriB) return 1;
-
-    // 4. Orden alfabético final para que el ticket sea legible
-    return nameA.localeCompare(nameB);
+    // 🍽️ Para los platos de comida: preservamos el orden exacto de llegada (el último plato queda ARRIBA)
+    return 0;
 })
-                       // ✅ USA ESTE BLOQUE: Es el más seguro y recupera tu estilo
+                    
          .map(item => (
      <div key={item.lineId} style={{ display: 'flex', flexDirection: 'column', padding: '10px 0', borderBottom: '1px solid #eee' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>

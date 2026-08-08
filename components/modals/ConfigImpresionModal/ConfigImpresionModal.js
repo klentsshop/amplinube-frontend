@@ -720,17 +720,17 @@ const activarEdicionProducto = (prod) => {
         }
     };
  
-    const seleccionarMeseroParaEditar = (item) => {
-        setEditandoMeseroId(item._id);
-        setMeseroNombre(item.nombre);
-        setMeseroActivo(item.activo !== false);
-        
-        // 🛡️ Sincronización en piedra para el formulario al entrar en modo edición
-        // Esto previene que se queden marcados los permisos del mesero editado anteriormente.
-        setTimeout(() => {
-            window.dispatchEvent(new CustomEvent('sincronizarPermisosFormulario', { detail: item }));
-        }, 20);
-    };
+    // 🛡️ BISTURÍ: Capturar el ID real independientemente de si viene como 'id' (Supabase) o '_id' (Legacy)
+const seleccionarMeseroParaEditar = (item) => {
+    const idReal = item.id || item._id; // 👈 CORRECCIÓN AQUÍ
+    setEditandoMeseroId(idReal);
+    setMeseroNombre(item.nombre || '');
+    setMeseroActivo(item.activo !== false);
+    
+    setTimeout(() => {
+        window.dispatchEvent(new CustomEvent('sincronizarPermisosFormulario', { detail: item }));
+    }, 20);
+};
 
     const cancelarEdicionMesero = () => {
         setEditandoMeseroId(null);

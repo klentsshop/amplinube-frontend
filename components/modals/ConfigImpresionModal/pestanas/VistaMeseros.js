@@ -16,24 +16,23 @@ export default function VistaMeseros({
     seleccionarMeseroParaEditar,
     handleBorrarMesero
 }) {
-    // 🛡️ Estados internos de control para el mapa completo de permisos granulares
+    // 🛡️ Estados internos de permisos
     const [verReporte, setVerReporte] = useState(false);
     const [verAdmin, setVerAdmin] = useState(false);
     const [puedeCargarGasto, setPuedeCargarGasto] = useState(false);
     const [verVentas, setVerVentas] = useState(false);
     const [verInventario, setVerInventario] = useState(false);
     const [puedeCobrar, setPuedeCobrar] = useState(false);
-    // 🔌 NUEVO: Control de subpestañas dinámicas
+
     const [subPestana, setSubPestana] = useState(editandoMeseroId ? 'formulario' : 'listado');
 
-    // Forzar el cambio de pestaña si el usuario selecciona un mesero para editar desde el listado
     useEffect(() => {
         if (editandoMeseroId) {
             setSubPestana('formulario');
         }
     }, [editandoMeseroId]);
 
-    // Sincroniza todos los interruptores al alternar la edición o limpiar el formulario
+    // 🎯 BISTURÍ: Sincronización elástica de permisos de Supabase / Sanity
     useEffect(() => {
         if (!editandoMeseroId) {
             setVerReporte(false);
@@ -45,18 +44,40 @@ export default function VistaMeseros({
         } else {
             const idBuscado = editandoMeseroId;
             const meseroMatch = meserosFiltrados.find(m => (m.id || m._id) === idBuscado);
+            
             if (meseroMatch) {
-                setVerReporte(meseroMatch.ver_reporte ?? meseroMatch.verReporte ?? false);
-                setVerAdmin(meseroMatch.ver_admin ?? meseroMatch.verAdmin ?? false);
-                setPuedeCargarGasto(meseroMatch.puede_cargar_gasto ?? meseroMatch.puedeCargarGasto ?? false);
-                setVerVentas(meseroMatch.ver_ventas ?? meseroMatch.verVentas ?? false);
-                setVerInventario(meseroMatch.ver_inventario ?? meseroMatch.verInventario ?? false);
-                setPuedeCobrar(meseroMatch.puede_cobrar ?? meseroMatch.puedeCobrar ?? false);
+                // Rescata el permiso priorizando snake_case de Supabase con fallback a camelCase
+                setVerReporte(Boolean(meseroMatch.ver_reporte ?? meseroMatch.verReporte ?? false));
+                setVerAdmin(Boolean(meseroMatch.ver_admin ?? meseroMatch.verAdmin ?? false));
+                setPuedeCargarGasto(Boolean(meseroMatch.puede_cargar_gasto ?? meseroMatch.puedeCargarGasto ?? false));
+                setVerVentas(Boolean(meseroMatch.ver_ventas ?? meseroMatch.verVentas ?? false));
+                setVerInventario(Boolean(meseroMatch.ver_inventario ?? meseroMatch.verInventario ?? false));
+                setPuedeCobrar(Boolean(meseroMatch.puede_cobrar ?? meseroMatch.puedeCobrar ?? false));
             }
         }
     }, [editandoMeseroId, meserosFiltrados]);
+
+    // 🔌 BISTURÍ: Escuchar el evento de sincronización rápida enviado por el padre al seleccionar en la tabla
+    useEffect(() => {
+        const handleSincronizarPermisos = (e) => {
+            const item = e.detail;
+            if (item) {
+                setVerReporte(Boolean(item.ver_reporte ?? item.verReporte ?? false));
+                setVerAdmin(Boolean(item.ver_admin ?? item.verAdmin ?? false));
+                setPuedeCargarGasto(Boolean(item.puede_cargar_gasto ?? item.puedeCargarGasto ?? false));
+                setVerVentas(Boolean(item.ver_ventas ?? item.verVentas ?? false));
+                setVerInventario(Boolean(item.ver_inventario ?? item.verInventario ?? false));
+                setPuedeCobrar(Boolean(item.puede_cobrar ?? item.puedeCobrar ?? false));
+            }
+        };
+
+        window.addEventListener('sincronizarPermisosFormulario', handleSincronizarPermisos);
+        return () => {
+            window.removeEventListener('sincronizarPermisosFormulario', handleSincronizarPermisos);
+        };
+    }, []);
+
     return (
-        /* 📱 CONTENEDOR PADRE BLINDADO: Fija la cabecera con pestañas arriba y controla el espacio */
         <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', maxHeight: 'calc(100vh - 140px)', overflowY: 'hidden' }}>
             
             {/* 📑 BOTONERA DE PESTAÑAS RESPONSIVAS */}
@@ -77,12 +98,17 @@ export default function VistaMeseros({
                 </button>
             </div>
 
-            {/* VISTA A: FORMULARIO DINÁMICO SUPERIOR (Sólo si está en pestaña formulario) */}
+            {/* VISTA A: FORMULARIO DINÁMICO */}
             {subPestana === 'formulario' && (
                 <form 
                     onSubmit={(e) => {
-                        handleGuardarMesero(e);
-                        setSubPestana('listado'); // Retorna al listado al enviar de forma exitosa
+                        e.preventDefault();
+                        const pseudoEvento = {
+                            preventDefault: () => {},
+                            target: { verReporte, verAdmin, puedeCargarGasto, verVentas, verInventario, puedeCobrar }
+                        };
+                        handleGuardarMesero(pseudoEvento);
+                        setSubPestana('listado');
                     }} 
                     style={{ 
                         background: editandoMeseroId ? '#eff6ff' : '#f9fafb', 
@@ -110,7 +136,6 @@ export default function VistaMeseros({
                     </div>
                     
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                        {/* 📱 GRID REESTRUCTURADO EN TRES COLUMNAS PARA INTEGRAR EL BOTÓN ACCIÓN ARRIBA */}
                         <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '6px', alignItems: 'end' }}>
                             <div>
                                 <label style={{ fontSize: '0.7rem', fontWeight: 'bold', color: '#6b7280', display: 'block', marginBottom: '4px' }}>Nombre del Vendedor(a)</label>
@@ -136,7 +161,6 @@ export default function VistaMeseros({
                                 </label>
                             </div>
 
-                            {/* 🚀 INYECCIÓN MAESTRA: El botón ahora vive aquí arriba, inmune al teclado del iPhone */}
                             <button 
                                 type="button" 
                                 disabled={guardando} 
@@ -164,11 +188,11 @@ export default function VistaMeseros({
                                     whiteSpace: 'nowrap'
                                 }}
                             >
-                                {editandoMeseroId ? '💾 GUARDAR' : '💾 GUARDAR' }
+                                💾 GUARDAR
                             </button>
                         </div>
 
-                        {/* SECCIÓN INTERRUPTORES DE RESTRICCIÓN DE ROLES GRANULARES */}
+                        {/* SECCIÓN INTERRUPTORES DE PERMISOS */}
                         <div style={{ background: '#fff', padding: '12px', borderRadius: '8px', border: '1px solid #e5e7eb', display: 'flex', flexDirection: 'column', gap: '10px' }}>
                             <span style={{ fontSize: '0.65rem', fontWeight: '900', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.5px' }}>🛡️ Permisos autorizados para este usuario</span>
                             
@@ -203,7 +227,7 @@ export default function VistaMeseros({
                 </form>
             )}
 
-            {/* VISTA B: TABLA SOLO LECTURA INTERACTIVA (Sólo si está en pestaña listado) */}
+            {/* VISTA B: TABLA SOLO LECTURA */}
             {subPestana === 'listado' && (
                 <>
                     <label style={{ display: 'block', fontWeight: 'bold', fontSize: '0.8rem', color: '#374151', textTransform: 'uppercase', marginBottom: '2px' }}>Vendedores Registrados en el POS (Clic para editar)</label>
