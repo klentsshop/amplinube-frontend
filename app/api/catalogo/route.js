@@ -193,8 +193,21 @@ export async function GET(request) {
             puedeCobrar: m.puede_cobrar ?? false
         }));
 
-        // 4. UNIFICACIÓN COMPLETA DE PAYLOAD
-        const payloadUnificado = [
+        // 4. UNIFICACIÓN COMPLETA DE PAYLOAD HÍBRIDO (Control de escala por volumen)
+        const esCatalogoMasivo = productosProcesados.length >= 3000;
+
+        // Para catálogos de >= 3,000 productos, no embebemos el pesado array de platos en el snapshot de la BD
+        const productosAEmbeber = esCatalogoMasivo ? [] : productosProcesados;
+
+        const payloadCacheGuardar = [
+            ...categoriasProcesadas,
+            ...productosAEmbeber,
+            ...meserosProcesados,
+            ...datosSanity
+        ];
+
+        // Para la respuesta directa al cliente, entregamos la estructura completa necesaria
+        const payloadRespuesta = [
             ...categoriasProcesadas,
             ...productosProcesados,
             ...meserosProcesados,
@@ -202,18 +215,21 @@ export async function GET(request) {
         ];
 
         // 5. ACTUALIZACIÓN DE CATALOG_CACHE
-        if (payloadUnificado.length > 0) {
+        if (payloadCacheGuardar.length > 0) {
             await supabaseServer
                 .from('catalog_cache')
                 .upsert({
                     tenant_host: tenantAlias,
-                    payload_json: payloadUnificado,
+                    payload_json: payloadCacheGuardar,
                     updated_at: new Date().toISOString()
                 }, { onConflict: 'tenant_host' });
         }
 
-        return NextResponse.json(payloadUnificado, {
-            headers: { 'X-Cache-Status': 'MISS-REBUILT' }
+        return NextResponse.json(payloadRespuesta, {
+            headers: { 
+                'X-Cache-Status': 'MISS-REBUILT',
+                'X-Catalog-Mode': esCatalogoMasivo ? 'MASIVO_DIRECTO' : 'ESTANDAR_CACHE'
+            }
         });
 
     } catch (error) {

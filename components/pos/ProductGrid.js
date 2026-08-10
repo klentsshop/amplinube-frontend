@@ -151,10 +151,15 @@ return (
                     className={styles.productCard} 
                     style={{ border: '2px dashed #10b981', backgroundColor: '#f0fdf4' }}
                     onClick={() => {
-                        const nombreManual = prompt("📝 Ingrese el nombre del artículo manual:");
-                        if (!nombreManual || !nombreManual.trim()) return;
+                        const inputNombre = prompt("📝 Ingrese el nombre del artículo manual (Dejar en blanco para 'VARIOS'):");
+                        
+                        // Si el usuario presiona Cancelar (esc/cancel), no hace nada
+                        if (inputNombre === null) return;
 
-                        const precioManual = prompt(`💰 Ingrese el precio para "${nombreManual.toUpperCase()}":`);
+                        // Si deja el cuadro en blanco, usa "VARIOS" por defecto
+                        const nombreFinal = inputNombre.trim() !== "" ? inputNombre.trim().toUpperCase() : "VARIOS";
+
+                        const precioManual = prompt(`💰 Ingrese el precio para "${nombreFinal}":`);
                         if (!precioManual || isNaN(precioManual) || Number(precioManual) <= 0) {
                             alert("❌ Precio inválido.");
                             return;
@@ -165,7 +170,7 @@ return (
                         const itemSimulado = {
                             _id: idManual,
                             id: idManual,
-                            nombre: nombreManual.trim().toUpperCase(),
+                            nombre: nombreFinal,
                             precio: Number(precioManual),
                             categoria: (categoriaActiva && categoriaActiva !== 'TODOS') ? categoriaActiva : 'MANUAL',
                             disponible: true,

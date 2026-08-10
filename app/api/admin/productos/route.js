@@ -1,8 +1,6 @@
 import { NextResponse } from 'next/server';
 import { supabaseServer } from '@/lib/supabase'; 
 
-// 🧹 Helper para invalidar la caché del tenant y forzar reconstrucción en el próximo GET /api/catalogo
-// ⚡ Actualización quirúrgica directo en la celda catalog_cache
 async function actualizarCacheLocal(tenant, itemDoc, esEliminacion = false) {
     if (!tenant) return;
     const cleanTenant = tenant.toLowerCase().trim();
@@ -16,6 +14,14 @@ async function actualizarCacheLocal(tenant, itemDoc, esEliminacion = false) {
             .maybeSingle();
 
         if (!cacheExistente?.payload_json || !Array.isArray(cacheExistente.payload_json)) return;
+
+        // 🧠 BLINDAJE PARA COMERCIOS MASIVOS:
+        // Si la caché guardada no tiene platos (modo masivo activo), NO inyectamos el producto en el JSON
+        const conteoPlatosEnCache = cacheExistente.payload_json.filter(i => i._type === 'plato' || i._type === 'producto').length;
+        if (conteoPlatosEnCache === 0 && !esEliminacion) {
+            console.log(`ℹ️ Comercio masivo detectado para [${cleanTenant}]. Omitiendo inserción individual en catalog_cache.`);
+            return;
+        }
 
         let arrayActualizado = [...cacheExistente.payload_json];
 
@@ -67,6 +73,8 @@ export async function GET(req) {
         const { searchParams } = new URL(req.url);
         const tenantId = searchParams.get('tenantId') || searchParams.get('tenant');
         const buscar = searchParams.get('search')?.trim() || '';
+        const limitParam = searchParams.get('limit');
+        const limitVal = limitParam ? parseInt(limitParam, 10) : null;
 
         if (!tenantId || tenantId === 'undefined' || tenantId === 'null') {
             return NextResponse.json({ ok: false, error: "Tenant ID no proporcionado o inválido" }, { status: 400 });
@@ -98,19 +106,20 @@ export async function GET(req) {
             .eq('tenant', tenantLimpio)
             .order('nombre', { ascending: true });
 
-        // 2. 🧠 LÓGICA BÚSQUEDA DUAL: Si hay texto de búsqueda, consulta TODA la BD. Si no, solo los primeros 100.
+        // 2. 🧠 LÓGICA BÚSQUEDA DUAL + LIMITACIÓN ULTRA-RÁPIDA:
         if (buscar !== '') {
             const termino = `%${buscar}%`;
             if (/^\d+$/.test(buscar)) {
-                // Si digita un número o pasa la pistola, busca en nombre, barcode o balanza
                 query = query.or(`nombre.ilike.${termino},barcode.eq.${buscar},codigo_balanza.eq.${buscar}`);
             } else {
-                // Búsqueda por coincidencia en texto
                 query = query.ilike('nombre', termino);
             }
+            // Si hay término de búsqueda, limitamos máximo a 100 para garantizar agilidad
+            query = query.limit(100);
         } else {
-            // Límite de carga inicial para evitar transferir megabytes en vano
-            query = query.eq('disponible', true);
+            // Si no busca nada, aplica el límite solicitado por la vista (por defecto 50)
+            const limiteAplicar = limitVal || 50;
+            query = query.eq('disponible', true).limit(limiteAplicar);
         }
 
         const { data: platosDb, error: errPlatos } = await query;
@@ -133,9 +142,28 @@ export async function GET(req) {
             recetasGrupales = recetasDb || [];
         }
 
-        // 4. Mapear y normalizar al formato de la interfaz de React
+        // 4. Mapear y normalizar al formato de la interfaz de React (Con Fallback de Storage para Masivos)
+        const baseUrlStorage = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://czkakmvkpfgdftkfijnw.supabase.co';
+
         const productosNormalizados = (platosDb || []).map(p => {
             const recetasDelPlato = recetasGrupales.filter(r => r.plato_id === p.id);
+
+            // 🎯 RESOLUCIÓN INTELIGENTE DE URL DE IMAGEN
+            let urlImagenFinal = p.imagen || null;
+
+            // Si p.imagen no es una URL http/https completa y existe en la BD
+            if (urlImagenFinal && !urlImagenFinal.startsWith('http')) {
+                urlImagenFinal = `${baseUrlStorage}/storage/v1/object/public/productos/${urlImagenFinal}`;
+            }
+
+            // Fallback para productos de catálogos masivos que no tienen columna imagen poblada
+            if (!urlImagenFinal) {
+                const identificadorFoto = p.barcode || p.codigo_balanza;
+                if (identificadorFoto) {
+                    // Intenta apuntar a la imagen guardada en el bucket por barcode/código
+                    urlImagenFinal = `${baseUrlStorage}/storage/v1/object/public/productos/${tenantLimpio}/${identificadorFoto}.jpg`;
+                }
+            }
 
             return {
                 _id: p.id,
@@ -147,8 +175,8 @@ export async function GET(req) {
                 precioCosto: Number(p.precio_costo || 0),
                 categoria: p.categoria,
                 categoriaRef: p.categoria ? { _ref: p.categoria, _type: 'reference' } : null,
-                imagen: p.imagen ? { _type: 'image', asset: { url: p.imagen } } : null,
-                imagenUrl: p.imagen || null,
+                imagen: urlImagenFinal ? { _type: 'image', asset: { url: urlImagenFinal } } : null,
+                imagenUrl: urlImagenFinal,
                 esVentaPorPeso: p.es_venta_por_peso === true,
                 disponible: p.disponible !== false,
                 controlaInventario: p.controla_inventario === true,
@@ -162,7 +190,6 @@ export async function GET(req) {
                 recetaInsumos: p.receta_insumos || []
             };
         });
-
         // 5. Retorno limpio con encabezados anti-caché
         return new NextResponse(JSON.stringify(productosNormalizados), {
             status: 200,

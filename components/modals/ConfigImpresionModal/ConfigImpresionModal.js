@@ -98,10 +98,15 @@ export default function ConfigImpresionModal({ isOpen, onClose, categorias, tena
         }
     };
 
-   const cargarProductosNegocio = async () => {
+  const cargarProductosNegocio = async (termino = '') => {
         if (!tenantId) return;
         try {
-            const res = await fetch(`/api/admin/productos?tenantId=${tenantId}&_t=${Date.now()}`);
+            // 🚀 BÚSQUEDA ACOTADA: Si no hay término, limita a los primeros 50 ítems para evitar descargas pesadas
+            const url = termino.trim() 
+                ? `/api/admin/productos?tenantId=${tenantId}&search=${encodeURIComponent(termino.trim())}`
+                : `/api/admin/productos?tenantId=${tenantId}&limit=50&_t=${Date.now()}`;
+
+            const res = await fetch(url);
             const data = await res.json();
             const items = Array.isArray(data) ? data : (data.data || []);
             setListaProductosCompletas(items);
@@ -789,7 +794,7 @@ const seleccionarMeseroParaEditar = (item) => {
 
     return (
         <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10000, padding: '20px', backdropFilter: 'blur(4px)' }}>
-            <div style={{ backgroundColor: 'white', borderRadius: '16px', width: '100%', maxWidth: '750px', maxHeight: 'auto', maxHeight: 'calc(100vh - 40px)', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.2)', overflow: 'hidden', border: '1px solid #e5e7eb', fontFamily: 'sans-serif' }}>
+            <div style={{ backgroundColor: 'white', borderRadius: '16px', width: '100%', maxWidth: '750px', maxHeight: 'calc(100vh - 40px)', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.2)', overflow: 'hidden', border: '1px solid #e5e7eb', fontFamily: 'sans-serif' }}>
                 
                 {/* Header Estilo Talanquera Original */}
                 <div style={{ backgroundColor: '#1f2937', color: 'white', padding: '20px', display: 'flex', alignItems: 'center', gap: '12px' }}>

@@ -27,18 +27,18 @@ export default function VistaProductos({
     const timerBusquedaTablaRef = useRef(null);
 
    React.useEffect(() => {
-    if (busquedaProd && busquedaProd.trim() !== '') {
-        // Si hay una búsqueda activa, filtra sobre la lista fresca del padre
-        const termino = busquedaProd.toLowerCase().trim();
-        const filtrados = listaProductosCompletas.filter(p => 
-            (p.nombre || '').toLowerCase().includes(termino)
-        );
-        setProductosVisuales(filtrados);
-    } else {
-        // Si no hay búsqueda, refleja directamente la lista del padre
-        setProductosVisuales(listaProductosCompletas);
-    }
-}, [listaProductosCompletas, busquedaProd]);
+        if (busquedaProd && busquedaProd.trim() !== '') {
+            const termino = busquedaProd.toLowerCase().trim();
+            const filtrados = listaProductosCompletas.filter(p => 
+                (p.nombre || '').toLowerCase().includes(termino) ||
+                (p.barcode || '').toLowerCase().includes(termino)
+            );
+            setProductosVisuales(filtrados);
+        } else {
+            // Protección Híbrida: Mantiene la referencia original del padre
+            setProductosVisuales(listaProductosCompletas || []);
+        }
+    }, [listaProductosCompletas, busquedaProd]);
     return (
     /* 📱 CONTENEDOR PADRE BLINDADO: Bloquea el scroll general para mantener las pestañas fijas arriba */
     <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', maxHeight: 'calc(100vh - 140px)', overflowY: 'hidden' }}>
@@ -448,8 +448,9 @@ export default function VistaProductos({
                         </tr>
                     </thead>
                   
-                    <tbody>
-    {productosVisuales.map(p => {
+                   <tbody>
+    {/* 🛡️ RENDERIZADO VIRTUALIZADO: Limita a 100 resultados visibles simultáneos para garantizar fluidez a 60 FPS */}
+    {(busquedaProd ? productosVisuales : productosVisuales.slice(0, 100)).map(p => {
         const idProducto = p.id || p._id;
         return (
             <tr key={idProducto} onClick={() => {
@@ -457,7 +458,7 @@ export default function VistaProductos({
                 
                 const recetaNormalizada = fuenteReceta.map(item => {
                     const idInsumo = item.insumo_id || item.insumoId || item.insumo?._ref;
-                    const coincidencia = listaInventario.find(i => i.id === idInsumo || i.insumo_id === idInsumo || i._id === idInsumo);
+                    const coincidencia = (listaInventario || []).find(i => i.id === idInsumo || i.insumo_id === idInsumo || i._id === idInsumo);
                     
                     return {
                         insumoId: idInsumo,
@@ -477,6 +478,7 @@ export default function VistaProductos({
                 <td style={{ padding: '10px', textAlign: 'right', fontWeight: 'bold', color: '#059669' }}>${Number(p.precio || 0).toLocaleString('es-CO')}</td>
                 <td style={{ padding: '10px', textAlign: 'center' }}>
                     <button 
+                        type="button"
                         onClick={(e) => { 
                             e.stopPropagation();
                             if (confirm(`¿Seguro que deseas eliminar el producto "${p.nombre}"?`)) {

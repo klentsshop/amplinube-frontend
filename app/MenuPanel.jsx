@@ -244,18 +244,74 @@ useEffect(() => {
 
 }, [tenantId]); // 🎯 BISTURÍ: Quitamos ordenActivaId para romper el bucle de re-renderizado 
 
-    // --- 7. LÓGICA DE ESCÁNER Y BÚSQUEDA ---
+    // --- 7. LÓGICA DE ESCÁNER Y BÚSQUEDA INTELIGENTE ---
     useEffect(() => {
         let buffer = "";
         let lastTime = Date.now();
 
-        const procesarCodigo = (codigoRecibido) => {
+        const procesarCodigo = async (codigoRecibido) => {
             const codigoLimpio = codigoRecibido.trim();
-            if(!codigoLimpio || codigoLimpio.length < 4) return false;
-            const match = platos.find(p => 
-                String(p.barcode) === codigoLimpio || 
-                String(p.codigoBalanza) === codigoLimpio
+            if (!codigoLimpio) return false;
+
+            // ⚡ COMANDOS RÁPIDOS DE CAJA (ej: b1, B1, b2, B2)
+            // Permite al cajero digitar b1 y pasar directo a ingresar el precio
+            if (/^b[1-9]$/i.test(codigoLimpio)) {
+                const departamento = codigoLimpio.toUpperCase();
+                const precioManual = prompt(`💰 Ingrese el precio para "${departamento} (VARIOS)":`);
+                if (!precioManual || isNaN(precioManual) || Number(precioManual) <= 0) {
+                    setBusqueda("");
+                    return true;
+                }
+
+                const idManual = `manual_${Date.now()}`;
+                const itemSimulado = {
+                    _id: idManual,
+                    id: idManual,
+                    nombre: `VARIOS ${departamento}`,
+                    precio: Number(precioManual),
+                    categoria: (categoriaActiva && categoriaActiva !== 'TODOS') ? categoriaActiva : 'MANUAL',
+                    disponible: true,
+                    controlaInventario: false,
+                    seImprime: true
+                };
+
+                agregarAlCarrito(itemSimulado);
+                setBusqueda("");
+                return true;
+            }
+
+            if (codigoLimpio.length < 3) return false;
+
+            // 🛑 FRENO DE SEGURIDAD: Solo procede con la adición automática si el texto
+            // es puramente NUMÉRICO (Códigos EAN, UPC o PLU de Balanza).
+            // Si contiene letras o espacios, es una búsqueda por nombre y NO se auto-agrega.
+            const esCodigoPistola = /^\d+$/.test(codigoLimpio);
+            if (!esCodigoPistola) return false;
+
+            // 1. Intenta encontrar el producto en el array local primero por código numérico
+            let match = platos.find(p => 
+                String(p.barcode || '').trim() === codigoLimpio || 
+                String(p.codigoBalanza || '').trim() === codigoLimpio
             );
+
+            // 2. 🚀 FALLBACK REMOTO: Si no está en el catálogo local, consulta a Supabase por código de barras/PLU
+            if (!match) {
+                try {
+                    const res = await fetch(`/api/admin/productos?tenantId=${tenantId}&search=${encodeURIComponent(codigoLimpio)}`);
+                    const data = await res.json();
+                    const items = Array.isArray(data) ? data : (data.data || []);
+                    // Verificamos coincidencia exacta de código para evitar falsos positivos
+                    if (items.length > 0) {
+                        match = items.find(p => 
+                            String(p.barcode || '').trim() === codigoLimpio || 
+                            String(p.codigoBalanza || '').trim() === codigoLimpio
+                        ) || items[0];
+                    }
+                } catch (err) {
+                    console.error("🔥 Error consultando código de barras remoto:", err);
+                }
+            }
+
             if (match) {
                 if (match.codigoBalanza && !match.barcode) {
                     setPlatoAPesar(match);
@@ -270,10 +326,36 @@ useEffect(() => {
         };
 
         const handleKeyDown = (e) => {
-            if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT') return;
+            // 1. Si está en un TEXTAREA, no interferimos
+            if (e.target.tagName === 'TEXTAREA') return;
+
+            // 2. Si ya está escribiendo en el buscador, permitimos flujo normal
+            if (e.target.tagName === 'INPUT' && e.target.classList.contains(styles.searchInput)) {
+                return;
+            }
+
+            // Si está en cualquier otro input (ej. modal de cliente), no interferimos
+            if (e.target.tagName === 'INPUT') return;
+
             const now = Date.now();
-            if (now - lastTime > 100) buffer = "";
+            const deltaTiempo = now - lastTime;
             lastTime = now;
+
+            // 🎯 REGLA FRUVER: Si se presiona una LETRA o ESPACIO
+            // Las pistolas de código de barras leen sólo números EAN/UPC/PLU.
+            const esLetraOEspacio = e.key.length === 1 && /[a-zA-Z\s]/.test(e.key);
+
+            if (esLetraOEspacio && !e.ctrlKey && !e.altKey && !e.metaKey) {
+                const inputBuscador = document.querySelector(`.${styles.searchInput}`);
+                if (inputBuscador) {
+                    inputBuscador.focus(); // 🚀 Re-enfoca automáticamente el buscador
+                    return;
+                }
+            }
+
+            // 🔫 REGLA PISTOLA: Ráfaga de NÚMEROS
+            if (deltaTiempo > 100) buffer = ""; // Limpia búfer si no viene a velocidad de escáner
+
             if (e.key === 'Enter') {
                 if (buffer.length > 3) {
                     e.preventDefault();
@@ -282,7 +364,10 @@ useEffect(() => {
                 buffer = "";
                 return;
             }
-            if (e.key.length === 1) buffer += e.key;
+
+            if (e.key.length === 1 && /^\d$/.test(e.key)) {
+                buffer += e.key;
+            }
         };
 
         const handlePaste = (e) => {
@@ -296,9 +381,40 @@ useEffect(() => {
             window.removeEventListener('keydown', handleKeyDown, { capture: true });
             window.removeEventListener('paste', handlePaste, { capture: true });
         };
-    }, [platos, agregarAlCarrito]);
+    }, [platos, agregarAlCarrito, tenantId]);
+    // 🧠 ESTADO PARA ALMACENAR RESULTADOS REMOTOS DE SUPABASE AL BUSCAR EN EL POS
+    const [platosBusquedaRemota, setPlatosBusquedaRemota] = useState(null);
 
+    // 📡 ESCANEO EN TIEMPO REAL A SUPABASE AL DIGITAR EN LA LUPA DEL POS (CON DEBOUNCE)
+    useEffect(() => {
+        const termino = busqueda.trim();
+
+        if (!termino) {
+            setPlatosBusquedaRemota(null);
+            return;
+        }
+
+        const delayDebounceFn = setTimeout(() => {
+            fetch(`/api/admin/productos?tenantId=${tenantId}&search=${encodeURIComponent(termino)}`)
+                .then(res => res.json())
+                .then(data => {
+                    const items = Array.isArray(data) ? data : (data.data || []);
+                    setPlatosBusquedaRemota(items);
+                })
+                .catch(err => console.error("🔥 Error buscando productos en Supabase desde POS:", err));
+        }, 300); // ⏱️ Espera 300ms a que el usuario termine de teclear
+
+        return () => clearTimeout(delayDebounceFn);
+    }, [busqueda, tenantId]);
+
+    // 🚀 FILTRADO HÍBRIDO BLINDADO
     const platosFiltradosFinal = useMemo(() => {
+        // 1. Si hay una búsqueda activa y Supabase devolvió resultados, los mostramos directamente
+        if (busqueda.trim() !== '' && platosBusquedaRemota !== null) {
+            return platosBusquedaRemota;
+        }
+
+        // 2. Si no hay búsqueda o es un comercio estándar, filtra localmente
         return platos.filter(p => {
             const nombre = p.nombrePlato || p.nombre || "";
             const barcode = p.barcode || "";
@@ -309,7 +425,7 @@ useEffect(() => {
             const cumpleCategoria = categoriaActiva === 'TODOS' || p.categoria === categoriaActiva;
             return cumpleBusqueda && cumpleCategoria;
         });
-    }, [platos, busqueda, categoriaActiva]);
+    }, [platos, busqueda, categoriaActiva, platosBusquedaRemota]);
 
     const manejarLimpiezaTotal = () => {
         if (ord.mensajeExito) return;
