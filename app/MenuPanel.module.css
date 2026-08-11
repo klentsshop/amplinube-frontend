@@ -20,7 +20,7 @@
 }
 
 .ticketPanel { 
-    width: 350px; 
+    width: 380px; 
     flex-shrink: 0; 
     border-right: 1px solid #ccc; 
     height: 100%; 
