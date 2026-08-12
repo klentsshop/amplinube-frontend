@@ -39,6 +39,7 @@ export default function MenuPanel({ configNegocio: configInyectada }) {
     const [mostrarListaOrdenes, setMostrarListaOrdenes] = useState(false);
     const [nombreMesero, setNombreMesero] = useState(null);
     const [mostrarCategoriasMobile, setMostrarCategoriasMobile] = useState(false);
+    const [categoriasGlobales, setCategoriasGlobales] = useState([]);
     const [mostrarCarritoMobile, setMostrarCarritoMobile] = useState(false);
     const [listaMeseros, setListaMeseros] = useState([]);
     const [estaActivo, setEstaActivo] = useState(null);
@@ -59,6 +60,7 @@ export default function MenuPanel({ configNegocio: configInyectada }) {
     const [platosParaImprimir, setPlatosParaImprimir] = useState(null);
     const [modalPesajeOpen, setModalPesajeOpen] = useState(false);
     const [platoAPesar, setPlatoAPesar] = useState(null);
+    const [platosCategoriaRemota, setPlatosCategoriaRemota] = useState(null);
     const [permisosActivos, setPermisosActivos] = useState({
         verReporte: true, verAdmin: true, puedeCargarGasto: true, 
         verVentas: true, verInventario: true, puedeCobrar: true
@@ -231,9 +233,20 @@ useEffect(() => {
         }
     };
 
-    // --- 6. EFECTOS DE SINCRONIZACIÓN ---
+    
    // --- 6. EFECTOS DE SINCRONIZACIÓN (BLOQUE UNIFICADO SENIOR) ---
-
+   useEffect(() => {
+    if (!tenantId) return;
+    fetch(`/api/admin/categorias?tenantId=${tenantId}`)
+        .then(res => res.json())
+        .then(data => {
+            const lista = Array.isArray(data) ? data : (data.data || []);
+            // Extraemos los nombres/títulos limpios
+            const nombresCats = lista.map(c => (c.titulo || c.slug || c.nombre || "").toUpperCase().trim()).filter(Boolean);
+            setCategoriasGlobales(nombresCats);
+        })
+        .catch(err => console.error("Error cargando categorías globales:", err));
+}, [tenantId]);
 useEffect(() => {
     // 🛡️ Solo ejecutamos si tenemos identidad del comercio (Cierre perimetral seguro)
     if (!tenantId) return;
@@ -406,15 +419,37 @@ useEffect(() => {
 
         return () => clearTimeout(delayDebounceFn);
     }, [busqueda, tenantId]);
+    // 📡 CONSULTA EN TIEMPO REAL A SUPABASE AL CAMBIAR DE CATEGORÍA (Modo Masivo)
+useEffect(() => {
+    // Si es "TODOS" o no hay tenant, limpiamos la búsqueda por categoría
+    if (!categoriaActiva || categoriaActiva === 'TODOS' || !tenantId) {
+        setPlatosCategoriaRemota(null);
+        return;
+    }
 
-    // 🚀 FILTRADO HÍBRIDO BLINDADO
+    // Consultamos a Supabase los productos de esa categoría específica
+    fetch(`/api/admin/productos?tenantId=${tenantId}&categoria=${encodeURIComponent(categoriaActiva)}&limit=100`)
+        .then(res => res.json())
+        .then(data => {
+            const items = Array.isArray(data) ? data : (data.data || []);
+            setPlatosCategoriaRemota(items);
+        })
+        .catch(err => console.error("🔥 Error buscando categoría en Supabase desde POS:", err));
+}, [categoriaActiva, tenantId]);
+
+   // 🚀 FILTRADO HÍBRIDO BLINDADO (Comercios Pequeños + Masivos)
     const platosFiltradosFinal = useMemo(() => {
-        // 1. Si hay una búsqueda activa y Supabase devolvió resultados, los mostramos directamente
+        // 1. Prioridad: Si hay una búsqueda por lupa activa y devolvió resultados remotos
         if (busqueda.trim() !== '' && platosBusquedaRemota !== null) {
             return platosBusquedaRemota;
         }
 
-        // 2. Si no hay búsqueda o es un comercio estándar, filtra localmente
+        // 2. Prioridad: Si el usuario seleccionó una Categoría y tenemos resultados remotos de Supabase
+        if (categoriaActiva !== 'TODOS' && platosCategoriaRemota !== null && platosCategoriaRemota.length > 0) {
+            return platosCategoriaRemota;
+        }
+
+        // 3. Fallback Estándar (< 3,000 productos): Opera 100% en memoria local como siempre
         return platos.filter(p => {
             const nombre = p.nombrePlato || p.nombre || "";
             const barcode = p.barcode || "";
@@ -422,11 +457,13 @@ useEffect(() => {
             const cumpleBusqueda = nombre.toLowerCase().includes(busqueda.toLowerCase()) || 
                                    barcode.toLowerCase().includes(busqueda.toLowerCase()) ||
                                    plu.toLowerCase().includes(busqueda.toLowerCase());
-            const cumpleCategoria = categoriaActiva === 'TODOS' || p.categoria === categoriaActiva;
+            
+            const catPlato = typeof p.categoria === 'object' ? (p.categoria?.titulo || p.categoria?.nombre || '') : String(p.categoria || '');
+            const cumpleCategoria = categoriaActiva === 'TODOS' || catPlato.toUpperCase().trim() === categoriaActiva.toUpperCase().trim();
+            
             return cumpleBusqueda && cumpleCategoria;
         });
-    }, [platos, busqueda, categoriaActiva, platosBusquedaRemota]);
-
+    }, [platos, busqueda, categoriaActiva, platosBusquedaRemota, platosCategoriaRemota]);
     const manejarLimpiezaTotal = () => {
         if (ord.mensajeExito) return;
         if (!ord.ordenActivaId) clearWithStockReturn(); 
@@ -625,6 +662,7 @@ return (
                 <ProductGrid 
                     platos={platos} 
                     platosFiltrados={platosFiltradosFinal} permisos={permisosActivos}
+                    categoriasGlobales={categoriasGlobales}
                     busqueda={busqueda}                   // ✅ Pasamos el texto
                     setBusqueda={setBusqueda}
                     categoriaActiva={categoriaActiva} setCategoriaActiva={setCategoriaActiva}

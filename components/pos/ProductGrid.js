@@ -6,23 +6,38 @@ import { SITE_CONFIG } from '@/lib/config';
 import { Settings } from 'lucide-react';
 
 const ProductGrid = memo(({
-    platos, platosFiltrados, busqueda, setBusqueda, categoriaActiva, setCategoriaActiva,
+    platos, platosFiltrados, categoriasGlobales = [], busqueda, setBusqueda, categoriaActiva, setCategoriaActiva,
     mostrarCategoriasMobile, setMostrarCategoriasMobile, agregarAlCarrito, setPlatoAPesar, 
     setModalPesajeOpen,
     styles, mostrarCarritoMobile, setMostrarCarritoMobile, cart, total, mensajeExito, ordenesActivas, cargarOrden, ordenActivaId, setMostrarConfigImpresion,
     tenantId, columnasGrid = 6
 }) => {
-    // 🚀 AJUSTE VISUAL SÉNIOR: Categoría 'TODOS' fija al inicio y ordenamiento alfabético estricto
+    // 🚀 AJUSTE VISUAL SÉNIOR: Prioriza categorías globales de la BD sobre el corte local de platos
     const listaCategorias = useMemo(() => {
-        // 1. Extraemos las categorías únicas de los platos usando el Set
-        const categoriasUnicas = [...new Set(platos.map(p => p.categoria || ""))];
-        
-        // 2. Ordenamos alfabéticamente las categorías del negocio de forma limpia
-        const ordenadas = categoriasUnicas.sort((a, b) => a.localeCompare(b));
-        
-        // 3. Retornamos 'TODOS' en mayúscula en la primera posición fija
+        // 1. Si vinieron las categorías globales de Supabase/API, las usamos como prioridad
+        if (categoriasGlobales && categoriasGlobales.length > 0) {
+            const unicasGlobales = [...new Set(categoriasGlobales)]
+                .map(c => String(c || '').trim().toUpperCase())
+                .filter(c => c.length > 0 && c !== 'TODOS');
+
+            const ordenadas = unicasGlobales.sort((a, b) => a.localeCompare(b));
+            return ['TODOS', ...ordenadas];
+        }
+
+        // 2. Fallback local si no hay categorías globales cargadas aún
+        const categoriasEnPlatos = platos.map(p => {
+            if (typeof p.categoria === 'object') return p.categoria?.titulo || p.categoria?.nombre || p.categoria?.current || '';
+            return String(p.categoria || '');
+        });
+
+        const unicas = [...new Set(categoriasEnPlatos)]
+            .map(c => String(c || '').trim().toUpperCase())
+            .filter(c => c.length > 0 && c !== 'TODOS');
+
+        const ordenadas = unicas.sort((a, b) => a.localeCompare(b));
+
         return ['TODOS', ...ordenadas];
-    }, [platos]);
+    }, [platos, categoriasGlobales]);
 // 🔥 2. LÓGICA DE ORDENAMIENTO INTELIGENTE (PROFESIONAL)
     // Usamos useMemo para ordenar los platos por popularidad (totalVentas) 
     // solo cuando estemos en la vista "todos" y no haya una búsqueda activa.

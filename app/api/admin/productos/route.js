@@ -67,6 +67,32 @@ async function resolverUuidInsumo(tenantLimpio, idOInsumoId) {
     const hallado = insumos.find(i => String(i.id) === targetStr || String(i.insumo_id) === targetStr);
     return hallado ? hallado.id : null;
 }
+// 🛡️ HELPER: Resuelve UUIDs de categoría a Slug/Título legible
+async function resolverSlugCategoria(tenantLimpio, categoriaInput) {
+    if (!categoriaInput) return null;
+    const catStr = String(categoriaInput).trim();
+
+    // Si NO es un UUID (ya es un texto como "ABARROTES" o "frecuentes"), lo devuelve tal cual
+    const esUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(catStr);
+    if (!esUuid) return catStr;
+
+    try {
+        const { data: catDb } = await supabaseServer
+            .from('categorias')
+            .select('slug, titulo')
+            .eq('id', catStr)
+            .eq('tenant', tenantLimpio)
+            .maybeSingle();
+
+        if (catDb) {
+            return (catDb.slug || catDb.titulo || catStr).toLowerCase().trim();
+        }
+    } catch (e) {
+        console.warn("⚠️ No se pudo resolver la categoría por UUID:", e.message);
+    }
+
+    return catStr;
+}
 // 📡 GET: Búsqueda dinámica y paginación rápida para el Panel Admin
 export async function GET(req) {
     try {
@@ -81,6 +107,7 @@ export async function GET(req) {
         }
 
         const tenantLimpio = tenantId.toLowerCase().trim();
+        const categoriaParam = searchParams.get('categoria')?.trim() || searchParams.get('cat')?.trim() || '';
 
         // 1. Construir la consulta base en public.platos
         let query = supabaseServer
@@ -105,6 +132,11 @@ export async function GET(req) {
             `)
             .eq('tenant', tenantLimpio)
             .order('nombre', { ascending: true });
+
+        // 🎯 SOPORTE CATEGORÍA DUAL (Busca por Slug, Nombre o UUID si quedó guardado viejo)
+        if (categoriaParam !== '') {
+            query = query.or(`categoria.ilike.%${categoriaParam}%,categoria.eq.${categoriaParam}`);
+        }
 
         // 2. 🧠 LÓGICA BÚSQUEDA DUAL + LIMITACIÓN ULTRA-RÁPIDA:
         if (buscar !== '') {
@@ -218,6 +250,9 @@ export async function POST(req) {
 
         const urlImagen = typeof data.imagen === 'string' ? data.imagen : (data.imagen?.url || null);
 
+        // 🎯 LIMPUR3ZA DE CATEGORÍA: Convertimos UUID a Slug si el formulario envió el ID
+        const categoriaLimpia = await resolverSlugCategoria(tenantLimpio, data.categoria);
+
         // ✅ REEMPLAZO EN POST:
         const recetaNormalizada = (data.insumosReceta || []).map((ins) => {
             const idUnico = ins.insumoId || ins.insumo_id || ins.insumo?._ref;
@@ -242,7 +277,7 @@ export async function POST(req) {
                 nombre: data.nombre.trim().toUpperCase(),
                 precio: Number(data.precio) || 0,
                 precio_costo: Number(data.precioCosto || 0),
-                categoria: data.categoria || null,
+                categoria: categoriaLimpia, // 👈 AHORA GUARDA EL SLUG / NOMBRE LIMPIO
                 imagen: urlImagen,
                 es_venta_por_peso: data.esVentaPorPeso === true,
                 disponible: data.disponible !== false,
@@ -364,13 +399,24 @@ export async function PUT(req) {
             updated_at: new Date().toISOString()
         };
 
-        if (data.categoria) {
-            camposAActualizar.categoria = data.categoria;
+       if (data.categoria) {
+            camposAActualizar.categoria = await resolverSlugCategoria(tenantLimpio, data.categoria);
         }
 
+        // 🎯 EXTRAER LA URL DE LA IMAGEN SI FUE ENVIADA EN EL FORMULARIO DE EDICIÓN
         let nuevaImagenUrl = null;
-        if (data.imagen !== undefined && data.imagen !== null && data.imagen !== '') {
-            nuevaImagenUrl = typeof data.imagen === 'string' ? data.imagen : (data.imagen?.url || null);
+        if (typeof data.imagen === 'string' && data.imagen.length > 0) {
+            nuevaImagenUrl = data.imagen;
+        } else if (typeof data.imagenUrl === 'string' && data.imagenUrl.length > 0) {
+            nuevaImagenUrl = data.imagenUrl;
+        } else if (data.imagen?.asset?.url) {
+            nuevaImagenUrl = data.imagen.asset.url;
+        } else if (data.imagen?.url) {
+            nuevaImagenUrl = data.imagen.url;
+        }
+
+        // 🛡️ Asignar la imagen a la actualización de Supabase si viene definida
+        if (nuevaImagenUrl !== null) {
             camposAActualizar.imagen = nuevaImagenUrl;
         }
 
@@ -481,6 +527,31 @@ export async function DELETE(req) {
 
         const tenantLimpio = data.tenantId.toLowerCase().trim();
 
+        // 🛡️ 1. Consultar si el producto tiene imagen antes de borrarlo
+        const { data: platoAEliminar } = await supabaseServer
+            .from('platos')
+            .select('imagen')
+            .eq('id', data.productoId)
+            .eq('tenant', tenantLimpio)
+            .maybeSingle();
+
+        // 🗑️ 2. Borrar archivo de la imagen en Storage si existe
+        if (platoAEliminar?.imagen && platoAEliminar.imagen.includes('/storage/v1/object/public/productos/')) {
+            try {
+                const rutaRelativa = platoAEliminar.imagen.split('/productos/')[1];
+                if (rutaRelativa) {
+                    await supabaseServer
+                        .storage
+                        .from('productos')
+                        .remove([decodeURIComponent(rutaRelativa)]);
+                    console.log(`🗑️ Foto eliminada de Storage: ${rutaRelativa}`);
+                }
+            } catch (errFoto) {
+                console.warn("⚠️ No se pudo eliminar la foto de Storage:", errFoto.message);
+            }
+        }
+
+        // 3. Borrar el registro del plato en la BD
         const { error: dbError } = await supabaseServer
             .from('platos')
             .delete()

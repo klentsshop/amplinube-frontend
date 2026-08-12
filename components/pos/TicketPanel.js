@@ -522,51 +522,29 @@ export default function TicketPanel({
                             </select>
                         </div>
                     </div>
-                    {/* 🛵 NUEVAS CASILLAS DE TIPO DE SERVICIO (DEBAJO DE LOS SELECTORES) */}
-                    <div style={{ 
-                        display: 'flex', 
-                        justifyContent: 'space-between', 
-                        padding: '4px 10px', 
-                        backgroundColor: '#F9FAFB', 
-                        borderRadius: '8px', 
-                        border: '1px solid #E5E7EB'
-                    }}>
-                       {[
-                   { id: 'mesa', label: 'Mostrador', icon: '🏪' },
-                   { id: 'domicilio', label: 'Domi', icon: '🛵' },
-                   { id: 'llevar', label: 'Encargo', icon: '📋' }
-                   ].map((opcion) => (
-                   <label 
-                   key={opcion.id} 
-                   style={{ 
-                   display: 'flex', 
-                   alignItems: 'center', 
-                   gap: '4px', 
-                   cursor: 'pointer',
-                   fontSize: '0.85rem',
-                   fontWeight: '800',
-                   // ✅ Cambiamos tipoOrden por (tipoOrden || 'mesa')
-                    color: (tipoOrden || 'mesa') === opcion.id ? '#10B981' : '#6B7280'
-                   }}
-                   >
-                                <input
-                   type="radio"
-                   name="tipoServicio"
-                   value={opcion.id}
-                   // ✅ Cambiamos tipoOrden por (tipoOrden || 'mesa')
-                   checked={(tipoOrden || 'mesa') === opcion.id}
-                   onChange={() => setTipoOrden(opcion.id)}
-                   style={{ 
-                   cursor: 'pointer',
-                   accentColor: '#10B981',
-                   width: '16px',
-                   height: '16px'
-                  }}
-                  />
-                   {opcion.label}
-                   </label>
-                   ))}
-                    </div>
+                    {/* 🛒 INDICADOR MODERNO DE PRODUCTOS EN EL CARRITO */}
+                    {cart.length > 0 && (
+                        <div style={{ 
+                            display: 'flex', 
+                            justify: 'space-between', 
+                            alignItems: 'center',
+                            padding: '6px 12px', 
+                            backgroundColor: '#ECFDF5', 
+                            borderRadius: '8px', 
+                            border: '1px solid #A7F3D0'
+                        }}>
+                            <span style={{ fontSize: '0.8rem', fontWeight: '800', color: '#047857' }}>
+                                🛒 ÍTEMS EN ORDEN: &nbsp;
+                            </span>
+                            <span style={{ 
+                                fontSize: '0.85rem', 
+                                fontWeight: '900', 
+                                color: '#047857'
+                            }}>
+                                {cart.reduce((sum, i) => sum + (Number(i.cantidad) || 0), 0)} {cart.reduce((sum, i) => sum + (Number(i.cantidad) || 0), 0) === 1 ? 'Unidad' : 'Unidades'}
+                            </span>
+                        </div>
+                    )}
                     {/* 💰 CAMPO PARA MONTO MANUAL (Solo aparece si se elige valor manual) */}
                     {propina === -1 && (
                         <div style={{ position: 'relative' }}>
@@ -805,13 +783,15 @@ export default function TicketPanel({
         try {
         
           if (sumaModal > 0 && Math.abs(sumaModal - total) < 10) {
-          await cobrarOrden('mixto_v2', montosFinales, tenantId, permisos.puedeCobrar); 
+            await cobrarOrden('mixto_v2', montosFinales, tenantId, permisos.puedeCobrar); 
           } else {
-          await cobrarOrden(metodoPago, null, tenantId, permisos.puedeCobrar);
+            await cobrarOrden(metodoPago, null, tenantId, permisos.puedeCobrar);
           }
-         
-    setPagaCon('');
-    setMontosMixtos({ efectivo: 0, tarjeta: 0, digital: 0 });
+          
+          // 🧹 LIMPIEZA DE ESTADOS POST-COBRO:
+          setPagaCon('');
+          setMetodoPago('efectivo'); // 👈 RESTABLECE AUTOMÁTICAMENTE A EFECTIVO
+          setMontosMixtos({ efectivo: 0, tarjeta: 0, digital: 0 });
 
         } catch (error) {
             console.error("🔥 Error crítico en el botón cobrar:", error);
