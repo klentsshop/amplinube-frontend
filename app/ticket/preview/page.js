@@ -63,9 +63,10 @@ function TicketContent() {
     const totalFinal = totalProductos + valorPropina;
     return (
         <div id="ticket-root" style={{
-            width: '100%', maxWidth: '280px', margin: '0 auto', padding: '0 2px',
-            backgroundColor: 'white', fontFamily: 'monospace', color: '#000'
-        }}>
+    width: '100%', maxWidth: '280px', margin: '0 auto', padding: '0 2px 40px 2px',
+    backgroundColor: 'white', fontFamily: 'monospace', color: '#000',
+    maxHeight: '100vh', overflowY: 'auto'
+}}>
             {/* PANEL DE CONTROL INTERACTIVO (NO IMPRIMIBLE) */}
             <div className="no-print" style={{
                 display: 'flex', gap: '10px', marginBottom: '20px',
@@ -256,32 +257,36 @@ function TicketContent() {
             </div>
             {/* PARCHE DE ESTILOS CSS INYECTADOS DIRECTOS AL MOTOR DE WINDOWS */}
             <style jsx>{`
-                @media print {
-                    .no-print { display: none !important; }
-                    @page {
-                        margin: 0 !important;
-                        size: 58mm auto;
-                    }
-                    html, body {
-                        width: 58mm !important;
-                        margin: 0 !important;
-                        padding: 0 !important;
-                        background: #fff;
-                        overflow: hidden !important;
-                    }
-                    #ticket-root {
-                        width: 54mm !important;
-                        max-width: 54mm !important;
-                        margin: 0 auto !important;
-                        padding: 0 1mm !important;
-                        display: block !important;
-                    }
-                    * {
-                        color-adjust: exact !important;
-                        -webkit-print-color-adjust: exact !important;
-                    }
-                }
-            `}</style>
+    @media print {
+        .no-print { display: none !important; }
+        @page {
+            margin: 0 !important;
+            size: 58mm auto;
+        }
+        html, body {
+            width: 58mm !important;
+            height: auto !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            background: #fff;
+            overflow: visible !important;
+        }
+        #ticket-root {
+            width: 54mm !important;
+            max-width: 54mm !important;
+            height: auto !important;
+            max-height: none !important;
+            overflow: visible !important;
+            margin: 0 auto !important;
+            padding: 0 1mm !important;
+            display: block !important;
+        }
+        * {
+            color-adjust: exact !important;
+            -webkit-print-color-adjust: exact !important;
+        }
+    }
+`}</style>
         </div>
     );
 }

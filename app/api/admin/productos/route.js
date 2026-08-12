@@ -188,14 +188,10 @@ export async function GET(req) {
                 urlImagenFinal = `${baseUrlStorage}/storage/v1/object/public/productos/${urlImagenFinal}`;
             }
 
-            // Fallback para productos de catálogos masivos que no tienen columna imagen poblada
-            if (!urlImagenFinal) {
-                const identificadorFoto = p.barcode || p.codigo_balanza;
-                if (identificadorFoto) {
-                    // Intenta apuntar a la imagen guardada en el bucket por barcode/código
-                    urlImagenFinal = `${baseUrlStorage}/storage/v1/object/public/productos/${tenantLimpio}/${identificadorFoto}.jpg`;
-                }
-            }
+           // 🛡️ Si no tiene imagen en la BD, se queda estrictamente en NULL (sin inventar URLs por barcode)
+           if (!urlImagenFinal || urlImagenFinal.trim() === '') {
+           urlImagenFinal = null;
+           }
 
             return {
                 _id: p.id,
