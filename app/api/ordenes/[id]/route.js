@@ -69,7 +69,8 @@ export async function GET(request, { params }) {
                 precioUnitario: Number(p.precio_unitario || 0),
                 subtotal: Number(p.subtotal || 0),
                 comentario: p.comentario || "",
-                categoria: p.categoria || "",
+                categoria: p.categoria || "",                         // 🛡️ UUID Relacional
+                categoriaNombre: p.categoria_label || p.categoria || "", // 🖨️ Nombre Legible Impresión
                 controlaInventario: p.controla_inventario || false,
                 amount: Number(p.cantidad || 0), 
                 cantidadADescontar: Number(p.cantidad_a_descontar || 0),

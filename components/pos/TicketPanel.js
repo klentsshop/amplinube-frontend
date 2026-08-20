@@ -6,6 +6,7 @@ import { formatPrecioDisplay, METODOS_PAGO } from '@/lib/utils';
 import { SITE_CONFIG } from '@/lib/config';
 import { useCart } from '@/app/context/CartContext';
 import ModalPagoMixto from '../modals/ModalPagoMixto';
+import PinModal from '../modals/PinModal';
 
 /**
  * 🛡️ COMPONENTE INTERNO: InputComentario
@@ -108,9 +109,12 @@ export default function TicketPanel({
     // Buscamos el icono dinámico para el selector de pago
     const iconoPagoActual = (METODOS_PAGO || []).find(m => m.value === metodoPago)?.title.split(' ')[0] || '💰';
     // ... justo antes del return del TicketPanel
-     const [pagaCon, setPagaCon] = useState('');
+    const [pagaCon, setPagaCon] = useState('');
      const [verModalMixto, setVerModalMixto] = useState(false);
      const [montosMixtos, setMontosMixtos] = useState({ efectivo: 0, tarjeta: 0, digital: 0 });
+     const [modalPinOpen, setModalPinOpen] = useState(false);
+     const [accionPinPendiente, setAccionPinPendiente] = useState(null);
+     const [tituloPinModal, setTituloPinModal] = useState("Ingresar PIN");
      const { actualizarComentario, tipoOrden, setTipoOrden, clienteActivo } = useCart();
     
      // ✨ LOGICA PRO: Salto automático del radio button según el nombre
@@ -135,6 +139,27 @@ export default function TicketPanel({
      }, [ordenMesa, setTipoOrden, tipoOrden]); // Agregamos tipoOrden al array de dependencias por buena práctica
      
      const cambio = pagaCon && Number(pagaCon) > 0 ? (Number(pagaCon) - total) : 0;
+
+     // 🔒 PROCESADOR DE PIN SEGURO CON MÁSCARA
+     const procesarConfirmacionPin = async (pinIngresado) => {
+         setModalPinOpen(false);
+         if (accionPinPendiente) {
+             await accionPinPendiente(pinIngresado);
+         }
+         setAccionPinPendiente(null);
+     };
+
+     // 🛡️ INTERCEPTOR SEGURO DE ELIMINACIÓN CON PIN ENMASCARADO
+     const solicitarEliminacionConPinSeguro = (item) => {
+         setTituloPinModal(`Autorizar borrado: ${item.nombre}`);
+         setAccionPinPendiente(() => async (pin) => {
+             if (typeof solicitarEliminacionAdmin === 'function') {
+                 solicitarEliminacionAdmin(item, pin);
+             }
+         });
+         setModalPinOpen(true);
+     };
+
     return (
         <div 
             className={`${styles.ticketPanel} ${mostrarCarritoMobile ? styles.ticketPanelShowMobile : ''}`}
@@ -156,7 +181,17 @@ export default function TicketPanel({
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <h2
-                onClick={solicitarAccesoCajero} 
+                onClick={() => {
+                    if (esModoCajero) {
+                        solicitarAccesoCajero();
+                    } else {
+                        setTituloPinModal("🔐 PIN para habilitar COBRO");
+                        setAccionPinPendiente(() => async (pin) => {
+                            await solicitarAccesoCajero(pin);
+                        });
+                        setModalPinOpen(true);
+                    }
+                }} 
                 style={{ 
                     fontSize: 'clamp(1.05rem, 2.5vw, 0.95rem)', 
                     margin: 0, 
@@ -166,7 +201,7 @@ export default function TicketPanel({
                     lineHeight: 1.2
                 }}
             >
-               {(config?.nombreCorto || config?.nombre || "SOCIO POS")?.toUpperCase()} {ordenMesa ? `(${ordenMesa})` : 'ACTUAL'}
+                {(config?.nombreCorto || config?.nombre || "SOCIO POS")?.toUpperCase()} {ordenMesa ? `(${ordenMesa})` : 'ACTUAL'}
             </h2>
 
             {cart.length > 0 && (
@@ -319,7 +354,13 @@ export default function TicketPanel({
         {/* 2. ADMIN */}
         {(esModoCajero || permisos?.verAdmin) ? (
             <button 
-                onClick={solicitarAccesoAdmin} 
+                onClick={() => {
+                    setTituloPinModal("🔑 PIN de Administrador");
+                    setAccionPinPendiente(() => async (pin) => {
+                        await solicitarAccesoAdmin(pin);
+                    });
+                    setModalPinOpen(true);
+                }} 
                 style={{
                     flex: '0 0 31%',
                     padding: 'clamp(10px, 2.8vw, 8px) 2px',
@@ -366,12 +407,12 @@ export default function TicketPanel({
                     <p style={{ textAlign: 'center', color: '#9CA3AF', marginTop: '20px' }}>No hay productos seleccionados</p>
                 ) : (
                     [...cart]
-                       .sort((a, b) => {
-    // 1. Normalizamos categorías y nombres a minúsculas
-    const catA = (a.categoria || "").toLowerCase();
-    const catB = (b.categoria || "").toLowerCase();
-    const nomA = (a.nombre || "").toLowerCase();
-    const nomB = (b.nombre || "").toLowerCase();
+                        .sort((a, b) => {
+    // 1. Normalizamos nombre legible de categoría y del plato a minúsculas
+    const catA = String(a.categoriaNombre || a.categoriaLabel || a.categoria || "").toLowerCase();
+    const catB = String(b.categoriaNombre || b.categoriaLabel || b.categoria || "").toLowerCase();
+    const nomA = String(a.nombre || a.nombrePlato || "").toLowerCase();
+    const nomB = String(b.nombre || b.nombrePlato || "").toLowerCase();
 
     // 2. Palabras clave que identifican bebidas/jugos/líquidos
     const palabrasBebida = ['bebida', 'toma', 'gaseosa', 'jugo', 'jugos', 'refresco', 'cerveza', 'licor', 'agua', 'limonada', 'soda'];
@@ -383,7 +424,7 @@ export default function TicketPanel({
     if (esBebidaA && !esBebidaB) return 1;
     if (!esBebidaA && esBebidaB) return -1;
 
-    // 🍽️ Para los platos de comida: preservamos el orden exacto de llegada (el último plato queda ARRIBA)
+    // 🍽️ Para los platos de comida: preservamos el orden exacto de llegada
     return 0;
 })
                     
@@ -437,16 +478,16 @@ export default function TicketPanel({
                     {((item.precioNum || 0) * item.cantidad).toLocaleString(SITE_CONFIG.brand.currency)}
                 </strong>
 
-                {/* 3. BOTÓN MENOS (Circular Rojo) */}
+               {/* 3. BOTÓN MENOS (Circular Rojo) */}
                 <button 
                   onClick={() => {
                   const esItemGuardado = item.esDeOrdenGuardada || item._key;
                   if (esItemGuardado) {
-                  solicitarEliminacionAdmin(item);
+                  solicitarEliminacionConPinSeguro(item);
                   } else {
                   quitarDelCarrito(item.lineId);
                   }
-                  }} 
+                  }}
                      style={{ 
                        cursor: ((item.esDeOrdenGuardada || item._key) && !esModoCajero) ? 'help' : 'pointer', 
                        opacity: ((item.esDeOrdenGuardada || item._key) && !esModoCajero) ? 0.5 : 1,
@@ -522,29 +563,38 @@ export default function TicketPanel({
                             </select>
                         </div>
                     </div>
-                    {/* 🛒 INDICADOR MODERNO DE PRODUCTOS EN EL CARRITO */}
-                    {cart.length > 0 && (
-                        <div style={{ 
-                            display: 'flex', 
-                            justify: 'space-between', 
-                            alignItems: 'center',
-                            padding: '6px 12px', 
-                            backgroundColor: '#ECFDF5', 
-                            borderRadius: '8px', 
-                            border: '1px solid #A7F3D0'
-                        }}>
-                            <span style={{ fontSize: '0.8rem', fontWeight: '800', color: '#047857' }}>
-                                🛒 ÍTEMS EN ORDEN: &nbsp;
-                            </span>
-                            <span style={{ 
-                                fontSize: '0.85rem', 
-                                fontWeight: '900', 
-                                color: '#047857'
+                    {/* 🛒 INDICADOR MODERNO DE PRODUCTOS EN EL CARRITO (LÓGICA HÍBRIDA ENTEROS / PESADOS) */}
+                    {cart.length > 0 && (() => {
+                        const totalUnidadesEnteras = cart.reduce((sum, item) => {
+                            const cant = Number(item.cantidad) || 0;
+                            // Si es venta por peso o tiene decimales (ej: 0.15 kg), cuenta como 1 posición en la orden
+                            const esPesadoODecimal = item.esVentaPorPeso || (cant % 1 !== 0);
+                            return sum + (esPesadoODecimal ? 1 : cant);
+                        }, 0);
+
+                        return (
+                            <div style={{ 
+                                display: 'flex', 
+                                justifyContent: 'space-between', 
+                                alignItems: 'center',
+                                padding: '6px 12px', 
+                                backgroundColor: '#ECFDF5', 
+                                borderRadius: '8px', 
+                                border: '1px solid #A7F3D0'
                             }}>
-                                {cart.reduce((sum, i) => sum + (Number(i.cantidad) || 0), 0)} {cart.reduce((sum, i) => sum + (Number(i.cantidad) || 0), 0) === 1 ? 'Unidad' : 'Unidades'}
-                            </span>
-                        </div>
-                    )}
+                                <span style={{ fontSize: '0.8rem', fontWeight: '800', color: '#047857' }}>
+                                    🛒 ÍTEMS EN ORDEN: &nbsp;
+                                </span>
+                                <span style={{ 
+                                    fontSize: '0.85rem', 
+                                    fontWeight: '900', 
+                                    color: '#047857'
+                                }}>
+                                    {totalUnidadesEnteras} {totalUnidadesEnteras === 1 ? 'Unidad' : 'Unidades'}
+                                </span>
+                            </div>
+                        );
+                    })()}
                     {/* 💰 CAMPO PARA MONTO MANUAL (Solo aparece si se elige valor manual) */}
                     {propina === -1 && (
                         <div style={{ position: 'relative' }}>
@@ -812,6 +862,17 @@ export default function TicketPanel({
 </button>)}
 </div>
             </div>
+
+            {/* 🔒 MODAL DE PIN SEGURA (MÁSCARA TIPO PASSWORD) */}
+            <PinModal 
+                isOpen={modalPinOpen}
+                onClose={() => {
+                    setModalPinOpen(false);
+                    setAccionPinPendiente(null);
+                }}
+                onConfirm={procesarConfirmacionPin}
+                titulo={tituloPinModal}
+            />
         </div>
     );
 }

@@ -1,4 +1,3 @@
-// app/hooks/useAccesos.js
 import { useState, useEffect } from 'react';
 
 /**
@@ -11,35 +10,35 @@ export function useAccesos(config, setNombreMesero, { onAdminSuccess } = {}, ten
     // Persistencia de sesión de Cajero con localStorage
     useEffect(() => {
         if (!tenantId) return;
-    const sesionCajero = localStorage.getItem(`${tenantId}_cajero_activa`);
-    if (sesionCajero === 'true') {
-        setEsModoCajero(true);
-        setNombreMesero("Caja");
-    }
-}, [setNombreMesero, tenantId]);
+        const sesionCajero = localStorage.getItem(`${tenantId}_cajero_activa`);
+        if (sesionCajero === 'true') {
+            setEsModoCajero(true);
+            setNombreMesero("Caja");
+        }
+    }, [setNombreMesero, tenantId]);
 
     // Lógica para habilitar/deshabilitar modo Cobro (CAJERO)
-    const solicitarAccesoCajero = async () => {
-    if (esModoCajero) {
-        if (confirm("¿Cerrar sesión Cajero?")) {
-            setEsModoCajero(false);
-            localStorage.removeItem(`${tenantId}_cajero_activa`);
-            
-            // 🛡️ Recupera el mesero guardado previamente o lo deja libre para seleccionar
-            const meseroPrevio = localStorage.getItem('ultimoMesero');
-            setNombreMesero(meseroPrevio && meseroPrevio !== 'Caja' ? meseroPrevio : "");
+    const solicitarAccesoCajero = async (pinIngresado) => {
+        if (esModoCajero) {
+            if (confirm("¿Cerrar sesión Cajero?")) {
+                setEsModoCajero(false);
+                localStorage.removeItem(`${tenantId}_cajero_activa`);
+                
+                // 🛡️ Recupera el mesero guardado previamente o lo deja libre para seleccionar
+                const meseroPrevio = localStorage.getItem('ultimoMesero');
+                setNombreMesero(meseroPrevio && meseroPrevio !== 'Caja' ? meseroPrevio : "");
+            }
+            return true;
         }
-        return;
-    }
-        
-        const pin = prompt("🔐 PIN para habilitar COBRO:");
-        if (!pin) return;
+            
+        // 🛡️ Filtro de seguridad: ignora llamadas de clic directas sin PIN de texto
+        if (!pinIngresado || typeof pinIngresado !== 'string') return false;
 
         try {
             const res = await fetch('/api/auth/verify', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ pin, tipo: 'cajero', tenantId, tenant: tenantId })
+                body: JSON.stringify({ pin: pinIngresado, tipo: 'cajero', tenantId, tenant: tenantId })
             });
             const data = await res.json();
 
@@ -47,41 +46,46 @@ export function useAccesos(config, setNombreMesero, { onAdminSuccess } = {}, ten
                 setEsModoCajero(true);
                 localStorage.setItem(`${tenantId}_cajero_activa`, 'true');
                 setNombreMesero("Caja");
+                return true;
             } else { 
                 alert("❌ PIN Incorrecto."); 
+                return false;
             }
         } catch (error) {
             alert("❌ Error de conexión con el servidor de seguridad.");
+            return false;
         }
     };
 
     // Lógica para acceso administrativo (Reportes sensibles)
-    const solicitarAccesoAdmin = async () => {
-        const pin = prompt("🔑 PIN de Administrador:");
-        if (!pin) return;
+    const solicitarAccesoAdmin = async (pinIngresado) => {
+        // 🛡️ Filtro de seguridad: ignora llamadas de clic directas sin PIN de texto
+        if (!pinIngresado || typeof pinIngresado !== 'string') return false;
 
         try {
             const res = await fetch('/api/auth/verify', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ pin, tipo: 'admin', tenantId, tenant: tenantId })
+                body: JSON.stringify({ pin: pinIngresado, tipo: 'admin', tenantId, tenant: tenantId })
             });
             const data = await res.json();
 
             if (res.ok && data.autorizado) {
-                // Executamos el callback pasando el PIN verificado de manera síncrona
-                if (onAdminSuccess) await onAdminSuccess(pin);
+                if (onAdminSuccess) await onAdminSuccess(pinIngresado);
+                return true;
             } else {
                 alert("❌ PIN administrativo incorrecto.");
+                return false;
             }
         } catch (error) {
             alert("❌ Error de seguridad o conexión.");
+            return false;
         }
     };
 
-    // 🛡️ NUEVA FUNCIÓN: Para validar acciones críticas (como borrar platos)
-    // Se conecta a tu API real de verificación
+    // 🛡️ Para validar acciones críticas (como borrar platos)
     const validarPinAdmin = async (pin) => {
+        if (!pin || typeof pin !== 'string') return false;
         try {
             const res = await fetch('/api/auth/verify', {
                 method: 'POST',
@@ -95,8 +99,9 @@ export function useAccesos(config, setNombreMesero, { onAdminSuccess } = {}, ten
             return false;
         }
     };
+
     const solicitarAccesoCajeroConPinDirecto = async (pinIngresado) => {
-        if (!pinIngresado || !tenantId) return false;
+        if (!pinIngresado || typeof pinIngresado !== 'string' || !tenantId) return false;
         try {
             const res = await fetch('/api/auth/verify', {
                 method: 'POST',
@@ -118,11 +123,11 @@ export function useAccesos(config, setNombreMesero, { onAdminSuccess } = {}, ten
             return false;
         }
     };
-    // ÚNICO RETURN AL FINAL
+
     return { 
         esModoCajero, 
         solicitarAccesoCajero, 
-        solicitarAccesoCajeroConPinDirecto, // 🎯 Bisturí: El puente táctil
+        solicitarAccesoCajeroConPinDirecto,
         solicitarAccesoAdmin,
         validarPinAdmin 
     };

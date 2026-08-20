@@ -1,9 +1,10 @@
-import React, { memo, useMemo } from 'react';
+import React, { memo, useMemo, useState } from 'react';
 import { formatPrecioDisplay, categoriasMap } from '@/lib/utils';
 
 // ✅ Importamos la configuración maestra para la moneda y lógica
 import { SITE_CONFIG } from '@/lib/config';
 import { Settings } from 'lucide-react';
+import PinModal from '../modals/PinModal';
 
 const ProductGrid = memo(({
     platos, platosFiltrados, categoriasGlobales = [], busqueda, setBusqueda, categoriaActiva, setCategoriaActiva,
@@ -12,32 +13,68 @@ const ProductGrid = memo(({
     styles, mostrarCarritoMobile, setMostrarCarritoMobile, cart, total, mensajeExito, ordenesActivas, cargarOrden, ordenActivaId, setMostrarConfigImpresion,
     tenantId, columnasGrid = 6
 }) => {
-    // 🚀 AJUSTE VISUAL SÉNIOR: Prioriza categorías globales de la BD sobre el corte local de platos
-    const listaCategorias = useMemo(() => {
-        // 1. Si vinieron las categorías globales de Supabase/API, las usamos como prioridad
-        if (categoriasGlobales && categoriasGlobales.length > 0) {
-            const unicasGlobales = [...new Set(categoriasGlobales)]
-                .map(c => String(c || '').trim().toUpperCase())
-                .filter(c => c.length > 0 && c !== 'TODOS');
+    // 🔒 ESTADO Y PROCESADOR DE PIN PARA CONFIGURACIÓN
+    const [modalPinConfigOpen, setModalPinConfigOpen] = useState(false);
 
-            const ordenadas = unicasGlobales.sort((a, b) => a.localeCompare(b));
-            return ['TODOS', ...ordenadas];
+    const procesarPinConfig = async (pin) => {
+        setModalPinConfigOpen(false);
+        try {
+            const res = await fetch('/api/auth/verify', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ pin, tipo: 'admin', tenantId: tenantId, tenant: tenantId })
+            });
+            const data = await res.json();
+            if (data.autorizado) {
+                setMostrarConfigImpresion(true);
+            } else {
+                alert("❌ PIN administrativo incorrecto.");
+            }
+        } catch (e) {
+            alert("❌ Error de seguridad.");
+        }
+    };
+    // 🚀 AJUSTE VISUAL SÉNIOR: Normalización de Objetos Categoría (ID UUID + Título)
+    const listaCategorias = useMemo(() => {
+        const comodinTodos = { id: 'TODOS', titulo: 'TODOS' };
+
+        // 1. Prioridad: Categorías estructuradas desde Supabase/API
+        if (Array.isArray(categoriasGlobales) && categoriasGlobales.length > 0) {
+            const unicasMap = new Map();
+            categoriasGlobales.forEach(c => {
+                const id = typeof c === 'object' ? (c.id || c._id) : String(c);
+                const titulo = typeof c === 'object' ? (c.titulo || c.nombre || id) : String(c);
+                if (id && id !== 'TODOS' && !unicasMap.has(id)) {
+                    unicasMap.set(id, { id, titulo: String(titulo).toUpperCase().trim() });
+                }
+            });
+
+            const listaOrdenada = Array.from(unicasMap.values()).sort((a, b) => a.titulo.localeCompare(b.titulo));
+            return [comodinTodos, ...listaOrdenada];
         }
 
-        // 2. Fallback local si no hay categorías globales cargadas aún
-        const categoriasEnPlatos = platos.map(p => {
-            if (typeof p.categoria === 'object') return p.categoria?.titulo || p.categoria?.nombre || p.categoria?.current || '';
-            return String(p.categoria || '');
+        // 2. Fallback local si el catálogo es local/Sanity
+        const unicasLocalesMap = new Map();
+        platos.forEach(p => {
+            let id = '';
+            let titulo = '';
+            if (typeof p.categoria === 'object' && p.categoria) {
+                id = p.categoria._ref || p.categoria.id || p.categoria._id || '';
+                titulo = p.categoria.titulo || p.categoria.nombre || id;
+            } else if (p.categoria) {
+                id = String(p.categoria);
+                titulo = String(p.categoria);
+            }
+
+            if (id && id !== 'TODOS' && !unicasLocalesMap.has(id)) {
+                unicasLocalesMap.set(id, { id, titulo: String(titulo).toUpperCase().trim() });
+            }
         });
 
-        const unicas = [...new Set(categoriasEnPlatos)]
-            .map(c => String(c || '').trim().toUpperCase())
-            .filter(c => c.length > 0 && c !== 'TODOS');
+       const listaLocalesOrdenada = Array.from(unicasLocalesMap.values()).sort((a, b) => a.titulo.localeCompare(b.titulo));
+    return [comodinTodos, ...listaLocalesOrdenada];
+}, [platos, categoriasGlobales]);
 
-        const ordenadas = unicas.sort((a, b) => a.localeCompare(b));
-
-        return ['TODOS', ...ordenadas];
-    }, [platos, categoriasGlobales]);
 // 🔥 2. LÓGICA DE ORDENAMIENTO INTELIGENTE (PROFESIONAL)
     // Usamos useMemo para ordenar los platos por popularidad (totalVentas) 
     // solo cuando estemos en la vista "todos" y no haya una búsqueda activa.
@@ -107,41 +144,28 @@ return (
             {/* Menú lateral de categorías */}
             <div className={`${styles.categoriesBar} ${mostrarCategoriasMobile ? styles.categoriesBarShowMobile : ''}`}>
                 <h3 className={styles.mobileOnlyTitle}>Categorías</h3>
-                {listaCategorias.map(cat => (
-                    <button 
-                        key={cat} 
-                        className={`${styles.catBtn} ${categoriaActiva === cat ? styles.catBtnActive : ''}`} 
-                        onClick={() => {
-                            setCategoriaActiva(cat);
-                            setMostrarCategoriasMobile(false);
-                        }}>
-                        {(categoriasMap && categoriasMap[cat]) ? categoriasMap[cat] : cat}
-                    </button>
-                ))}
+            {listaCategorias.map(cat => {
+                    const catId = typeof cat === 'object' ? cat.id : cat;
+                    const catTitulo = typeof cat === 'object' ? cat.titulo : cat;
+                    const esActivo = categoriaActiva === catId;
+
+                    return (
+                        <button 
+                            key={catId} 
+                            className={`${styles.catBtn} ${esActivo ? styles.catBtnActive : ''}`} 
+                            onClick={() => {
+                                setCategoriaActiva(catId);
+                                setMostrarCategoriasMobile(false);
+                            }}>
+                            {(categoriasMap && categoriasMap[catTitulo]) ? categoriasMap[catTitulo] : catTitulo}
+                        </button>
+                    );
+                })}
                 {/* ⚙️ BOTÓN DE CONFIGURACIÓN DINÁMICO (SIEMPRE AL FINAL) */}
             
                     {/* ⚙️ BOTÓN DE CONFIGURACIÓN DINÁMICO (SIEMPRE AL FINAL) */}
 <button 
-    onClick={async () => {
-        const pin = prompt("🔑 PIN de Administrador para Configuración:");
-        if (!pin) return;
-        
-        try {
-            const res = await fetch('/api/auth/verify', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ pin, tipo: 'admin', tenantId: tenantId, tenant: tenantId }) // 👈 Cambiado a tenantId puro de las props
-            });
-            const data = await res.json();
-            if (data.autorizado) {
-                setMostrarConfigImpresion(true);
-            } else {
-                alert("❌ PIN administrativo incorrecto.");
-            }
-        } catch (e) {
-            alert("❌ Error de seguridad.");
-        }
-    }}
+    onClick={() => setModalPinConfigOpen(true)}
     className={styles.configBtnSidebar}
     title="Configurar Estación"
 >
@@ -316,8 +340,15 @@ onClick={() => {
                         </div>
                     )}
                 </div>
-            )}
+        )}
             
+            {/* 🔒 MODAL DE PIN SEGURA PARA CONFIGURACIÓN */}
+            <PinModal 
+                isOpen={modalPinConfigOpen}
+                onClose={() => setModalPinConfigOpen(false)}
+                onConfirm={procesarPinConfig}
+                titulo="🔑 PIN de Administrador para Configuración"
+            />
         </div>
     );
 });

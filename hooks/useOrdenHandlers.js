@@ -103,7 +103,10 @@ export function useOrdenHandlers({
                         precioCosto: Number(p.precioCosto || 0),
                         
                         // 2. 🛡️ BLINDAJE DE CATEGORÍA: 
-                        categoria: (p.categoria || p.categoriaPlato || "").toString().toUpperCase().trim(),
+                        // 2. 🛡️ BLINDAJE DE CATEGORÍA (Respetando UUID / Texto): 
+                        categoria: typeof p.categoria === 'object' 
+                            ? (p.categoria?.id || p.categoria?._id || '') 
+                            : String(p.categoria || p.categoria_id || p.categoriaPlato || "").trim(),
                         
                         // 3. Flags de impresión y estado
                         seImprime: p.seImprime === true, 
@@ -190,21 +193,25 @@ export function useOrdenHandlers({
 
         localStorage.setItem('ultimoMesero', meseroFinal);
 
-     const platosParaGuardar = cart.map(i => {
+     const platosParaGuardar = cart.map((i, index) => {
     const pId = i.id || i._id;
     const platoCatalogo = (rep || []).find(p => (p.id || p._id) === pId);
+    const keyDefinitiva = i._key || i.lineId || `new-${pId}-${Date.now()}-${index}`;
+
     return { 
         _id: pId,
         id: pId,
-        _key: i._key || i.lineId || `new-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`, 
-        lineId: i.lineId || i._key,
+        _key: keyDefinitiva, 
+        lineId: keyDefinitiva,
         nombrePlato: i.nombre || i.nombrePlato, 
-        cantidad: i.cantidad, 
-        precioUnitario: i.precioNum,
+        cantidad: Number(i.cantidad), 
+        precioUnitario: Number(i.precioNum || i.precio),
         precioCosto: Number(platoCatalogo?.precioCosto || i.precioCosto || 0), 
-        subtotal: Number((i.precioNum * i.cantidad).toFixed(2)),
+        subtotal: Number(((i.precioNum || i.precio) * i.cantidad).toFixed(2)),
         comentario: normalizarParaImpresora(i.comentario),
-        categoria: (i.categoria || i.categoriaPlato || i.nombreCategoria || "").toString().trim().toUpperCase(),
+        categoria: typeof i.categoria === 'object' 
+            ? (i.categoria?.id || i.categoria?._id || '') 
+            : String(i.categoria || i.categoria_id || i.categoriaPlato || i.nombreCategoria || "").trim(),
         seImprime: i.seImprime === true,
         controlaInventario: i.controlaInventario || false,
         recetaInsumos: i.recetaInsumos || [],
@@ -490,7 +497,9 @@ const sincronizarBorradoEnSanity = async (carritoFiltrado) => {
         precioCosto: Number(platoCatalogo?.precioCosto || i.precioCosto || 0),
         subtotal: Number(((i.precioNum || i.precioUnitario) * i.cantidad).toFixed(2)),
         comentario: normalizarParaImpresora(i.comentario || ""),
-        categoria: (i.categoria || "").toString().trim().toUpperCase(),
+        categoria: typeof i.categoria === 'object' 
+            ? (i.categoria?.id || i.categoria?._id || '') 
+            : String(i.categoria || i.categoria_id || "").trim(),
         seImprime: i.seImprime === true,
         controlaInventario: i.controlaInventario || false,
         esDeOrdenGuardada: true,
@@ -534,31 +543,21 @@ const sincronizarBorradoEnSanity = async (carritoFiltrado) => {
         setMensajeExito(false);
     }
 };
-// REEMPLAZAR LA FUNCIÓN COMPLETA POR ESTA:
-const solicitarEliminacionAdmin = async (item) => {
-    // 🛡️ CIRUGÍA ATÓMICA: Calculamos el estado futuro del carrito de forma síncrona
-    // sin confiar en el retorno rezagado del dispatcher de React.
+const solicitarEliminacionAdmin = async (item, pinIngresado) => {
     const obtenerCarritoFiltrado = () => {
         return cart.filter(it => it.lineId !== item.lineId);
     };
 
-    // 1. Lógica para Cajero directo (Ya está logueado, no pide PIN)
+    // 1. Lógica para Cajero directo (Ya está autenticado en sesión)
     if (esModoCajero) {
-        if (confirm(`⚠️ ¿Desea eliminar "${item.nombre}"? Este plato ya fue enviado a cocina.`)) {
-            const nuevoCarrito = obtenerCarritoFiltrado();
-            
-            // Primero actualizamos el estado local de React
-            eliminarLineaConStock(item.lineId);
-            
-            // Pasamos la instantánea calculada síncronamente a Sanity
-            await sincronizarBorradoEnSanity(nuevoCarrito); 
-        }
+        const nuevoCarrito = obtenerCarritoFiltrado();
+        eliminarLineaConStock(item.lineId);
+        await sincronizarBorradoEnSanity(nuevoCarrito);
         return;
     }
 
-    // 2. Lógica para Mesero (Pide PIN de supervisión para autorizar)
-    const pinIngresado = prompt(`🔒 PIN de Autorización (Caja/Admin) para eliminar "${item.nombre}":`);
-    if (!pinIngresado) return; 
+    // 2. Lógica para Mesero (Recibe el PIN verificado desde el Modal enmascarado)
+    if (!pinIngresado || typeof pinIngresado !== 'string') return; 
 
     try {
         const res = await fetch('/api/auth/verify', {
@@ -570,12 +569,9 @@ const solicitarEliminacionAdmin = async (item) => {
         const data = await res.json();
 
         if (res.ok && (data.success || data.autorizado)) {
-            if (confirm(`✅ PIN Correcto. ¿Eliminar "${item.nombre}" de la mesa?`)) {
-                const nuevoCarrito = obtenerCarritoFiltrado();
-                
-                eliminarLineaConStock(item.lineId);
-                await sincronizarBorradoEnSanity(nuevoCarrito);
-            }
+            const nuevoCarrito = obtenerCarritoFiltrado();
+            eliminarLineaConStock(item.lineId);
+            await sincronizarBorradoEnSanity(nuevoCarrito);
         } else {
             alert("❌ PIN de autorización incorrecto.");
         }

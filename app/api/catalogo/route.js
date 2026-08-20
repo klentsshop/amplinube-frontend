@@ -73,17 +73,43 @@ export async function GET(request) {
 
         console.log(`🛡️ Escudo procesando petición para Tenant: [${tenantAlias}]`);
 
-        // 1. LECTURA RÁPIDA DEL BÚNKER (Cache HIT $0 Impacto)
+// 1. LECTURA RÁPIDA DEL BÚNKER (Cache HIT $0 Impacto - Sanitización Atómica)
         const { data: cacheExistente, error: errCache } = await supabaseServer
             .from('catalog_cache')
             .select('payload_json')
             .eq('tenant_host', tenantAlias)
             .maybeSingle();
 
-        if (cacheExistente && !errCache && Array.isArray(cacheExistente.payload_json) && cacheExistente.payload_json.length > 0) {
-            return NextResponse.json(cacheExistente.payload_json, {
-                headers: { 'X-Cache-Status': 'HIT' }
-            });
+        if (cacheExistente?.payload_json && !errCache) {
+            let payloadLimpio = cacheExistente.payload_json;
+
+            // 🛡️ Des-serialización si viene como String escapado de Postgres
+            if (typeof payloadLimpio === 'string') {
+                try {
+                    payloadLimpio = JSON.parse(payloadLimpio);
+                } catch (e) {
+                    console.warn(`⚠️ Error deserializando payload_json de [${tenantAlias}]:`, e.message);
+                }
+            }
+
+            if (Array.isArray(payloadLimpio) && payloadLimpio.length > 0) {
+                // 🔒 FILTRO DE SEGURIDAD ABSOLUTO: Erradica cualquier objeto de seguridad en Cache HIT
+                payloadLimpio = payloadLimpio.filter(item => item._type !== 'seguridad');
+
+                // 🧠 EVALUACIÓN DE INTEGRIDAD PARA NEGOCIOS ESTÁNDAR (<3000) vs MASIVOS (>=3000)
+                const tienePlatosEnCache = payloadLimpio.some(item => item._type === 'plato' || item._type === 'producto');
+                const tieneCategorias = payloadLimpio.some(item => item._type === 'categoria');
+
+                // Si la caché tiene platos (< 3000 como demo) O no tiene categorías, sirve Cache HIT
+                if (tienePlatosEnCache || !tieneCategorias) {
+                    return NextResponse.json(payloadLimpio, {
+                        headers: { 'X-Cache-Status': 'HIT' }
+                    });
+                }
+                
+                // Si tiene categorías pero 0 platos (Caso Búnker Masivo >= 3000), continua abajo a reconstruir
+                console.log(`⚡ Caché Masiva sin productos para [${tenantAlias}]. Reconstruyendo...`);
+            }
         }
 
         // 2. CACHE MISS: CONSULTA TRIPLE A SUPABASE + SANITY
@@ -96,9 +122,9 @@ export async function GET(request) {
             supabaseServer.from('categorias').select('*').eq('tenant', tenantAlias),
             // C. Meseros desde public.meseros
             supabaseServer.from('meseros').select('*').eq('tenant', tenantAlias),
-            // D. Residual de Sanity
+            // D. Residual de Sanity (Cero seguridad enviada desde la query)
             sanityClient.fetch(
-                `*[( _type in ["estacionPC", "seguridad"] && tenant == $tenantAlias ) || ( _type == "negocio" && slug.current == $tenantAlias )]`,
+                `*[( _type == "estacionPC" && tenant == $tenantAlias ) || ( _type == "negocio" && slug.current == $tenantAlias )]`,
                 { tenantAlias }
             ).catch(err => {
                 console.warn("⚠️ Error leyendo Sanity en Miss:", err.message);
@@ -110,11 +136,10 @@ export async function GET(request) {
         const meserosSupabase = resMeseros.data || [];
         const datosSanity = Array.isArray(resSanity) ? resSanity : [];
 
-        // 3. NORMALIZACIÓN EXACTA Y MAPEO DE CATEGORÍAS
+        // 3. NORMALIZACIÓN EXACTA Y MAPEO DE CATEGORÍAS (Estructura Limpia Postgres)
         const categoriasProcesadas = categoriasSupabase.map(c => {
             const idVal = String(c.id || c._id || '');
-            const tituloVal = c.titulo || c.nombre || 'GENERAL';
-            const slugVal = c.slug || tituloVal.toLowerCase().trim().replace(/\s+/g, '-');
+            const tituloVal = String(c.titulo || c.nombre || 'GENERAL').toUpperCase();
 
             return {
                 _id: idVal,
@@ -123,37 +148,33 @@ export async function GET(request) {
                 tenant: tenantAlias,
                 titulo: tituloVal,
                 nombre: tituloVal,
-                seImprime: c.se_imprime ?? c.seImprime ?? true,
-                orden: c.orden || 1,
-                slug: { _type: 'slug', current: slugVal }
+                seImprime: c.se_imprime !== false,
+                orden: Number(c.orden || 1)
             };
         });
 
         const productosProcesados = platosSupabase.map(p => {
-            // Extraer el identificador o slug almacenado en el plato
             let rawCat = '';
             if (typeof p.categoria === 'string') {
                 rawCat = p.categoria;
             } else if (p.categoria && typeof p.categoria === 'object') {
-                rawCat = p.categoria._ref || p.categoria.current || p.categoria.nombre || '';
+                rawCat = p.categoria._ref || p.categoria.id || p.categoria.nombre || '';
             }
 
-            // Normalizador de cadenas para prevenir fallos por guiones duplicados o espacios extra
-            const normalizarCadena = (str) => String(str || '').toLowerCase().trim().replace(/--+/g, '-');
+            const normalizarCadena = (str) => String(str || '').toLowerCase().trim();
             const catRefLimpio = normalizarCadena(rawCat);
 
-            // Matcheo profundo: Busca si coincide por UUID, Slug o Título exacto/normalizado
+            // Búsqueda del UUID de la categoría vinculada
             const catVinculada = categoriasProcesadas.find(c => {
                 const idCat = normalizarCadena(c.id);
-                const slugCat = normalizarCadena(c.slug?.current);
                 const tituloCat = normalizarCadena(c.titulo);
-
-                return idCat === catRefLimpio || 
-                       slugCat === catRefLimpio || 
-                       tituloCat === catRefLimpio;
+                return idCat === catRefLimpio || tituloCat === catRefLimpio;
             });
 
             const urlImagen = typeof p.imagen === 'string' ? p.imagen : (p.imagen?.url || null);
+            const uuidCategoriaFinal = catVinculada ? catVinculada.id : rawCat;
+            const tituloCategoriaFinal = catVinculada ? catVinculada.titulo : 'GENERAL';
+            const seImprimeFinal = catVinculada ? catVinculada.seImprime : true;
 
             return {
                 _id: p.id,
@@ -168,9 +189,13 @@ export async function GET(request) {
                 codigoBalanza: p.codigo_balanza || null,
                 imagenUrl: urlImagen,
                 imagen: urlImagen ? { _type: 'image', asset: { url: urlImagen } } : null,
-                categoria: catVinculada 
-                    ? { _ref: catVinculada._id, _type: 'reference' } 
-                    : { _ref: "3e75de88-a39a-49cd-9a7f-80f0bfe4f9eb", _type: 'reference' }, // Fallback para registros huérfanos
+                
+                // 🛡️ CAMPOS CLAVE PARA EL POS E IMPRESIÓN DIRECTA
+                categoria: uuidCategoriaFinal, // UUID Relacional
+                categoriaNombre: tituloCategoriaFinal, // TÍTULO PARA TICKET / COMANDA
+                seImprime: seImprimeFinal, // INDICADOR DE IMPRESIÓN
+                categoriaRef: uuidCategoriaFinal ? { _ref: uuidCategoriaFinal, _type: 'reference' } : null,
+                
                 recetaInsumos: p.receta_insumos || [],
                 esVentaPorPeso: p.es_venta_por_peso === true,
                 controlaInventario: p.controla_inventario === true,
@@ -193,25 +218,25 @@ export async function GET(request) {
             puedeCobrar: m.puede_cobrar ?? false
         }));
 
-        // 4. UNIFICACIÓN COMPLETA DE PAYLOAD HÍBRIDO (Control de escala por volumen)
+        // 4. UNIFICACIÓN COMPLETA DE PAYLOAD HÍBRIDO (Sanitizado sin PINes)
         const esCatalogoMasivo = productosProcesados.length >= 3000;
-
-        // Para catálogos de >= 3,000 productos, no embebemos el pesado array de platos en el snapshot de la BD
         const productosAEmbeber = esCatalogoMasivo ? [] : productosProcesados;
+
+        // 🔒 Cierre hermético: Filtra explícitamente cualquier residuo de seguridad
+        const datosSanityLimpios = datosSanity.filter(item => item._type !== 'seguridad');
 
         const payloadCacheGuardar = [
             ...categoriasProcesadas,
             ...productosAEmbeber,
             ...meserosProcesados,
-            ...datosSanity
+            ...datosSanityLimpios
         ];
 
-        // Para la respuesta directa al cliente, entregamos la estructura completa necesaria
         const payloadRespuesta = [
             ...categoriasProcesadas,
             ...productosProcesados,
             ...meserosProcesados,
-            ...datosSanity
+            ...datosSanityLimpios
         ];
 
         // 5. ACTUALIZACIÓN DE CATALOG_CACHE

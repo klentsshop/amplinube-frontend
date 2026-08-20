@@ -67,28 +67,27 @@ async function resolverUuidInsumo(tenantLimpio, idOInsumoId) {
     const hallado = insumos.find(i => String(i.id) === targetStr || String(i.insumo_id) === targetStr);
     return hallado ? hallado.id : null;
 }
-// 🛡️ HELPER: Resuelve UUIDs de categoría a Slug/Título legible
-async function resolverSlugCategoria(tenantLimpio, categoriaInput) {
+// 🛡️ HELPER SENIOR: Garantiza que la categoría se persista como UUID puro de Postgres
+async function resolverUuidCategoria(tenantLimpio, categoriaInput) {
     if (!categoriaInput) return null;
     const catStr = String(categoriaInput).trim();
 
-    // Si NO es un UUID (ya es un texto como "ABARROTES" o "frecuentes"), lo devuelve tal cual
+    // Si ya es un formato UUID válido, lo retorna directo
     const esUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(catStr);
-    if (!esUuid) return catStr;
+    if (esUuid) return catStr;
 
+    // Si enviaron un Slug/Título legacy, busca el UUID real en public.categorias
     try {
         const { data: catDb } = await supabaseServer
             .from('categorias')
-            .select('slug, titulo')
-            .eq('id', catStr)
+            .select('id')
             .eq('tenant', tenantLimpio)
+            .or(`slug.ilike.${catStr},titulo.ilike.${catStr}`)
             .maybeSingle();
 
-        if (catDb) {
-            return (catDb.slug || catDb.titulo || catStr).toLowerCase().trim();
-        }
+        if (catDb?.id) return catDb.id;
     } catch (e) {
-        console.warn("⚠️ No se pudo resolver la categoría por UUID:", e.message);
+        console.warn("⚠️ No se pudo resolver la categoría hacia UUID:", e.message);
     }
 
     return catStr;
@@ -108,8 +107,9 @@ export async function GET(req) {
 
         const tenantLimpio = tenantId.toLowerCase().trim();
         const categoriaParam = searchParams.get('categoria')?.trim() || searchParams.get('cat')?.trim() || '';
+        const categoriaIdParam = searchParams.get('categoriaId')?.trim() || '';
 
-        // 1. Construir la consulta base en public.platos
+        // 1. Construir la consulta base en public.platos con Join relacional
         let query = supabaseServer
             .from('platos')
             .select(`
@@ -133,8 +133,10 @@ export async function GET(req) {
             .eq('tenant', tenantLimpio)
             .order('nombre', { ascending: true });
 
-        // 🎯 SOPORTE CATEGORÍA DUAL (Busca por Slug, Nombre o UUID si quedó guardado viejo)
-        if (categoriaParam !== '') {
+        // 🎯 FILTRADO STRICTO POR UUID
+        if (categoriaIdParam !== '' && categoriaIdParam !== 'TODOS') {
+            query = query.eq('categoria', categoriaIdParam);
+        } else if (categoriaParam !== '' && categoriaParam !== 'TODOS') {
             query = query.or(`categoria.ilike.%${categoriaParam}%,categoria.eq.${categoriaParam}`);
         }
 
@@ -162,36 +164,37 @@ export async function GET(req) {
 
         const platoIds = (platosDb || []).map(p => p.id);
 
-        // 3. Traer únicamente las recetas asociadas a los platos obtenidos
+        // 3. Traer únicamente las recetas y categorías asociadas
         let recetasGrupales = [];
-        if (platoIds.length > 0) {
-            const { data: recetasDb } = await supabaseServer
-                .from('recetas')
-                .select('plato_id, insumo_id, cantidad')
-                .eq('tenant', tenantLimpio)
-                .in('plato_id', platoIds);
+        let diccionarioCategorias = new Map();
 
-            recetasGrupales = recetasDb || [];
+        if (platoIds.length > 0) {
+            const [recetasRes, categoriasRes] = await Promise.all([
+                supabaseServer.from('recetas').select('plato_id, insumo_id, cantidad').eq('tenant', tenantLimpio).in('plato_id', platoIds),
+                supabaseServer.from('categorias').select('id, titulo, se_imprime').eq('tenant', tenantLimpio)
+            ]);
+
+            recetasGrupales = recetasRes.data || [];
+            (categoriasRes.data || []).forEach(c => diccionarioCategorias.set(c.id, c));
         }
 
-        // 4. Mapear y normalizar al formato de la interfaz de React (Con Fallback de Storage para Masivos)
+        // 4. Mapear y normalizar al formato con Metadata para Impresoras y Comandas
         const baseUrlStorage = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://czkakmvkpfgdftkfijnw.supabase.co';
 
         const productosNormalizados = (platosDb || []).map(p => {
             const recetasDelPlato = recetasGrupales.filter(r => r.plato_id === p.id);
+            const catInfo = diccionarioCategorias.get(p.categoria);
 
-            // 🎯 RESOLUCIÓN INTELIGENTE DE URL DE IMAGEN
+            // 🎯 RESOLUCIÓN DE IMAGEN
             let urlImagenFinal = p.imagen || null;
-
-            // Si p.imagen no es una URL http/https completa y existe en la BD
             if (urlImagenFinal && !urlImagenFinal.startsWith('http')) {
                 urlImagenFinal = `${baseUrlStorage}/storage/v1/object/public/productos/${urlImagenFinal}`;
             }
+            if (!urlImagenFinal || urlImagenFinal.trim() === '') urlImagenFinal = null;
 
-           // 🛡️ Si no tiene imagen en la BD, se queda estrictamente en NULL (sin inventar URLs por barcode)
-           if (!urlImagenFinal || urlImagenFinal.trim() === '') {
-           urlImagenFinal = null;
-           }
+            // 🖨️ TITULO PONDERADO PARA COMANDAS E IMPRESIÓN
+            const tituloCategoria = catInfo?.titulo || String(p.categoria || 'GENERAL').toUpperCase();
+            const seImprimeCat = catInfo?.se_imprime ?? true;
 
             return {
                 _id: p.id,
@@ -201,7 +204,14 @@ export async function GET(req) {
                 nombre: p.nombre,
                 precio: Number(p.precio || 0),
                 precioCosto: Number(p.precio_costo || 0),
-                categoria: p.categoria,
+                categoria: p.categoria, // UUID Relacional
+                categoriaNombre: tituloCategoria, // 👈 TÍTULO PARA IMPRESIÓN Y COMANDAS
+                seImprime: seImprimeCat,         // 👈 SEMENTAL DE IMPRESIÓN
+                categoriaObj: {
+                    id: p.categoria,
+                    titulo: tituloCategoria,
+                    seImprime: seImprimeCat
+                },
                 categoriaRef: p.categoria ? { _ref: p.categoria, _type: 'reference' } : null,
                 imagen: urlImagenFinal ? { _type: 'image', asset: { url: urlImagenFinal } } : null,
                 imagenUrl: urlImagenFinal,
@@ -247,7 +257,7 @@ export async function POST(req) {
         const urlImagen = typeof data.imagen === 'string' ? data.imagen : (data.imagen?.url || null);
 
         // 🎯 LIMPUR3ZA DE CATEGORÍA: Convertimos UUID a Slug si el formulario envió el ID
-        const categoriaLimpia = await resolverSlugCategoria(tenantLimpio, data.categoria);
+        const categoriaUuid = await resolverUuidCategoria(tenantLimpio, data.categoria);
 
         // ✅ REEMPLAZO EN POST:
         const recetaNormalizada = (data.insumosReceta || []).map((ins) => {
@@ -273,7 +283,7 @@ export async function POST(req) {
                 nombre: data.nombre.trim().toUpperCase(),
                 precio: Number(data.precio) || 0,
                 precio_costo: Number(data.precioCosto || 0),
-                categoria: categoriaLimpia, // 👈 AHORA GUARDA EL SLUG / NOMBRE LIMPIO
+                categoria: categoriaUuid, // 🛡️ PERSISTE EL UUID RELACIONAL LIMPIO
                 imagen: urlImagen,
                 es_venta_por_peso: data.esVentaPorPeso === true,
                 disponible: data.disponible !== false,
@@ -395,8 +405,8 @@ export async function PUT(req) {
             updated_at: new Date().toISOString()
         };
 
-       if (data.categoria) {
-            camposAActualizar.categoria = await resolverSlugCategoria(tenantLimpio, data.categoria);
+      if (data.categoria) {
+            camposAActualizar.categoria = await resolverUuidCategoria(tenantLimpio, data.categoria);
         }
 
         // 🎯 EXTRAER LA URL DE LA IMAGEN SI FUE ENVIADA EN EL FORMULARIO DE EDICIÓN

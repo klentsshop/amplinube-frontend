@@ -8,7 +8,20 @@ export async function POST(request) {
         if (!tenantAlias) return NextResponse.json({ error: "Falta el tenant" }, { status: 400 });
 
         const cleanTenant = tenantAlias.trim().toLowerCase();
-        const categoriasString = Array.isArray(categorias) ? categorias.join(',') : (categorias || '');
+        
+        // 🖨️ RESOLUTOR A NOMBRES LEGIBLES PARA IMPRESORAS
+        let categoriasString = '';
+        if (Array.isArray(categorias)) {
+            categoriasString = categorias.map(c => {
+                if (typeof c === 'object' && c !== null) {
+                    return (c.titulo || c.nombre || c.id || '').toString().toUpperCase().trim();
+                }
+                return String(c || '').toUpperCase().trim();
+            }).filter(Boolean).join(',');
+        } else {
+            categoriasString = String(categorias || '').toUpperCase().trim();
+        }
+
         const impresoraLimpia = impresoraNombre ? impresoraNombre.trim() : null;
         const anchoPapelNum = Number(ancho_papel) || 58;
 

@@ -468,7 +468,16 @@ export default function VistaProductos({
                     };
                 });
 
-                activarEdicionProducto({ ...p, insumosReceta: recetaNormalizada });
+                // 🛡️ BISTURÍ: Asegura que el estado de edición reciba el UUID relacional de la categoría
+                const catUuidReal = typeof p.categoria === 'object' 
+                    ? (p.categoria?.id || p.categoria?._id || p.categoria?._ref) 
+                    : (p.categoria_id || p.categoria);
+
+                activarEdicionProducto({ 
+                    ...p, 
+                    categoria: catUuidReal,
+                    insumosReceta: recetaNormalizada 
+                });
                 
                 const inputReceta = document.getElementById('buscador-insumo-receta');
                 if (inputReceta) inputReceta.value = "";

@@ -13,41 +13,44 @@ export async function POST(request) {
             return NextResponse.json({ error: 'Tenant ID no identificado' }, { status: 400 });
         }
 
-        // 🛡️ 1. VALIDACIÓN DESDE EL ESCUDO DE SUPABASE
+        // 🛡️ 1. VALIDACIÓN DIRECTA Y PRIVADA DE PIN ADMIN (Sanity + Backup ENV)
         let PIN_ADMIN_REAL = process.env.PIN_ADMIN;
         let catalogoPlatosLocal = []; 
 
         try {
+            // A. Extraemos el PIN Admin real de forma privada en servidor desde Sanity
+            const docSeguridad = await sanityClientServer.fetch(
+                `*[_type == "seguridad" && tenant == $tenantId][0]{ pinAdmin }`,
+                { tenantId: tenantId.toLowerCase().trim() }
+            );
+
+            if (docSeguridad?.pinAdmin) {
+                PIN_ADMIN_REAL = String(docSeguridad.pinAdmin).trim();
+            }
+
+            // B. Para la lista de platos, seguimos aprovechando la caché ultrarrápida de Supabase
             const { data: configNegocio } = await supabaseServer
                 .from('catalog_cache')
                 .select('payload_json')
                 .eq('tenant_host', tenantId.toLowerCase().trim())
-                .single();
+                .maybeSingle();
 
             const rawPayload = configNegocio?.payload_json;
-            let pinDesdeEscudo = null;
-
             if (Array.isArray(rawPayload)) {
                 catalogoPlatosLocal = rawPayload.filter(item => item?._type === 'plato');
-                const docSeguridad = rawPayload.find(item => item?._type === 'seguridad');
-                if (docSeguridad) pinDesdeEscudo = docSeguridad.pinAdmin;
             } else if (rawPayload) {
                 catalogoPlatosLocal = rawPayload.plato || rawPayload.platos || [];
-                pinDesdeEscudo = rawPayload.seguridad?.pinAdmin || rawPayload.configSeguridad?.pinAdmin || rawPayload.pinAdmin;
             }
-
-            if (pinDesdeEscudo) PIN_ADMIN_REAL = String(pinDesdeEscudo).trim();
         } catch (dbError) {
-            console.warn("⚠️ No se pudo leer el PIN desde el Escudo, usando variable de entorno de respaldo.");
+            console.warn("⚠️ Error leyendo credenciales/platos, usando fallback por defecto:", dbError.message);
         }
 
-        if (!pinAdmin || pinAdmin !== PIN_ADMIN_REAL) {
+        if (!pinAdmin || String(pinAdmin).trim() !== String(PIN_ADMIN_REAL).trim()) {
             return NextResponse.json(
                 { error: '⚠️ No autorizado. PIN administrativo incorrecto.' },
                 { status: 401 }
             );
         }
-
         if (!fechaInicio || !fechaFin) {
             return NextResponse.json(
                 { error: 'Faltan rangos de fecha' },
@@ -165,7 +168,12 @@ if (resTotalesRpc.error) throw new Error(`RPC Totales error: ${resTotalesRpc.err
 
                 if (!precios[claveUnica]) {
                     precios[claveUnica] = precioU;
-                    const matchPlato = catalogoPlatos.find(item => (item.nombre || "").toUpperCase().trim() === nombre);
+                    // 🛡️ BISTURÍ: Coincidencia por plato_id (UUID v4) con fallback a Nombre Legible
+                    const platoIdReal = p.plato_id || p._id;
+                    const matchPlato = catalogoPlatos.find(item => 
+                        (platoIdReal && (item._id === platoIdReal || item.id === platoIdReal)) ||
+                        (item.nombre || "").toUpperCase().trim() === nombre
+                    );
                     if (matchPlato && matchPlato.precioCosto && Number(matchPlato.precioCosto) > 0) {
                         preciosCosto[claveUnica] = Number(matchPlato.precioCosto);
                     }

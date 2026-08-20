@@ -193,8 +193,9 @@ export default function ConfigImpresionModal({ isOpen, onClose, categorias, tena
     };
 
     const toggleCategoria = (cat) => {
+        const catId = typeof cat === 'object' ? (cat.id || cat._id || cat.titulo) : cat;
         setCategoriasSeleccionadas(prev => 
-            prev.includes(cat) ? prev.filter(c => c !== cat) : [...prev, cat]
+            prev.includes(catId) ? prev.filter(c => c !== catId) : [...prev, catId]
         );
     };
 
@@ -230,8 +231,7 @@ export default function ConfigImpresionModal({ isOpen, onClose, categorias, tena
         if (!nuevaCatTitulo.trim()) return alert("⚠️ Escribe el nombre de la categoría.");
         setGuardando(true);
         try {
-            const tituloLimpio = nuevaCatTitulo.trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
-            const slugAutomatico = tituloLimpio.toLowerCase().replace(/\s+/g, '-');
+            const tituloLimpio = nuevaCatTitulo.trim().toUpperCase();
             const metodo = editandoCatId ? 'PUT' : 'POST';
 
             const res = await fetch('/api/admin/categorias', {
@@ -240,7 +240,6 @@ export default function ConfigImpresionModal({ isOpen, onClose, categorias, tena
                 body: JSON.stringify({
                     categoriaId: editandoCatId,
                     titulo: tituloLimpio,
-                    slug: slugAutomatico,
                     seImprime: nuevaCatSeImprime,
                     tenantId
                 })
@@ -642,12 +641,12 @@ const activarEdicionProducto = (prod) => {
             const res = await fetch(`/api/admin/seguridad?tenantId=${tenantId}`);
             const result = await res.json();
             if (result.ok && result.data) {
-                setItemIdSeguridad(result.data._id);
+                setItemIdSeguridad(result.data._id || true);
                 setPinCajero(result.data.pinCajero || '');
                 setPinAdmin(result.data.pinAdmin || '');
             }
         } catch (e) {
-            console.error("🔥 Error cargando configuración de seguridad:", e);
+            console.error("🔥 Error cargando configuración de seguridad desde Supabase:", e);
         }
     };
     const inventarioFiltrado = React.useMemo(() => {
@@ -769,7 +768,6 @@ const seleccionarMeseroParaEditar = (item) => {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    itemId: itemIdSeguridad,
                     pinCajero: pinCajero.trim(),
                     pinAdmin: pinAdmin.trim(),
                     tenantId
@@ -784,7 +782,7 @@ const seleccionarMeseroParaEditar = (item) => {
                 alert(`❌ Error: ${data.error}`);
             }
         } catch (error) {
-            console.error(error);
+            console.error("🔥 Error guardando seguridad:", error);
             alert('❌ Fallo al guardar ajustes de seguridad.');
         } finally {
             setGuardando(false);

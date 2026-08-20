@@ -1,85 +1,97 @@
 import { NextResponse } from 'next/server';
-import { supabaseServer } from '@/lib/supabase'; // 🛡️ Cliente oficial de Supabase
+import { createClient } from '@supabase/supabase-js';
 
 export const dynamic = 'force-dynamic';
 
-/**
- * 🛡️ API de Verificación de Seguridad Final - VERSION BUNKERIZADA
- * Valida contra el Escudo de Supabase (Zero llamadas a Sanity) o .env (respaldo).
- */
+// 🔌 Inicialización del cliente Supabase
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+const supabase = createClient(supabaseUrl, supabaseKey);
+
+// 🧠 MEMORIA INTERNA EN SERVIDOR (In-Memory Cache)
+// Evita consultar Supabase en cada clic de borrado/cobro
+const cacheSeguridad = new Map();
+const CACHE_TTL_MS = 30 * 60 * 1000; // 30 Minutos de vida en RAM
+
 export async function POST(req) {
     try {
         const body = await req.json();
         const { pin, tipo, tenantId, tenant } = body;
-        const idComercio = tenantId || tenant;
+        const tenantFinal = (tenantId || tenant || 'demo').toLowerCase().trim();
 
-        if (!idComercio) {
-            return NextResponse.json({ authorized: false, success: false, error: 'Identificador de negocio ausente.' }, { status: 400 });
-        }
-
-        // 1. 🛡️ LEER LOS PINES DESDE EL ESCUDO DE SUPABASE (Costo Sanity: $0)
-        let PIN_ADMIN_ENV = process.env.PIN_ADMIN;
-        let PIN_CAJERO_ENV = process.env.PIN_CAJERO;
-        
-        let pinAdminReal = null;
-        let pinCajeroReal = null;
-
-        try {
-            // Jalamos el JSON maestro clonado en el búnker de Supabase
-            const { data: configNegocio } = await supabaseServer
-                .from('catalog_cache')
-                .select('payload_json')
-                .eq('tenant_host', idComercio.toLowerCase().trim())
-                .single();
-
-           if (configNegocio?.payload_json) {
-                const p = configNegocio.payload_json;
-
-                // 🛡️ BISTURÍ SENIOR: Si el búnker cayó en contingencia y es un Array, buscamos el documento de tipo 'seguridad'
-                if (Array.isArray(p)) {
-                    const docSeguridad = p.find(item => item?._type === 'seguridad' || item?.id?.includes('seguridad') || item?._id?.includes('seguridad'));
-                    if (docSeguridad) {
-                        pinAdminReal = docSeguridad?.pinAdmin;
-                        pinCajeroReal = docSeguridad?.pinCajero;
-                    }
-                } else {
-                    // Si viene como objeto estructurado estándar
-                    pinAdminReal = p?.seguridad?.pinAdmin || p?.configSeguridad?.pinAdmin || p?.pinAdmin;
-                    pinCajeroReal = p?.seguridad?.pinCajero || p?.configSeguridad?.pinCajero || p?.pinCajero;
-                }
-            }
-        } catch (dbError) {
-            console.warn("⚠️ Error leyendo credenciales del Escudo, usando variables de entorno de respaldo.");
-        }
-
-        // 2. Determinar el PIN correcto cruzando Prioridad Caché -> Respaldo .env
-        let pinCorrecto;
-        if (tipo === 'admin') {
-            pinCorrecto = pinAdminReal || PIN_ADMIN_ENV;
-        } else {
-            pinCorrecto = pinCajeroReal || PIN_CAJERO_ENV;
-        }
-
-        // 3. Validación Estricta Inmune a Tipos de Datos (String vs Number)
-        if (pin && String(pin).trim() === String(pinCorrecto).trim()) {
+        if (!tenantFinal) {
             return NextResponse.json({ 
-                autorizado: true,   // 👈 Alimenta a tu frontend antiguo
-                success: true,      // 👈 Alimenta a tus pantallas nuevas de Amplinube
-                message: "Acceso concedido" 
-            });
+                autorizado: false, 
+                success: false, 
+                error: 'Identificador de negocio ausente.' 
+            }, { status: 400 });
         }
 
-        // Si el PIN no coincide
-        return NextResponse.json(
-            { autorizado: false, success: false, message: "PIN incorrecto" }, 
-            { status: 401 }
-        );
+        if (!pin || typeof pin !== 'string') {
+            return NextResponse.json({ 
+                autorizado: false, 
+                success: false, 
+                error: 'PIN inválido' 
+            }, { status: 400 });
+        }
+
+        const ahora = Date.now();
+        let credenciales = cacheSeguridad.get(tenantFinal);
+
+        // 1. 🔍 Verificación en Caché RAM del Servidor
+        if (!credenciales || (ahora - credenciales.timestamp > CACHE_TTL_MS)) {
+            let pinAdminReal = null;
+            let pinCajeroReal = null;
+
+            try {
+                const { data, error } = await supabase
+                    .from('tenant_security')
+                    .select('pin_cajero, pin_admin')
+                    .eq('tenant_id', tenantFinal)
+                    .maybeSingle();
+
+                if (data && !error) {
+                    pinCajeroReal = data.pin_cajero;
+                    pinAdminReal = data.pin_admin;
+                }
+            } catch (dbError) {
+                console.warn(`⚠️ Error leyendo credenciales de Supabase para [${tenantFinal}], usando respaldo .env`);
+            }
+
+            // Red de seguridad: Respaldo en variables .env si no existe el registro en la BD
+            credenciales = {
+                cajero: String(pinCajeroReal || process.env.PIN_CAJERO || '1234').trim(),
+                admin: String(pinAdminReal || process.env.PIN_ADMIN || '4321').trim(),
+                timestamp: ahora
+            };
+
+            cacheSeguridad.set(tenantFinal, credenciales);
+        }
+
+        // 2. ⚡ Validación ultra rápida síncrona en memoria
+        const pinEsperado = tipo === 'admin' ? credenciales.admin : credenciales.cajero;
+        const autorizado = String(pin).trim() === pinEsperado;
+
+        if (autorizado) {
+            return NextResponse.json({ 
+                autorizado: true, 
+                success: true, 
+                message: "Acceso concedido" 
+            }, { status: 200 });
+        } else {
+            return NextResponse.json({ 
+                autorizado: false, 
+                success: false, 
+                message: "PIN incorrecto" 
+            }, { status: 401 });
+        }
 
     } catch (error) {
         console.error("🔥 [AUTH_ERROR]:", error);
-        return NextResponse.json(
-            { autorizado: false, success: false, error: "Error interno de validación" }, 
-            { status: 500 }
-        );
+        return NextResponse.json({ 
+            autorizado: false, 
+            success: false, 
+            error: "Error interno de validación" 
+        }, { status: 500 });
     }
 }

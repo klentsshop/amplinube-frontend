@@ -53,7 +53,7 @@ export function useImpresion(cart, config, ordenMesa, nombreMesero, tenantId) {
             mesero: nombreMesero || "SISTEMA",
             fecha: new Date().toISOString(),
             autoPrint: platosFiltrados !== null,
-            tipoOrden: "cocina"
+            tipoOrden: "General"
         };
         const url = `/ticket/preview?type=cocina&tenantId=${idCliente}`;
         const printWindow = window.open(url, 'CocinaPrint', 'width=300,height=500,left=2000,top=0');

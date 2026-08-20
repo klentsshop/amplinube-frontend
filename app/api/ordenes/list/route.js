@@ -77,7 +77,8 @@ export async function GET(request) {
                         precioUnitario: Number(p.precio_unitario || 0),
                         subtotal: Number(p.subtotal || 0),
                         comentario: comentarioTexto,
-                        categoria: p.categoria || "",
+                        categoria: p.categoria || "",                           // 🛡️ UUID Relacional
+                        categoriaNombre: p.categoria_label || p.categoria || "",   // 🖨️ Nombre Legible Impresión
                         controlaInventario: controlaInventario,
                         amount: Number(p.cantidad || 0), 
                         cantidadADescontar: insumoVinculado ? Number(p.cantidad || 0) : 0,
@@ -141,76 +142,111 @@ export async function POST(request) {
         const cleanTenant = tenantId.toLowerCase().trim();
 
         // =========================================================================
-// 🛡️ CONTROL DE CATEGORÍAS NO IMPRIMIBLES DESDE CATALOG_CACHE / SUPABASE
-// =========================================================================
-let categoriasNoImprimibles = [];
+        // 🛡️ CONTROL DE CATEGORÍAS Y RESOLUCIÓN BISTURÍ DE NOMBRES DE ESTACIÓN
+        // =========================================================================
+        let categoriasNoImprimibles = [];
+        const mapaTitulosCategorias = new Map();
 
-const { data: cacheRow } = await supabaseServer
-    .from('catalog_cache')
-    .select('payload_json')
-    .eq('tenant_host', cleanTenant)
-    .maybeSingle();
+        // 1. Extraemos catálogo desde la Caché del Tenant
+        const { data: cacheRow } = await supabaseServer
+            .from('catalog_cache')
+            .select('payload_json')
+            .eq('tenant_host', cleanTenant)
+            .maybeSingle();
 
-if (cacheRow?.payload_json && Array.isArray(cacheRow.payload_json)) {
-    const catalogo = cacheRow.payload_json;
-    const categorias = catalogo.filter(item => item._type === 'categoria');
-    
-    // 🧠 BISTURÍ: Soporta tanto 'se_imprime' (DB) como 'seImprime' (CamelCase)
-    categoriasNoImprimibles = categorias.filter(c => c.se_imprime === false || c.seImprime === false);
-}
+        if (cacheRow?.payload_json && Array.isArray(cacheRow.payload_json)) {
+            const catalogo = cacheRow.payload_json;
+            const categorias = catalogo.filter(item => item._type === 'categoria' || item.titulo);
+            
+            categoriasNoImprimibles = categorias.filter(c => c.se_imprime === false || c.seImprime === false);
 
-// Creamos colecciones de normalización en Mayúsculas para macheo perfecto
-const idsExcluidos = new Set(categoriasNoImprimibles.map(c => String(c._id || c.id || "").trim().toLowerCase()));
-const titulosExcluidos = new Set(categoriasNoImprimibles.map(c => String(c.titulo || c.nombre || "").trim().toUpperCase()));
-const slugsExcluidos = new Set(categoriasNoImprimibles.map(c => String(c.slug?.current || c.slug || "").trim().toLowerCase()));
+            categorias.forEach(c => {
+                const id = String(c._id || c.id || "").trim().toLowerCase();
+                const titulo = String(c.titulo || c.nombre || "").trim().toUpperCase();
+                if (id && titulo) mapaTitulosCategorias.set(id, titulo);
+            });
+        }
 
-const estacionesSet = new Set();
+        // 2. Auxilio desde la tabla 'categorias' si la Caché está vacía
+        if (mapaTitulosCategorias.size === 0) {
+            const { data: catDbRows } = await supabaseServer
+                .from('categorias')
+                .select('id, titulo, se_imprime')
+                .eq('tenant', cleanTenant);
 
-const platosNormalizados = platosOrdenados.map(p => {
-    const catIdOriginal = typeof p.categoria === 'object' ? (p.categoria?._ref || p.categoria?._id) : p.categoria;
-    const catIdLimpio = String(catIdOriginal || "").trim().toLowerCase();
-    const catLabelLimpia = String(p.categoriaLabel || p.categoria || "").trim().toUpperCase();
-    const catSlugLimpio = String(p.categoriaSlug || p.slug || "").trim().toLowerCase();
+            if (catDbRows) {
+                catDbRows.forEach(c => {
+                    const id = String(c.id || "").trim().toLowerCase();
+                    const titulo = String(c.titulo || "").trim().toUpperCase();
+                    if (id && titulo) mapaTitulosCategorias.set(id, titulo);
+                    if (c.se_imprime === false) {
+                        categoriasNoImprimibles.push(c);
+                    }
+                });
+            }
+        }
 
-    // 🎯 VALIDACIÓN TRIPLE: Si el ID, el Título o el Slug coinciden con una categoría NO imprimible, se apaga
-    const esCategoriaExcluida = idsExcluidos.has(catIdLimpio) || titulosExcluidos.has(catLabelLimpia) || slugsExcluidos.has(catSlugLimpio);
+        const idsExcluidos = new Set(categoriasNoImprimibles.map(c => String(c._id || c.id || "").trim().toLowerCase()));
+        const titulosExcluidos = new Set(categoriasNoImprimibles.map(c => String(c.titulo || c.nombre || "").trim().toUpperCase()));
+        const slugsExcluidos = new Set(categoriasNoImprimibles.map(c => String(c.slug?.current || c.slug || "").trim().toLowerCase()));
 
-    // 🚀 REGLA DE ORO: Si la categoría NO es excluida, SE AGREGA A LA IMPRESIÓN
-    const debeImprimir = !esCategoriaExcluida && p.seImprime !== false;
+        const estacionesSet = new Set();
 
-    const categoriaFinal = p.categoriaLabel ? String(p.categoriaLabel).trim().toUpperCase() : catLabelLimpia;
+        const platosNormalizados = platosOrdenados.map(p => {
+            // A) UUID Relacional Puro (para la DB)
+            const catUuidLimpio = typeof p.categoria === 'object' 
+                ? (p.categoria?.id || p.categoria?._id || p.categoria?._ref || '') 
+                : String(p.categoria || p.categoria_id || '').trim().toLowerCase();
 
-    // Solo si 'debeImprimir' es verdadero y tiene categoría válida, entra a la comanda de cocina
-    if (debeImprimir && categoriaFinal) {
-        estacionesSet.add(categoriaFinal);
-    }
+            // B) Nombre Legible para Impresión (para estaciones_pendientes)
+            let nombreLegibleCat = String(p.categoriaNombre || p.categoriaLabel || p.nombreCategoria || "").trim().toUpperCase();
+            
+            // 🛡️ REGLA ATÓMICA: Si no viene nombre o venía el UUID enmascarado, se rescata el nombre legible real del mapa
+            if (!nombreLegibleCat || nombreLegibleCat.toLowerCase() === catUuidLimpio) {
+                nombreLegibleCat = mapaTitulosCategorias.get(catUuidLimpio) || "GENERAL";
+            }
 
-    // 🛡️ BISTURÍ: Empaquetamos los datos de inventario dentro del comentario
-    let comentarioFinal = p.comentario || "";
-    if (p.controlaInventario && p.insumoVinculado) {
-        comentarioFinal = JSON.stringify({
-            comentarioOriginal: p.comentario || "",
-            insumo: p.insumoVinculado
+            const catSlugLimpio = String(p.categoriaSlug || p.slug || "").trim().toLowerCase();
+
+            // C) Validación de Exclusión
+            const esCategoriaExcluida = idsExcluidos.has(catUuidLimpio) || 
+                                       titulosExcluidos.has(nombreLegibleCat) || 
+                                       slugsExcluidos.has(catSlugLimpio);
+
+            const debeImprimir = !esCategoriaExcluida && p.seImprime !== false;
+
+            // Se registra el NOMBRE LEGIBLE (ej: "PAQUETES") en la comanda de la tablet
+            if (debeImprimir && nombreLegibleCat) {
+                estacionesSet.add(nombreLegibleCat);
+            }
+
+            // D) Preparación del Comentario de Inventario
+            let comentarioFinal = p.comentario || "";
+            if (p.controlaInventario && p.insumoVinculado) {
+                comentarioFinal = JSON.stringify({
+                    comentarioOriginal: p.comentario || "",
+                    insumo: p.insumoVinculado
+                });
+            }
+
+            const payloadPlato = {
+                line_id: p._key || p.lineId || Math.random().toString(36).substring(2, 9),
+                plato_id: p._id || p.id,
+                nombre_plato: p.nombrePlato || p.nombre,
+                cantidad: Number(p.cantidad) || 1,
+                precio_unitario: Number(p.precioUnitario || p.precioNum) || 0,
+                subtotal: (Number(p.precioUnitario || p.precioNum) || 0) * (Number(p.cantidad) || 1),
+                comentario: comentarioFinal,
+                categoria: nombreLegibleCat,       // 🖨️ Nombre Legible (ej: "SALSAMENTARIA", "BAR", "RESTAURANTES")
+                categoria_label: nombreLegibleCat // 🖨️ Nombre Legible para Impresión
+            };
+
+            if (p.created_at || p.createdAt) {
+                payloadPlato.created_at = p.created_at || p.createdAt;
+            }
+
+            return payloadPlato;
         });
-    }
-
-    const payloadPlato = {
-        line_id: p._key || p.lineId || Math.random().toString(36).substring(2, 9),
-        plato_id: p._id || p.id,
-        nombre_plato: p.nombrePlato || p.nombre,
-        cantidad: Number(p.cantidad) || 1,
-        precio_unitario: Number(p.precioUnitario || p.precioNum) || 0,
-        subtotal: (Number(p.precioUnitario || p.precioNum) || 0) * (Number(p.cantidad) || 1),
-        comentario: comentarioFinal,
-        categoria: categoriaFinal
-    };
-
-    if (p.created_at || p.createdAt) {
-        payloadPlato.created_at = p.created_at || p.createdAt;
-    }
-
-    return payloadPlato;
-});
         const estacionesPendientes = Array.from(estacionesSet);
         const valorSolicitada = body.hasOwnProperty('imprimirSolicitada') ? body.imprimirSolicitada : true;
         const valorCliente = body.hasOwnProperty('imprimirCliente') ? body.imprimirCliente : false;
@@ -254,6 +290,64 @@ const platosNormalizados = platosOrdenados.map(p => {
 
         if (errRpc) throw errRpc;
         const idFinal = idResultado || idRealOrden;
+
+        // =========================================================================
+        // 🚀 EMISIÓN BÚNKER HACIA RAILWAY (DUMB PIPE)
+        // Ejecución inmediata dentro del try antes de responder al cliente
+        // =========================================================================
+        const misPlatosFormateados = platosNormalizados.map((p, index) => ({
+            secuencia_orden: index + 1,
+            idx: index,
+            line_id: p.line_id,
+            _key: p.line_id,
+            plato_id: p.plato_id,
+            _id: p.plato_id,
+            nombre_plato: p.nombre_plato,
+            nombrePlato: p.nombre_plato,
+            cantidad: Number(p.cantidad || 0),
+            precio_unitario: Number(p.precio_unitario || 0),
+            precioUnitario: Number(p.precio_unitario || 0),
+            subtotal: Number(p.subtotal || 0),
+            comentario: p.comentario || "",
+            categoria: p.categoria || "",
+            categoria_label: p.categoria_label || p.categoria || ""
+        }));
+
+        const misEstacionesFormateadas = estacionesPendientes.map(e => ({ estacion: e }));
+
+        const payloadInfladoEstandar = {
+            _id: idFinal,
+            id: idFinal,
+            _type: 'ordenActiva',
+            tenant: cleanTenant,
+            tenant_id: cleanTenant,
+            mesa: mesa.trim(),
+            mesero: mesero || 'Caja',
+            tipo_orden: tipoOrden || 'mesa',
+            tipoOrden: tipoOrden || 'mesa',
+            fecha_creacion: new Date().toISOString(),
+            fechaCreacion: new Date().toISOString(),
+            imprimir_solicitada: valorSolicitada,
+            imprimirSolicitada: valorSolicitada,
+            imprimir_cliente: valorCliente,
+            imprimirCliente: valorCliente,
+            cliente_ref: clienteFinalPayload,
+            datos_entrega: datosEntrega || null,
+            datosEntrega: datosEntrega || null,
+            platosOrdenados: misPlatosFormateados,
+            platos_ordenados: misPlatosFormateados,
+            estacionesPendientes: misEstacionesFormateadas
+        };
+
+        const RAILWAY_URL = process.env.RAILWAY_SOCKET_SERVER_URL || 'https://tu-server-railway.up.railway.app';
+
+        // Disparo asíncrono sin bloquear la UI del mesero
+        fetch(`${RAILWAY_URL}/api/dispatch-print`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payloadInfladoEstandar)
+        }).catch(err => console.error("⚠️ Error enviando evento a Railway:", err.message));
+
         return NextResponse.json({
             message: ordenId || idRealOrden ? 'Orden actualizada' : 'Orden creada',
             ordenId: idFinal

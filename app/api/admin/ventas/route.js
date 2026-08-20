@@ -102,8 +102,14 @@ export async function DELETE(request) {
             const mapaDevoluciones = {};
 
             platos.forEach(p => {
+                const platoIdReal = p.plato_id || p._id || p.id;
                 const nombrePlato = p.nombrePlato || p.nombre;
-                const match = platosBunker.find(m => (m.nombre || "").toUpperCase().trim() === (nombrePlato || "").toUpperCase().trim());
+                
+                // 🛡️ BISTURÍ: Búsqueda primaria por UUID relacional, con fallback defensivo por nombre
+                const match = platosBunker.find(m => 
+                    (platoIdReal && (m._id === platoIdReal || m.id === platoIdReal)) ||
+                    ((m.nombre || "").toUpperCase().trim() === (nombrePlato || "").toUpperCase().trim())
+                );
                 
                 if (match && match.controlaInventario) {
                     const cantVenta = Number(p.cantidad || 0);

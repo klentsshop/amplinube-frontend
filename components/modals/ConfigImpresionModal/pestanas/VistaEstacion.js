@@ -100,8 +100,14 @@ export default function VistaEstacion({
                     {categorias && categorias.length > 0 ? (
                         categorias.map((catItem) => {
                             const nombreCat = typeof catItem === 'string' ? catItem : (catItem.titulo || catItem.nombre || '');
-                            const keyCat = typeof catItem === 'string' ? catItem : (catItem.id || catItem._id || nombreCat);
-                            const estaSeleccionada = categoriasSeleccionadas.includes(nombreCat) || categoriasSeleccionadas.includes(keyCat);
+                            const catUuid = typeof catItem === 'string' ? catItem : (catItem.id || catItem._id || catItem.categoria_id || nombreCat);
+                            const keyCat = catUuid || nombreCat;
+
+                            // 🛡️ Evaluación segura con soporte dual (UUID + Nombre Legible)
+                            const estaSeleccionada = Array.isArray(categoriasSeleccionadas) && categoriasSeleccionadas.some(cSel => 
+                                String(cSel).toLowerCase().trim() === String(nombreCat).toLowerCase().trim() ||
+                                String(cSel).toLowerCase().trim() === String(catUuid).toLowerCase().trim()
+                            );
 
                             return (
                                 <div 

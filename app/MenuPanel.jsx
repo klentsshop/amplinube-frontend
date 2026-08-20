@@ -27,7 +27,7 @@ import ModalClientesDomicilios from '@/components/modals/ModalClientesDomicilios
 import ConfigImpresionModal from '@/components/modals/ConfigImpresionModal/ConfigImpresionModal';
 import ModalPesaje from '@/components/modals/ModalPesaje'; // Asegúrate de que la ruta sea correcta
 import { useInventario } from '@/hooks/useInventario';
-
+import PinModal from '@/components/modals/PinModal';
 
 export default function MenuPanel({ configNegocio: configInyectada }) {
     // --- 1. ESTADOS DE IDENTIDAD Y CONFIGURACIÓN (Cimientos) ---
@@ -41,6 +41,9 @@ export default function MenuPanel({ configNegocio: configInyectada }) {
     const [mostrarCategoriasMobile, setMostrarCategoriasMobile] = useState(false);
     const [categoriasGlobales, setCategoriasGlobales] = useState([]);
     const [mostrarCarritoMobile, setMostrarCarritoMobile] = useState(false);
+    // 📱 Estados para soporte táctil (Swipe Lateral)
+    const [touchStartX, setTouchStartX] = useState(0);
+    const [touchEndX, setTouchEndX] = useState(0);
     const [listaMeseros, setListaMeseros] = useState([]);
     const [estaActivo, setEstaActivo] = useState(null);
     const [pinBloqueo, setPinBloqueo] = useState('');
@@ -65,6 +68,9 @@ export default function MenuPanel({ configNegocio: configInyectada }) {
         verReporte: true, verAdmin: true, puedeCargarGasto: true, 
         verVentas: true, verInventario: true, puedeCobrar: true
     });
+    const [modalPinSeguroOpen, setModalPinSeguroOpen] = useState(false);
+    const [accionPinPendiente, setAccionPinPendiente] = useState(null);
+    const [tituloPinModal, setTituloPinModal] = useState("Ingresar PIN");
 
     // --- 2. CONTEXTOS ---
     const { 
@@ -234,16 +240,20 @@ useEffect(() => {
     };
 
     
-   // --- 6. EFECTOS DE SINCRONIZACIÓN (BLOQUE UNIFICADO SENIOR) ---
    useEffect(() => {
     if (!tenantId) return;
     fetch(`/api/admin/categorias?tenantId=${tenantId}`)
         .then(res => res.json())
         .then(data => {
             const lista = Array.isArray(data) ? data : (data.data || []);
-            // Extraemos los nombres/títulos limpios
-            const nombresCats = lista.map(c => (c.titulo || c.slug || c.nombre || "").toUpperCase().trim()).filter(Boolean);
-            setCategoriasGlobales(nombresCats);
+            // Guardamos la lista estructurada con sus UUIDs reales de Supabase
+            const categoriasEstructuradas = lista.map(c => ({
+                id: c.id || c._id,
+                titulo: (c.titulo || c.nombre || "SIN CATEGORIA").toUpperCase().trim(),
+                orden: c.orden || 1,
+                seImprime: c.se_imprime ?? c.seImprime ?? true
+            }));
+            setCategoriasGlobales(categoriasEstructuradas);
         })
         .catch(err => console.error("Error cargando categorías globales:", err));
 }, [tenantId]);
@@ -427,8 +437,9 @@ useEffect(() => {
         return;
     }
 
-    // Consultamos a Supabase los productos de esa categoría específica
-    fetch(`/api/admin/productos?tenantId=${tenantId}&categoria=${encodeURIComponent(categoriaActiva)}&limit=100`)
+    // 🎯 BÚSQUEDA REMOTA BLINDADA POR UUID
+    // Envia 'categoriaId' si es un UUID válido para que el backend filtre directo por FK en Postgres
+    fetch(`/api/admin/productos?tenantId=${tenantId}&categoriaId=${encodeURIComponent(categoriaActiva)}&limit=100`)
         .then(res => res.json())
         .then(data => {
             const items = Array.isArray(data) ? data : (data.data || []);
@@ -449,7 +460,7 @@ useEffect(() => {
             return platosCategoriaRemota;
         }
 
-        // 3. Fallback Estándar (< 3,000 productos): Opera 100% en memoria local como siempre
+        // 3. Fallback Estándar (< 3,000 productos): Filtrado atómico por UUID
         return platos.filter(p => {
             const nombre = p.nombrePlato || p.nombre || "";
             const barcode = p.barcode || "";
@@ -458,11 +469,20 @@ useEffect(() => {
                                    barcode.toLowerCase().includes(busqueda.toLowerCase()) ||
                                    plu.toLowerCase().includes(busqueda.toLowerCase());
             
-            const catPlato = typeof p.categoria === 'object' ? (p.categoria?.titulo || p.categoria?.nombre || '') : String(p.categoria || '');
-            const cumpleCategoria = categoriaActiva === 'TODOS' || catPlato.toUpperCase().trim() === categoriaActiva.toUpperCase().trim();
+            // Extraer el UUID relacional de la categoría del plato con soporte relacional dual
+            let idCatPlato = '';
+            if (typeof p.categoria === 'object' && p.categoria) {
+                idCatPlato = p.categoria._ref || p.categoria.id || p.categoria._id || '';
+            } else {
+                idCatPlato = String(p.categoria || '');
+            }
+
+            // Comparación estricta por UUID o fallback a coincidencia con 'TODOS'
+            const cumpleCategoria = categoriaActiva === 'TODOS' || idCatPlato === categoriaActiva;
             
             return cumpleBusqueda && cumpleCategoria;
         });
+
     }, [platos, busqueda, categoriaActiva, platosBusquedaRemota, platosCategoriaRemota]);
     const manejarLimpiezaTotal = () => {
         if (ord.mensajeExito) return;
@@ -472,7 +492,15 @@ useEffect(() => {
         ord.setOrdenMesa(null);
     };
 
-const categoriasParaConfig = useMemo(() => [...new Set(platos.map(p => p.categoria).filter(Boolean))], [platos]);
+const categoriasParaConfig = useMemo(() => {
+    if (categoriasGlobales.length > 0) {
+        return categoriasGlobales.map(c => c.titulo);
+    }
+    return [...new Set(platos.map(p => {
+        if (typeof p.categoria === 'object') return p.categoria?.titulo || p.categoria?.nombre || '';
+        return String(p.categoria || '');
+    }).filter(Boolean))];
+}, [platos, categoriasGlobales]);
 if (!tenantId) return <div style={{background: '#111827', height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: '900'}}>IDENTIFICANDO COMERCIO...</div>;   
 
 // 🛡️ CONTROL EXPLÍCITO: Si está en null, congelamos pantalla para evitar parpadeos visuales
@@ -633,10 +661,52 @@ if (!estaActivo) {
             </div>
         );
     }
-return (
+
+    // ✋ MANEJADORES DE GESTO TÁCTIL (SWIPE NATIVO)
+    const handleTouchStart = (e) => {
+        setTouchStartX(e.targetTouches[0].clientX);
+        setTouchEndX(e.targetTouches[0].clientX);
+    };
+
+    const handleTouchMove = (e) => {
+        setTouchEndX(e.targetTouches[0].clientX);
+    };
+
+    const handleTouchEnd = () => {
+        if (!touchStartX || !touchEndX) return;
+        const distancia = touchStartX - touchEndX;
+
+        // Deslizar a la izquierda (Swipe Left -> Muestra el Carrito)
+        if (distancia > 70 && !mostrarCarritoMobile) {
+            setMostrarCarritoMobile(true);
+        }
+
+        // Deslizar a la derecha (Swipe Right -> Oculta el Carrito)
+        if (distancia < -70 && mostrarCarritoMobile) {
+            setMostrarCarritoMobile(false);
+        }
+
+        setTouchStartX(0);
+        setTouchEndX(0);
+    };
+
+    // 🔒 PROCESADOR SEGURO DE PIN DESDE MODAL
+    const procesarConfirmacionPinSeguro = async (pinIngresado) => {
+        setModalPinSeguroOpen(false);
+        if (accionPinPendiente) {
+            await accionPinPendiente(pinIngresado);
+        }
+        setAccionPinPendiente(null);
+    };
+    return (
         <div className={styles.mainWrapper}>
-            <div className={styles.posLayout}>
-                <TicketPanel 
+            <div 
+                className={styles.posLayout}
+                onTouchStart={handleTouchStart}
+                onTouchMove={handleTouchMove}
+                onTouchEnd={handleTouchEnd}
+            >
+                <TicketPanel
                     cart={cart} total={total} metodoPago={metodoPago} setMetodoPago={setMetodoPago} permisos={permisosActivos}
                     quitarDelCarrito={quitarDelCarrito} agregarAlCarrito={agregarAlCarrito} guardarOrden={ord.guardarOrden} errorMesaOcupada={ord.errorMesaOcupada}
                     setErrorMesaOcupada={ord.setErrorMesaOcupada}cobrarOrden={ord.cobrarOrden}
@@ -801,6 +871,17 @@ return (
                 seleccionarParaEditar={seleccionarParaEditar}
                 handleBorrarCliente={handleBorrarCliente}
                 handleGuardarCliente={ejecutarGuardarCliente}
+            />
+
+            {/* 🔒 MODAL DE PIN SEGURA (ENMASCARADO TIPO PASSWORD) */}
+            <PinModal 
+                isOpen={modalPinSeguroOpen}
+                onClose={() => {
+                    setModalPinSeguroOpen(false);
+                    setAccionPinPendiente(null);
+                }}
+                onConfirm={procesarConfirmacionPinSeguro}
+                titulo={tituloPinModal}
             />
         </div>
     );

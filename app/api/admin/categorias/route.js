@@ -81,7 +81,11 @@ export async function POST(request) {
             return NextResponse.json({ error: 'Identificador de negocio o título ausente.' }, { status: 400 });
         }
 
-        const slugLimpio = slug || titulo.trim().toLowerCase().replace(/\s+/g, '-');
+        // 🛡️ Slug multitenant forzado: tenant-titulo
+const baseSlug = titulo.trim().toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-');
+const slugLimpio = slug && slug.startsWith(`${tenantLimpio}-`) 
+    ? slug 
+    : `${tenantLimpio}-${baseSlug}`;
 
         const { data, error } = await supabaseServer
             .from('categorias')
@@ -97,7 +101,7 @@ export async function POST(request) {
 
        if (error) throw new Error(`SUPABASE_INSERT_ERROR: ${error.message}`);
 
-        // ⚡ Mapear al formato con el que el POS consume las categorías en el JSON
+        // ⚡ Mapear al formato de objeto limpio (UUID directo)
         const catCache = {
             _id: data.id,
             id: data.id,
@@ -105,8 +109,7 @@ export async function POST(request) {
             tenant: tenantLimpio,
             titulo: data.titulo,
             seImprime: data.se_imprime,
-            orden: data.orden || 1,
-            slug: { _type: 'slug', current: data.slug }
+            orden: data.orden || 1
         };
 
         await actualizarCacheLocal(tenantLimpio, catCache, false);
@@ -131,14 +134,18 @@ export async function PUT(request) {
             return NextResponse.json({ error: 'Faltan parámetros críticos (tenantId o categoriaId).' }, { status: 400 });
         }
 
-        const slugLimpio = slug || titulo.trim().toLowerCase().replace(/\s+/g, '-');
+        // 🛡️ Slug multitenant forzado: tenant-titulo
+const baseSlug = titulo.trim().toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-');
+const slugLimpio = slug && slug.startsWith(`${tenantLimpio}-`) 
+    ? slug 
+    : `${tenantLimpio}-${baseSlug}`;
 
         const { data, error } = await supabaseServer
             .from('categorias')
             .update({
                 titulo: titulo.trim().toUpperCase(),
                 slug: slugLimpio,
-                se_imprime: seImprime === true
+                se_imprime: seImprime !== false
             })
             .eq('id', categoriaId)
             .eq('tenant', tenantLimpio)
@@ -147,17 +154,15 @@ export async function PUT(request) {
 
       if (error) throw new Error(`SUPABASE_UPDATE_ERROR: ${error.message}`);
 
-        // ⚡ Mapear actualización quirúrgica para la caché
+        // ⚡ Mapear actualización quirúrgica para la caché por UUID
         const catCache = {
             _id: data.id,
             id: data.id,
             _type: 'categoria',
             tenant: tenantLimpio,
             titulo: data.titulo,
-            seImprime: data.se_imprime,
-            slug: { _type: 'slug', current: data.slug }
+            seImprime: data.se_imprime
         };
-
         await actualizarCacheLocal(tenantLimpio, catCache, false);
 
         console.log(`🔄 Categoría actualizada en Supabase y Caché [${tenantLimpio}]: ${categoriaId}`);

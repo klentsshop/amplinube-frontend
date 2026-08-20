@@ -180,6 +180,9 @@ setItems(prev => {
     }
 
     // ✅ AHORA (Entra de PRIMERO arriba):
+    const catUuidLimpio = typeof product.categoria === 'object' ? (product.categoria?._ref || product.categoria?._id || product.categoria?.id) : product.categoria;
+    const catNombreLimpio = String(product.categoriaNombre || product.categoriaLabel || product.categoria || "").toString().toUpperCase().trim();
+
     return [{ 
       ...product, 
       _id: pId, 
@@ -189,7 +192,9 @@ setItems(prev => {
       precioCosto: Number(product.precioCosto || 0),
       subtotalNum: Number((precioNum * cantAAgregar).toFixed(2)), 
       comentario: product.comentario || '', 
-      categoria: (product.categoria || "").toString().toUpperCase().trim(),
+      categoria: String(catUuidLimpio || "").trim().toLowerCase(), // 🛡️ UUID Relacional
+      categoriaNombre: catNombreLimpio,                             // 🖨️ Nombre Legible Impresión
+      categoriaLabel: catNombreLimpio,
       seImprime: product.seImprime ?? true 
     }, ...prev];
 });
@@ -221,7 +226,9 @@ setItems(prev => {
         precioNum: precioUnit,
         subtotalNum: Number((precioUnit * cant).toFixed(2)),
         comentario: p.comentario || "",
-        categoria: (p.categoria || "").toString().toUpperCase().trim(),
+        categoria: String(p.categoria || "").trim().toLowerCase(), // 🛡️ UUID Relacional
+        categoriaNombre: String(p.categoriaNombre || p.categoriaLabel || p.categoria_label || p.categoria || "").toString().toUpperCase().trim(), // 🖨️ Nombre Legible Impresión
+        categoriaLabel: String(p.categoriaNombre || p.categoriaLabel || p.categoria_label || p.categoria || "").toString().toUpperCase().trim(),
         controlaInventario: p.controlaInventario === true || p.controla_inventario === true,
         insumoVinculado: p.insumoVinculado || p.insumo_id || null,
         seImprime: p.seImprime !== false && p.se_imprime !== false,
