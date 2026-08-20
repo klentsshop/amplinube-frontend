@@ -202,17 +202,17 @@
     
     /* CARRITO DE COMPRAS (Ticket) */
     .ticketPanel { 
-  position: fixed !important; 
+        position: fixed !important; 
         top: 0;
         left: 0; 
         width: 100% !important; 
-        height: 100dvh !important; /* 🛡️ DYNAMIC VIEWPORT: Se adapta a la barra de Chrome/Safari */
+        height: 100dvh !important; /* 🛡️ Exclusivo Móvil: Se ajusta a la pantalla útil del celular */
         max-height: 100dvh !important;
         display: flex !important;
         flex-direction: column !important;
         justify-content: space-between !important;
         z-index: 4000; 
-        transform: translateX(-100%); /* Oculto a la izquierda */
+        transform: translateX(-100%); 
         transition: transform 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
         background: white;
         overflow: hidden !important;

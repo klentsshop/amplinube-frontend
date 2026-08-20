@@ -161,9 +161,9 @@ export default function TicketPanel({
      };
 
     return (
-        <div 
-       className={`${styles.ticketPanel} ${mostrarCarritoMobile ? styles.ticketPanelShowMobile : ''}`}
-            style={{ height: '100dvh', maxHeight: '100dvh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
+       <div 
+            className={`${styles.ticketPanel} ${mostrarCarritoMobile ? styles.ticketPanelShowMobile : ''}`}
+            style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
         >
             
             {/* 1. BOTÓN VOLVER (MÓVIL) */}
