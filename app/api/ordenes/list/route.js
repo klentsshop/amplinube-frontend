@@ -315,6 +315,9 @@ export async function POST(request) {
 
         const misEstacionesFormateadas = estacionesPendientes.map(e => ({ estacion: e }));
 
+        // 🚩 Detectamos si es adición: si venía ordenId previo o si ya existía la mesa en la BD
+        const esAdicionReal = Boolean(ordenId || idRealOrden);
+
         const payloadInfladoEstandar = {
             _id: idFinal,
             id: idFinal,
@@ -325,6 +328,11 @@ export async function POST(request) {
             mesero: mesero || 'Caja',
             tipo_orden: tipoOrden || 'mesa',
             tipoOrden: tipoOrden || 'mesa',
+            
+            // 🖨️ BANDERA DE ADICIÓN PARA IMPRESORA TÉRMICA (C# y Kotlin)
+            es_adicion: esAdicionReal,
+            esAdicion: esAdicionReal,
+
             fecha_creacion: new Date().toISOString(),
             fechaCreacion: new Date().toISOString(),
             imprimir_solicitada: valorSolicitada,
