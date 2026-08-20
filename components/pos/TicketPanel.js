@@ -162,8 +162,8 @@ export default function TicketPanel({
 
     return (
         <div 
-            className={`${styles.ticketPanel} ${mostrarCarritoMobile ? styles.ticketPanelShowMobile : ''}`}
-            style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
+       className={`${styles.ticketPanel} ${mostrarCarritoMobile ? styles.ticketPanelShowMobile : ''}`}
+            style={{ height: '100dvh', maxHeight: '100dvh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
         >
             
             {/* 1. BOTÓN VOLVER (MÓVIL) */}
@@ -402,7 +402,7 @@ export default function TicketPanel({
 </div>
 
             {/* 3. LISTADO DE PRODUCTOS (RESTAURADA ALINEACIÓN Y LÓGICA DE ORDENAMIENTO) */}
-            <div style={{ flex: '1 1 0%', minHeight: 0, overflowY: 'auto', padding: '6px 12px', background: '#f9fafb' }}>
+            <div style={{ flex: '1 1 0%', minHeight: 0, maxHeight: '100%', overflowY: 'auto', WebkitOverflowScrolling: 'touch', padding: '6px 12px', background: '#f9fafb' }}>
                 {cart.length === 0 ? (
                     <p style={{ textAlign: 'center', color: '#9CA3AF', marginTop: '20px' }}>No hay productos seleccionados</p>
                 ) : (
