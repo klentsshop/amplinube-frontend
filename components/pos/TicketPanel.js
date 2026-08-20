@@ -402,7 +402,7 @@ export default function TicketPanel({
 </div>
 
             {/* 3. LISTADO DE PRODUCTOS (RESTAURADA ALINEACIÓN Y LÓGICA DE ORDENAMIENTO) */}
-            <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '10px 15px', background: '#f9fafb' }}>
+            <div style={{ flex: '1 1 0%', minHeight: 0, overflowY: 'auto', padding: '6px 12px', background: '#f9fafb' }}>
                 {cart.length === 0 ? (
                     <p style={{ textAlign: 'center', color: '#9CA3AF', marginTop: '20px' }}>No hay productos seleccionados</p>
                 ) : (
