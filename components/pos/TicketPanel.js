@@ -726,7 +726,7 @@ export default function TicketPanel({
         onCobrar={() => setVerModalMixto(false)} // 👈 Le inyectamos el gatillo
     />
 )}
-                <div style={{ display: 'flex', gap: '4px', width: '100%', alignItems: 'center' }}>
+               <div style={{ display: 'flex', gap: '4px', width: '100%', alignItems: 'center', flexShrink: 0 }}>
     {/* 1. SECCIÓN IMPRESIÓN: Solo si hay algo en el carrito */}
     {cart.length > 0 && (
     <>

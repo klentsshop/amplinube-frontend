@@ -100,18 +100,20 @@
 
 .cardTitle { 
     font-weight: 700; 
-    font-size: 0.72rem; /* Un pelín más compacta para que rinda más en alta densidad (10 cols) */
+    font-size: 0.72rem; 
     color: #111827;
     margin-bottom: 2px;
     line-height: 1.2;
-
-    /* 🧠 MULTILÍNEA INTELIGENTE: Removemos el 'nowrap' y aplicamos line-clamp nativo */
-    white-space: normal;     /* Permite saltos de línea */
-    word-break: break-word;  /* Rompe palabras si exceden el micro-contenedor */
+    white-space: normal;
+    word-break: break-word;
+    
+    /* 🎯 Versión estándar limpia y compatible */
     display: -webkit-box;
-    -webkit-line-clamp: 2;   /* Limita estrictamente a máximo 2 líneas limpias */
+    line-clamp: 2;
+    -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
-    overflow: hidden;        /* Oculta si por alguna razón intentara salir una 3ra línea */
+    overflow: hidden;
+    max-height: 2.4em; /* 🛡️ Fallback: 2 líneas exactas de alto (1.2 * 2) */
 }
 .cardPrice { 
     color: #ef4444; 
@@ -205,12 +207,15 @@
         left: 0; 
         width: 100% !important; 
         height: 100% !important; 
+        max-height: 100vh !important; /* 🛡️ BLINDAJE: Fuerza a no exceder la ventana del móvil */
+        display: flex !important;
+        flex-direction: column !important;
+        justify-content: space-between !important;
         z-index: 4000; 
         transform: translateX(-100%); /* Oculto a la izquierda */
         transition: transform 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
         background: white;
     }
-
     /* CARRITO VISIBLE AL DESLIZAR */
     .ticketPanelShowMobile { 
         transform: translateX(0) !important; 
