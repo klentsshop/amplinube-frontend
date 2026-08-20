@@ -339,15 +339,17 @@ export async function POST(request) {
             estacionesPendientes: misEstacionesFormateadas
         };
 
-        const RAILWAY_URL = process.env.RAILWAY_SOCKET_SERVER_URL || 'https://tu-server-railway.up.railway.app';
+        const RAILWAY_URL = process.env.RAILWAY_SOCKET_SERVER_URL || process.env.NEXT_PUBLIC_RAILWAY_SOCKET_URL || process.env.RAILWAY_SOCKET_URL;
 
-        // Disparo asíncrono sin bloquear la UI del mesero
-        fetch(`${RAILWAY_URL}/api/dispatch-print`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payloadInfladoEstandar)
-        }).catch(err => console.error("⚠️ Error enviando evento a Railway:", err.message));
-
+       if (RAILWAY_URL) {
+    fetch(`${RAILWAY_URL}/api/dispatch-print`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payloadInfladoEstandar)
+    }).catch(err => console.error("⚠️ Error enviando evento a Railway:", err.message));
+} else {
+    console.warn("⚠️ Variable de entorno para el servidor de sockets no definida.");
+}
         return NextResponse.json({
             message: ordenId || idRealOrden ? 'Orden actualizada' : 'Orden creada',
             ordenId: idFinal
