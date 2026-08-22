@@ -55,9 +55,23 @@ export function useOrdenesRealtime(tenantId, initialOrdenes = [], fetchOrdenesFa
       setIsConnected(false);
     });
 
-    // Escuchar cambios emitiendo por otros meseros
-    socket.on('sync_ordenes', () => {
-      refrescarOrdenes();
+    // 🧠 BISTURÍ SENIOR: Escucha inteligente. Actualiza RAM directamente sin atacar Supabase
+    socket.on('sync_ordenes', (data) => {
+      if (!data) return;
+      if (data.accion === 'DELETE' && data.ordenId) {
+        setOrdenes(prev => prev.filter(o => (o.id || o._id) !== data.ordenId));
+      } else if (data.accion === 'UPSERT' && data.orden) {
+        setOrdenes(prev => {
+          const existe = prev.find(o => (o.id || o._id) === (data.orden.id || data.orden._id));
+          if (existe) {
+            return prev.map(o => (o.id || o._id) === (data.orden.id || data.orden._id) ? data.orden : o);
+          }
+          return [...prev, data.orden];
+        });
+      } else {
+        // Salvavidas: si envían un ping antiguo vacío
+        refrescarOrdenes();
+      }
     });
 
     return () => {
@@ -65,12 +79,21 @@ export function useOrdenesRealtime(tenantId, initialOrdenes = [], fetchOrdenesFa
     };
   }, [tenantId, refrescarOrdenes]);
 
-  // Cuando un mesero edita o cobra una orden localmente
-  const emitirCambio = async () => {
-    await refrescarOrdenes();
+  // 🚀 BISTURÍ SENIOR: El emisor ahora manda el paquete de datos exacto a Railway
+  const emitirCambio = async (accion = 'RELOAD', dataPayload = null) => {
+    // Solo el dispositivo que hizo el cambio refresca su propia DB (1 sola conexión) si no es DELETE
+    if (accion === 'RELOAD') {
+      await refrescarOrdenes();
+    }
     if (socketRef.current && isConnected) {
-      // Notifica a Railway para que avise a las demás pantallas del restaurante
-      socketRef.current.emit('orden_actualizada', { tenantId });
+      // Notifica a Railway CON EL PAYLOAD para que actúe de cartero
+      const payload = { 
+        tenantId, 
+        accion, 
+        orden: accion === 'UPSERT' ? dataPayload : null,
+        ordenId: accion === 'DELETE' ? dataPayload : null
+      };
+      socketRef.current.emit('orden_actualizada', payload);
     }
   };
 

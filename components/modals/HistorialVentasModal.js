@@ -137,7 +137,14 @@ setVentas(ventasActivas.reverse());
                                         {esFilaAbierta && (
                                         <div style={{ marginTop: '12px', padding: '15px', backgroundColor: 'white', borderRadius: '8px', border: '1px solid #cbd5e1', boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.02)' }}>
                                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', borderBottom: '2px solid #cbd5e1', paddingBottom: '5px' }}>
-                                                    <strong style={{ fontSize: '0.85rem', color: '#1e293b' }}>🛒 DETALLE: {v.folio || 'S/F'}</strong>
+                                                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                                        <strong style={{ fontSize: '0.85rem', color: '#1e293b' }}>🛒 DETALLE: {v.folio || 'S/F'}</strong>
+                                                        {v.fechaLocal && (
+                                                            <span style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: 'bold', marginTop: '2px' }}>
+                                                                🕒 HORA: {new Date(v.fechaLocal.replace(' ', 'T')).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', hour12: true })}
+                                                            </span>
+                                                        )}
+                                                    </div>
                                                     <button onClick={() => setVentaDetalle(null)} style={{ border: 'none', background: 'none', color: '#ef4444', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.8rem' }}>OCULTAR</button>
                                                 </div>
 

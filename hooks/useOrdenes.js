@@ -73,12 +73,17 @@ export function useOrdenes(providedTenantId) {
       if (!res.ok) throw new Error("Error al guardar en servidor");
       const data = await res.json();
 
-      // Sincronización local rápida
-      await fetchOrdenesFrecuentes();
+     // Sincronización local rápida (Solo 1 conexión a DB para quien originó el guardado)
+      const listaActualizada = await fetchOrdenesFrecuentes();
 
-      // Notificar a Railway para que transmita el evento a las demás pantallas del local
+      // Extraemos la orden fresca y notificamos a Railway para que las DEMÁS pantallas NO hagan fetch
       if (typeof emitirCambio === 'function') {
-        emitirCambio();
+        const ordenFresca = listaActualizada.find(o => (o.id || o._id) === data.ordenId);
+        if (ordenFresca) {
+          emitirCambio('UPSERT', ordenFresca);
+        } else {
+          emitirCambio('RELOAD');
+        }
       }
 
       if (tenantId) {
@@ -115,9 +120,9 @@ export function useOrdenes(providedTenantId) {
       // Actualización optimista inmediata en la UI local
       setOrdenes((prev) => prev.filter((o) => (o._id || o.id) !== ordenId));
 
-      // Notificar a Railway para que los demás dispositivos eliminen la mesa de su pantalla
+      // Notificar a Railway para que los demás dispositivos eliminen la mesa en memoria RAM (Sin tocar Supabase)
       if (typeof emitirCambio === 'function') {
-        emitirCambio();
+        emitirCambio('DELETE', ordenId);
       }
 
       if (tenantId) {

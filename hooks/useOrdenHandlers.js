@@ -389,10 +389,10 @@ export function useOrdenHandlers({
                     return; 
                 }
 
-                // 🚀 DISPARO EN SEGUNDO PLANO (Sincronización síncrona/asíncrona protegida)
+                // 🚀 DISPARO EN SEGUNDO PLANO (Avisa al resto del local que eliminen la mesa de RAM)
                 if (typeof emitirCambio === 'function') {
                     try {
-                        emitirCambio();
+                        emitirCambio('DELETE', idParaCerrar);
                     } catch (e) {
                         console.warn("Error background sync:", e);
                     }
