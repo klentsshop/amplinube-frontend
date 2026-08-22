@@ -115,7 +115,7 @@ export default function TicketPanel({
      const [modalPinOpen, setModalPinOpen] = useState(false);
      const [accionPinPendiente, setAccionPinPendiente] = useState(null);
      const [tituloPinModal, setTituloPinModal] = useState("Ingresar PIN");
-     const { actualizarComentario, tipoOrden, setTipoOrden, clienteActivo } = useCart();
+     const { actualizarComentario, tipoOrden, setTipoOrden, clienteActivo, setOrdenMesa } = useCart();
     
      // ✨ LOGICA PRO: Salto automático del radio button según el nombre
      useEffect(() => {
@@ -201,8 +201,33 @@ export default function TicketPanel({
                     lineHeight: 1.2
                 }}
             >
-                {(config?.nombreCorto || config?.nombre || "SOCIO POS")?.toUpperCase()} {ordenMesa ? `(${ordenMesa})` : 'ACTUAL'}
+                {(config?.nombreCorto || config?.nombre || "Amplinube")?.toUpperCase()} {ordenMesa ? `(${ordenMesa})` : 'ACTUAL'}
             </h2>
+
+            {/* ✏️ BOTÓN DE CAMBIO DE MESA */}
+            {ordenActivaId && (esModoCajero || permisos.verAdmin) && (
+                <button
+                    onClick={() => {
+                        const nuevoNombre = prompt(`Rebautizar la mesa "${ordenMesa}" a:`);
+                        if (!nuevoNombre || nuevoNombre.trim() === '' || nuevoNombre.trim() === ordenMesa) return;
+                        
+                        if (!confirm(`⚠️ ADVERTENCIA: La orden pasará a llamarse "${nuevoNombre.trim().toUpperCase()}".\n\nSi la cocina ya imprimió el ticket anterior, deberás avisarles de viva voz.\n\n¿Deseas continuar?`)) return;
+
+                        setOrdenMesa(nuevoNombre.trim().toUpperCase());
+                        alert('✅ El nombre se actualizó en pantalla.\n\nPor favor, presiona el botón amarillo "ACTUALIZAR" abajo para guardar este cambio en todo el sistema.');
+                    }}
+                    title="Cambiar nombre de mesa"
+                    style={{
+                        background: 'none', border: 'none', cursor: 'pointer', fontSize: '1.2rem',
+                        marginLeft: '8px', padding: '0', opacity: 0.8,
+                        transition: 'opacity 0.2s'
+                    }}
+                    onMouseEnter={e => e.currentTarget.style.opacity = 1}
+                    onMouseLeave={e => e.currentTarget.style.opacity = 0.8}
+                >
+                    ✏️
+                </button>
+            )}
 
             {cart.length > 0 && (
                 <button 

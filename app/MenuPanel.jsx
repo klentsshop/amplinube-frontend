@@ -83,7 +83,8 @@ export default function MenuPanel({ configNegocio: configInyectada }) {
     // --- 3. HOOKS DE LÓGICA (Que dependen de los estados de arriba) ---
     const { 
         ordenes: ordenesActivas, guardarOrden: apiGuardar, 
-        eliminarOrden: apiEliminar, refresh: refreshOrdenes 
+        eliminarOrden: apiEliminar, refresh: refreshOrdenes,
+        emitirCambio
     } = useOrdenes(tenantId);
 
     const imp = useImpresion(cart, configNegocio, ordenMesa, nombreMesero, tenantId);
@@ -105,7 +106,8 @@ export default function MenuPanel({ configNegocio: configInyectada }) {
         cart, total, clearCart, clearWithStockReturn, setCartFromOrden, eliminarLineaConStock, apiGuardar, apiEliminar, 
         refreshOrdenes, ordenActivaId, setOrdenMesa, ordenMesa,
         setOrdenActivaId, ordenesActivas, esModoCajero: acc.esModoCajero, 
-        setMostrarCarritoMobile, nombreMesero: acc.esModoCajero ? "Caja" : nombreMesero, setNombreMesero, tipoOrden, validarPinAdmin: acc.validarPinAdmin, tenantId, config: configNegocio
+        setMostrarCarritoMobile, nombreMesero: acc.esModoCajero ? "Caja" : nombreMesero, setNombreMesero, tipoOrden, validarPinAdmin: acc.validarPinAdmin, tenantId, config: configNegocio,
+        emitirCambio
     });
     useEffect(() => {
     if (!mostrarModalClientes || !tenantId) return;

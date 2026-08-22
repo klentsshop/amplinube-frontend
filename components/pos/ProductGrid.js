@@ -53,7 +53,7 @@ const ProductGrid = memo(({
             return [comodinTodos, ...listaOrdenada];
         }
 
-        // 2. Fallback local si el catálogo es local/Sanity
+        // 2. Fallback local si el catálogo es local/Sanity o mientras carga el global
         const unicasLocalesMap = new Map();
         platos.forEach(p => {
             let id = '';
@@ -63,14 +63,14 @@ const ProductGrid = memo(({
                 titulo = p.categoria.titulo || p.categoria.nombre || id;
             } else if (p.categoria) {
                 id = String(p.categoria);
-                titulo = String(p.categoria);
+                // 🛡️ BISTURÍ: Priorizamos el 'categoriaNombre' que ya viene resuelto desde Supabase
+                titulo = String(p.categoriaNombre || p.categoriaLabel || p.categoria); 
             }
 
             if (id && id !== 'TODOS' && !unicasLocalesMap.has(id)) {
                 unicasLocalesMap.set(id, { id, titulo: String(titulo).toUpperCase().trim() });
             }
         });
-
        const listaLocalesOrdenada = Array.from(unicasLocalesMap.values()).sort((a, b) => a.titulo.localeCompare(b.titulo));
     return [comodinTodos, ...listaLocalesOrdenada];
 }, [platos, categoriasGlobales]);
