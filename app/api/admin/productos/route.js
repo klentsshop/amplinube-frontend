@@ -325,6 +325,15 @@ export async function POST(req) {
                 if (errorReceta) throw new Error(`SUPABASE_RECETAS_INSERT_ERROR: ${errorReceta.message}`);
             }
         }
+        // 1. Obtener los datos reales de la categoría desde la base de datos
+const { data: catInfo } = await supabaseServer
+    .from('categorias')
+    .select('titulo, se_imprime')
+    .eq('id', categoriaUuid)
+    .single();
+
+const tituloCategoria = catInfo?.titulo ? catInfo.titulo.trim().toUpperCase() : 'GENERAL';
+const seImprimeCat = catInfo?.se_imprime ?? true;
 
         // 3. ⚡ Actualizar la caché quirúrgicamente sin tumbarla
         const platoCache = {
@@ -340,7 +349,15 @@ export async function POST(req) {
             codigoBalanza: productoCreado.codigo_balanza,
             imagenUrl: urlImagen,
             imagen: urlImagen ? { _type: 'image', asset: { url: urlImagen } } : null,
-            categoria: { _ref: productoCreado.categoria, _type: 'reference' },
+            categoria: categoriaUuid,
+    categoriaNombre: tituloCategoria, 
+    seImprime: seImprimeCat,
+    categoriaObj: {
+        id: categoriaUuid,
+        titulo: tituloCategoria,
+        seImprime: seImprimeCat
+    },
+    categoriaRef: { _ref: categoriaUuid, _type: 'reference' },
             recetaInsumos: productoCreado.receta_insumos || [],
             esVentaPorPeso: productoCreado.es_venta_por_peso,
             controlaInventario: productoCreado.controla_inventario,

@@ -26,9 +26,11 @@ export function CartProvider({ children, tenantId }) {
   const [ordenActivaId, setOrdenActivaId] = useState(null);
   const [ordenMesa, setOrdenMesa] = useState(null);
   const [clienteActivo, setClienteActivo] = useState(null);
-   // 💾 1. Al iniciar: Recuperar Carrito y Tipo de Orden del navegador
+  const [isInitialized, setIsInitialized] = useState(false);
+  
+
+    // 💾 1. Al iniciar: Recuperar Carrito y Tipo de Orden del navegador
   useEffect(() => {
-    // Definimos las constantes extrayendo los datos del almacenamiento
     const currentId = activeTenantId;
     const savedItems = localStorage.getItem(CART_KEY);
     const savedTipo = localStorage.getItem(TYPE_KEY);
@@ -39,61 +41,55 @@ export function CartProvider({ children, tenantId }) {
         if (parsed && parsed.length > 0) setItems(parsed);
       } catch (e) { console.error("Error localStorage", e); }
     }
-    
 
-    // ✅ Si hay un tipo de orden guardado (domicilio/llevar), lo aplicamos
     if (savedTipo) {
       setTipoOrden(savedTipo);
     }
 
-    // 🔥 SINCRONIZACIÓN ENTRE PESTAÑAS (Para que no se crucen las órdenes)
     const syncTabs = (e) => {
       if (e.key === `${activeTenantId}_cart`) {
         const newValue = e.newValue ? JSON.parse(e.newValue) : [];
         setItems(newValue);
       }
-      // Sincronizar también el radio si se cambia en otra pestaña abierta
       if (e.key === `${activeTenantId}_tipo_orden`) {
-    setTipoOrden(e.newValue || 'mesa');
-}
+        setTipoOrden(e.newValue || 'mesa');
+      }
     };
 
     window.addEventListener('storage', syncTabs);
+    
+    // ✅ ESCUDO: Avisamos que la primera lectura terminó
+    setIsInitialized(true);
+
     return () => window.removeEventListener('storage', syncTabs);
   }, [CART_KEY, TYPE_KEY, activeTenantId]);
 
-    // 💾 2. Guardado Automático con "Amortiguador" (Debounce)
-  // Esto evita que el sistema titile al cargar una mesa desde Sanity
-// 💾 2. Guardado Automático con "Detector de Huérfanos" (Blindaje Mesa 0)
+  // 💾 2. Guardado Automático con "Detector de Huérfanos" (Blindaje Mesa 0)
   useEffect(() => {
-    // 1. Si el carrito está vacío, limpiamos disco y paramos
+    // 🛑 FRENO MAESTRO: Evita que las nuevas pestañas borren el carrito
+    if (!isInitialized) return;
+
     const tenantId = activeTenantId;
     if (items.length === 0) {
         localStorage.removeItem(`${tenantId}_cart`);
         return;
     }
 
-    // 2. 🛡️ BISTURÍ SUPABASE/SANITY: Identificamos si son platos de una orden persistida
     const tienePlatosGuardados = items.some(it => it.esDeOrdenGuardada || it._key || it.orden_id);
     const tienePlatosNuevos = items.some(it => !it.esDeOrdenGuardada && !it._key && !it.orden_id);
 
     const saveTimeout = setTimeout(() => {
-      // 🚨 LA REGLA DE ORO CONTRA DUPLICADOS:
-      // Si no hay una orden activa registrada pero los platos provienen de la BD, bloqueamos la creación fantasma.
       if (tienePlatosGuardados && !tienePlatosNuevos && !ordenActivaId) {
           console.warn("🚫 [BLOQUEO_FANTASMA]: Evitando creación de Mesa 0 duplicada.");
           return; 
       }
 
-      // 3. Guardado normal en el disco local
       localStorage.setItem(`${tenantId}_cart`, JSON.stringify(items));
       localStorage.setItem(`${tenantId}_tipo_orden`, tipoOrden || 'mesa');
     }, 150);
 
     return () => clearTimeout(saveTimeout);
-    
-    // 🛡️ RECUERDA: Agregamos ordenActivaId a las dependencias para que el radar funcione
-  }, [items, tipoOrden, ordenActivaId, CART_KEY, TYPE_KEY]);
+  }, [items, tipoOrden, ordenActivaId, CART_KEY, TYPE_KEY, isInitialized, activeTenantId]);
 
   // 🚀 CONECTOR RELACIONAL: Memoriza Stock Actual + stock_minimo de Supabase
   const actualizarCacheStockMasivo = React.useCallback((listaInsumosSupabase) => {
