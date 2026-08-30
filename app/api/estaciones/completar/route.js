@@ -4,16 +4,19 @@ import { supabaseServer } from '@/lib/supabase';
 export async function POST(req) {
     try {
         const body = await req.json();
-        const { ordenId, estacion, ultimoLineId, tenant } = body;
+        
+        // 🛡️ BISTURÍ: Soportamos tanto "tenantId" (que envían las APKs y C#) como "tenant"
+        const { ordenId, estacion, ultimoLineId, tenant, tenantId } = body;
+        const tenantRecibido = tenant || tenantId;
 
-        if (!ordenId || !estacion || !tenant) {
+        if (!ordenId || !estacion || !tenantRecibido) {
             return NextResponse.json({ error: 'Faltan parámetros críticos para completar la comanda.' }, { status: 400 });
         }
 
-        const cleanTenant = tenant.toLowerCase().trim();
+        const cleanTenant = tenantRecibido.toLowerCase().trim();
         const estacionLimpia = estacion.trim().toUpperCase();
 
-        // 1. Purgamos individualmente la bandera de la estación pendiente
+        // 1. Purgamos individualmente la bandera de la estación pendiente (QUIRÚRGICO)
         const { error: errDelete } = await supabaseServer
             .from('estaciones_pendientes')
             .delete()
@@ -41,7 +44,7 @@ export async function POST(req) {
         // Inyectamos de forma dinámica la clave normalizada para la tablet (ej: ultimoKeyRESTAURANTES = 'uuid-del-plato')
         cursoresActuales[`ultimoKey${estacionLimpia}`] = ultimoLineId;
 
-        // 3. Persistimos el nuevo mapa de cursores en la cabecera relacional con validación estricta de tenant
+        // 3. Persistimos el nuevo mapa de cursores en la cabecera relacional
         const { error: errUpdate } = await supabaseServer
             .from('ordenes_activas')
             .update({
