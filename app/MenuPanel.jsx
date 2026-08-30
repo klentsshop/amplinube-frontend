@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { getProductos, getMeseros } from '@/lib/dataAdapter';
 import { ENV, DEMO_DATA } from '@/lib/env';
 
@@ -41,9 +41,11 @@ export default function MenuPanel({ configNegocio: configInyectada }) {
     const [mostrarCategoriasMobile, setMostrarCategoriasMobile] = useState(false);
     const [categoriasGlobales, setCategoriasGlobales] = useState([]);
     const [mostrarCarritoMobile, setMostrarCarritoMobile] = useState(false);
-    // 📱 Estados para soporte táctil (Swipe Lateral)
-    const [touchStartX, setTouchStartX] = useState(0);
-    const [touchEndX, setTouchEndX] = useState(0);
+    // 📱 Estados para soporte táctil (Alto Rendimiento con useRef)
+    const touchStartX = useRef(null);
+    const touchStartY = useRef(null);
+    const touchEndX = useRef(null);
+    const touchEndY = useRef(null);
     const [listaMeseros, setListaMeseros] = useState([]);
     const [estaActivo, setEstaActivo] = useState(null);
     const [pinBloqueo, setPinBloqueo] = useState('');
@@ -664,32 +666,49 @@ if (!estaActivo) {
         );
     }
 
-    // ✋ MANEJADORES DE GESTO TÁCTIL (SWIPE NATIVO)
+    // ✋ MANEJADORES DE GESTO TÁCTIL (ALTO RENDIMIENTO - ANTI CHOQUES)
     const handleTouchStart = (e) => {
-        setTouchStartX(e.targetTouches[0].clientX);
-        setTouchEndX(e.targetTouches[0].clientX);
+        touchStartX.current = e.targetTouches[0].clientX;
+        touchStartY.current = e.targetTouches[0].clientY;
+        touchEndX.current = null;
+        touchEndY.current = null;
     };
 
     const handleTouchMove = (e) => {
-        setTouchEndX(e.targetTouches[0].clientX);
+        // Se guarda en memoria silenciosa. React NO repinta la pantalla aquí.
+        touchEndX.current = e.targetTouches[0].clientX;
+        touchEndY.current = e.targetTouches[0].clientY;
     };
 
     const handleTouchEnd = () => {
-        if (!touchStartX || !touchEndX) return;
-        const distancia = touchStartX - touchEndX;
+        if (touchStartX.current === null || touchEndX.current === null) return;
 
-        // Deslizar a la izquierda (Swipe Left -> Muestra el Carrito)
-        if (distancia > 70 && !mostrarCarritoMobile) {
+        const distanciaX = touchStartX.current - touchEndX.current;
+        const distanciaY = touchStartY.current - touchEndY.current;
+
+        // 🛡️ ESCUDO ANTI-SCROLL: Si movió el dedo más hacia abajo/arriba que a los lados,
+        // es un scroll de menú. Abortamos para no abrir el carrito accidentalmente.
+        if (Math.abs(distanciaY) > Math.abs(distanciaX)) {
+            touchStartX.current = null;
+            touchEndX.current = null;
+            return;
+        }
+
+        // 🛒 Deslizar a la izquierda (Swipe Left -> Muestra el Carrito)
+        if (distanciaX > 70 && !mostrarCarritoMobile) {
             setMostrarCarritoMobile(true);
         }
 
-        // Deslizar a la derecha (Swipe Right -> Oculta el Carrito)
-        if (distancia < -70 && mostrarCarritoMobile) {
+        // 🛒 Deslizar a la derecha (Swipe Right -> Oculta el Carrito)
+        if (distanciaX < -70 && mostrarCarritoMobile) {
             setMostrarCarritoMobile(false);
         }
 
-        setTouchStartX(0);
-        setTouchEndX(0);
+        // Limpiamos la memoria para el próximo gesto
+        touchStartX.current = null;
+        touchEndX.current = null;
+        touchStartY.current = null;
+        touchEndY.current = null;
     };
 
     // 🔒 PROCESADOR SEGURO DE PIN DESDE MODAL
