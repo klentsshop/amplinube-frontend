@@ -19,6 +19,10 @@ body {
   font-family: 'Roboto', sans-serif;
   background-color: var(--bg-gray);
   overflow: hidden; /* Evita scroll en toda la página */
+  
+  /* 🛡️ ESCUDO ANTI-CHROME/SAFARI: Bloquea los gestos nativos del navegador */
+  overscroll-behavior-x: none; /* Bloquea el gesto de ir atrás/adelante (evita que te saque de la app) */
+  overscroll-behavior-y: none; /* Bloquea el "Pull to refresh" (evita que se recargue si deslizan hacia abajo fuerte) */
 }
 
 /* LAYOUT PRINCIPAL: Pantalla dividida */

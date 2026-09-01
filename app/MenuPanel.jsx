@@ -41,11 +41,6 @@ export default function MenuPanel({ configNegocio: configInyectada }) {
     const [mostrarCategoriasMobile, setMostrarCategoriasMobile] = useState(false);
     const [categoriasGlobales, setCategoriasGlobales] = useState([]);
     const [mostrarCarritoMobile, setMostrarCarritoMobile] = useState(false);
-    // 📱 Estados para soporte táctil (Alto Rendimiento con useRef)
-    const touchStartX = useRef(null);
-    const touchStartY = useRef(null);
-    const touchEndX = useRef(null);
-    const touchEndY = useRef(null);
     const [listaMeseros, setListaMeseros] = useState([]);
     const [estaActivo, setEstaActivo] = useState(null);
     const [pinBloqueo, setPinBloqueo] = useState('');
@@ -199,7 +194,9 @@ useEffect(() => {
         }
     };
     verificarSeguridadMesero();
-}, [tenantId, acc.esModoCajero, nombreMesero, listaMeseros]); const datosAgrupados = React.useMemo(() => {
+}, [tenantId, acc.esModoCajero, nombreMesero, listaMeseros]); 
+
+const datosAgrupados = React.useMemo(() => {
         if (!cart?.length)return { cliente: [], cocina: [] };
         return {
             cliente: imp.agruparParaCliente(),
@@ -505,8 +502,84 @@ const categoriasParaConfig = useMemo(() => {
         return String(p.categoria || '');
     }).filter(Boolean))];
 }, [platos, categoriasGlobales]);
-if (!tenantId) return <div style={{background: '#111827', height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: '900'}}>IDENTIFICANDO COMERCIO...</div>;   
+// ✋ MANEJADORES DE GESTO TÁCTIL GLOBAL (BLOQUEO ABSOLUTO DE NAVEGACIÓN CHROME)
+    useEffect(() => {
+        let startX = 0;
+        let startY = 0;
+        let startTime = 0;
+        let isHorizontalSwipe = false;
 
+        const handleNativeTouchStart = (e) => {
+            if (e.touches.length > 1) return;
+            if (e.touches[0].clientX < 30) return; // 🛡️ Parche iPhone
+
+            // 🛡️ Bloqueo si toca inputs, botones, la barra de mesas o categorías
+            if (e.target.closest('button') || e.target.closest('input') || e.target.closest(`.${styles.categoriesBar}`) || e.target.closest(`.${styles.tablesFooter}`)) {
+                return;
+            }
+
+            startX = e.touches[0].clientX;
+            startY = e.touches[0].clientY;
+            startTime = Date.now();
+            isHorizontalSwipe = false;
+        };
+
+        const handleNativeTouchMove = (e) => {
+            if (!startX || !startY) return;
+
+            const currentX = e.touches[0].clientX;
+            const currentY = e.touches[0].clientY;
+            const diffX = Math.abs(currentX - startX);
+            const diffY = Math.abs(currentY - startY);
+
+            // 🚨 SI EL MOVIMIENTO ES MÁS HORIZONTAL QUE VERTICAL
+            if (!isHorizontalSwipe && diffX > 10 && diffX > diffY) {
+                isHorizontalSwipe = true;
+            }
+
+            // ☠️ LA MAGIA SENIOR: BLOQUEO A NIVEL "DOCUMENT" PARA MATAR LA NAVEGACIÓN
+            if (isHorizontalSwipe && e.cancelable) {
+                e.preventDefault(); 
+            }
+        };
+
+        const handleNativeTouchEnd = (e) => {
+            if (!startX || !startY) return;
+
+            const endX = e.changedTouches[0].clientX;
+            const endY = e.changedTouches[0].clientY;
+            const distanciaX = startX - endX;
+            const distanciaY = startY - endY;
+            const tiempoTranscurrido = Date.now() - startTime;
+
+            startX = 0; 
+            startY = 0;
+
+            // Filtros de geometría y tiempo
+            if (tiempoTranscurrido < 50 || (Math.abs(distanciaX) < 20 && Math.abs(distanciaY) < 20)) return;
+            if (Math.abs(distanciaY) > Math.abs(distanciaX)) return;
+
+            // Ejecutar apertura/cierre
+            if (distanciaX > 70) {
+                setMostrarCarritoMobile(true);
+            } else if (distanciaX < -70) {
+                setMostrarCarritoMobile(false);
+            }
+        };
+
+        // 🔥 AL CONECTAR AL 'DOCUMENT' BLOQUEAMOS EL NAVEGADOR COMPLETO
+        document.addEventListener('touchstart', handleNativeTouchStart, { passive: false });
+        document.addEventListener('touchmove', handleNativeTouchMove, { passive: false });
+        document.addEventListener('touchend', handleNativeTouchEnd, { passive: false });
+
+        return () => {
+            document.removeEventListener('touchstart', handleNativeTouchStart);
+            document.removeEventListener('touchmove', handleNativeTouchMove);
+            document.removeEventListener('touchend', handleNativeTouchEnd);
+        };
+    }, [styles.categoriesBar, styles.tablesFooter]);
+
+if (!tenantId) return <div style={{background: '#111827', height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: '900'}}>IDENTIFICANDO COMERCIO...</div>;
 // 🛡️ CONTROL EXPLÍCITO: Si está en null, congelamos pantalla para evitar parpadeos visuales
 if (estaActivo === null) {
     return <div style={{background: '#090d16', height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 'bold', fontFamily: 'sans-serif'}}>COMPROBANDO PERMISOS...</div>;
@@ -666,51 +739,6 @@ if (!estaActivo) {
         );
     }
 
-    // ✋ MANEJADORES DE GESTO TÁCTIL (ALTO RENDIMIENTO - ANTI CHOQUES)
-    const handleTouchStart = (e) => {
-        touchStartX.current = e.targetTouches[0].clientX;
-        touchStartY.current = e.targetTouches[0].clientY;
-        touchEndX.current = null;
-        touchEndY.current = null;
-    };
-
-    const handleTouchMove = (e) => {
-        // Se guarda en memoria silenciosa. React NO repinta la pantalla aquí.
-        touchEndX.current = e.targetTouches[0].clientX;
-        touchEndY.current = e.targetTouches[0].clientY;
-    };
-
-    const handleTouchEnd = () => {
-        if (touchStartX.current === null || touchEndX.current === null) return;
-
-        const distanciaX = touchStartX.current - touchEndX.current;
-        const distanciaY = touchStartY.current - touchEndY.current;
-
-        // 🛡️ ESCUDO ANTI-SCROLL: Si movió el dedo más hacia abajo/arriba que a los lados,
-        // es un scroll de menú. Abortamos para no abrir el carrito accidentalmente.
-        if (Math.abs(distanciaY) > Math.abs(distanciaX)) {
-            touchStartX.current = null;
-            touchEndX.current = null;
-            return;
-        }
-
-        // 🛒 Deslizar a la izquierda (Swipe Left -> Muestra el Carrito)
-        if (distanciaX > 70 && !mostrarCarritoMobile) {
-            setMostrarCarritoMobile(true);
-        }
-
-        // 🛒 Deslizar a la derecha (Swipe Right -> Oculta el Carrito)
-        if (distanciaX < -70 && mostrarCarritoMobile) {
-            setMostrarCarritoMobile(false);
-        }
-
-        // Limpiamos la memoria para el próximo gesto
-        touchStartX.current = null;
-        touchEndX.current = null;
-        touchStartY.current = null;
-        touchEndY.current = null;
-    };
-
     // 🔒 PROCESADOR SEGURO DE PIN DESDE MODAL
     const procesarConfirmacionPinSeguro = async (pinIngresado) => {
         setModalPinSeguroOpen(false);
@@ -721,11 +749,8 @@ if (!estaActivo) {
     };
     return (
         <div className={styles.mainWrapper}>
-            <div 
+           <div 
                 className={styles.posLayout}
-                onTouchStart={handleTouchStart}
-                onTouchMove={handleTouchMove}
-                onTouchEnd={handleTouchEnd}
             >
                 <TicketPanel
                     cart={cart} total={total} metodoPago={metodoPago} setMetodoPago={setMetodoPago} permisos={permisosActivos}
@@ -783,7 +808,12 @@ if (!estaActivo) {
                 />
             </div>
 
-            <div className={styles.tablesFooter}>
+            <div 
+                className={styles.tablesFooter}
+                onTouchStart={(e) => e.stopPropagation()}
+                onTouchMove={(e) => e.stopPropagation()}
+                onTouchEnd={(e) => e.stopPropagation()}
+            >
                 <div style={{ fontWeight: '900', color: 'white', marginRight: '15px', fontSize: '0.75rem' }}>ORDENES ACTIVAS:</div>
                 {ordenesActivas.map((orden) => {
                     const oId = orden.id || orden._id;
