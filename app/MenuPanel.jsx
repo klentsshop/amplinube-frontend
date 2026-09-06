@@ -103,7 +103,11 @@ export default function MenuPanel({ configNegocio: configInyectada }) {
         cart, total, clearCart, clearWithStockReturn, setCartFromOrden, eliminarLineaConStock, apiGuardar, apiEliminar, 
         refreshOrdenes, ordenActivaId, setOrdenMesa, ordenMesa,
         setOrdenActivaId, ordenesActivas, esModoCajero: acc.esModoCajero, 
-        setMostrarCarritoMobile, nombreMesero: acc.esModoCajero ? "Caja" : nombreMesero, setNombreMesero, tipoOrden, validarPinAdmin: acc.validarPinAdmin, tenantId, config: configNegocio,
+        setMostrarCarritoMobile, 
+        // 🛡️ BISTURÍ SENIOR: Pasamos el estado puro. El control de Caja ya lo hace tu useEffect interno.
+        nombreMesero: nombreMesero, 
+        
+        setNombreMesero, tipoOrden, validarPinAdmin: acc.validarPinAdmin, tenantId, config: configNegocio,
         emitirCambio
     });
     useEffect(() => {
@@ -145,7 +149,8 @@ useEffect(() => {
         // 1. Radar Prioritario: Rehidratación de permisos de Caja (Caja tiene súper poderes de administrador)
         const sesionCajeroActiva = localStorage.getItem(`${tenantId}_cajero_activa`) === 'true';
         if (sesionCajeroActiva) {
-            setNombreMesero('Caja');
+            // 🛡️ REGLA: Si la app acaba de abrir, pon 'Caja'. Pero si ya cargamos la mesa de Johanna (prev), NO la aplastes.
+            setNombreMesero(prev => prev ? prev : 'Caja');
             setEstaActivo(true);
             setPermisosActivos({
                 verReporte: true, verAdmin: true, puedeCargarGasto: true, 
@@ -194,7 +199,7 @@ useEffect(() => {
         }
     };
     verificarSeguridadMesero();
-}, [tenantId, acc.esModoCajero, nombreMesero, listaMeseros]); 
+}, [tenantId, acc.esModoCajero, listaMeseros]);
 
 const datosAgrupados = React.useMemo(() => {
         if (!cart?.length)return { cliente: [], cocina: [] };
@@ -485,14 +490,17 @@ useEffect(() => {
         });
 
     }, [platos, busqueda, categoriaActiva, platosBusquedaRemota, platosCategoriaRemota]);
-    const manejarLimpiezaTotal = () => {
+   const manejarLimpiezaTotal = () => {
         if (ord.mensajeExito) return;
         if (!ord.ordenActivaId) clearWithStockReturn(); 
         else clearCart(); 
         ord.setOrdenActivaId(null);
         ord.setOrdenMesa(null);
+        
+        // 🛡️ REGLA: Al limpiar la pantalla, le devolvemos la tablet a su dueño original
+        const esCajero = localStorage.getItem(`${tenantId}_cajero_activa`) === 'true';
+        setNombreMesero(esCajero ? 'Caja' : localStorage.getItem('ultimoMesero'));
     };
-
 const categoriasParaConfig = useMemo(() => {
     if (categoriasGlobales.length > 0) {
         return categoriasGlobales.map(c => c.titulo);
@@ -760,7 +768,7 @@ if (!estaActivo) {
                     solicitarAccesoAdmin={acc.solicitarAccesoAdmin} registrarGasto={gst.registrarGasto}
                     refreshOrdenes={refreshOrdenes} setMostrarListaOrdenes={setMostrarListaOrdenes}
                     mostrarCarritoMobile={mostrarCarritoMobile} setMostrarCarritoMobile={setMostrarCarritoMobile}
-                    ordenMesa={ord.ordenMesa} nombreMesero={ord.nombreMesero || nombreMesero} setNombreMesero={ord.setNombreMesero || setNombreMesero}
+                    ordenMesa={ord.ordenMesa} nombreMesero={nombreMesero} setNombreMesero={ord.setNombreMesero || setNombreMesero}
                     listaMeseros={listaMeseros} esModoCajero={acc.esModoCajero}
                     ordenActivaId={ord.ordenActivaId} numOrdenesActivas={ordenesActivas.length} 
                     cleanPrice={cleanPrice} styles={styles} cancelarOrden={ord.cancelarOrden} 

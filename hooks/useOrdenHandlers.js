@@ -68,14 +68,18 @@ export function useOrdenHandlers({
 
             const o = await res.json();
             
-            if (o && o.platosOrdenados) {
+           if (o && o.platosOrdenados) {
                 // 1. 🛡️ Seteamos la identidad de la orden primero
                 setOrdenActivaId(o._id); 
                 setOrdenMesa(o.mesa); 
                 
+                // 🛡️ REGLA ABSOLUTA: La Base de Datos manda. 
+                // Si la mesa ya tiene dueño en la BD, ignoramos al que tiene la tablet en la mano.
+                const meseroDeBD = o.mesero || o.nombreMesero;
                 const vendedorLocal = localStorage.getItem('ultimoMesero');
-                const meseroFinal = vendedorLocal || o.mesero || o.nombreMesero || (esModoCajero ? "Caja" : null);
+                const meseroFinal = meseroDeBD ? meseroDeBD : (vendedorLocal || (esModoCajero ? "Caja" : null));
                 setNombreMesero(meseroFinal);
+                
                 // 🛵 Sincronización del cliente guardado en la orden activa
                 // 🛵 Sincronización blindada del cliente tras migración a Supabase
                 const ref = typeof o.clienteRef === 'string' ? JSON.parse(o.clienteRef || '{}') : (o.clienteRef || {});

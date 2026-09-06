@@ -261,8 +261,8 @@ export default function TicketPanel({
         </div>
         <select 
     value={nombreMesero || ""} 
-    // 🛡️ BISTURÍ: Si ya hay un nombre, el select se bloquea.
-    disabled={!!nombreMesero} 
+    // 🛡️ BISTURÍ SENIOR: Se bloquea para meseros, pero el Cajero siempre tiene el control total
+    disabled={!!nombreMesero && !esModoCajero} 
     onChange={(e) => {
         const nuevoVendedor = e.target.value;
         if (nuevoVendedor) {
@@ -271,10 +271,9 @@ export default function TicketPanel({
         }
     }}
     style={{ 
-        // Añadimos un cambio visual para que se note el bloqueo
-        opacity: nombreMesero ? 0.7 : 1,
-        cursor: nombreMesero ? 'not-allowed' : 'pointer',
-        // ... tus estilos actuales
+        // Cambiamos la opacidad solo si está bloqueado Y no es cajero
+        opacity: (!!nombreMesero && !esModoCajero) ? 0.7 : 1,
+        cursor: (!!nombreMesero && !esModoCajero) ? 'not-allowed' : 'pointer',
         padding: 'clamp(8px, 2vw, 4px) clamp(10px, 2.5vw, 6px)',
         borderRadius: '6px',
         border: `1px solid ${SITE_CONFIG.theme.textDark}`, 
