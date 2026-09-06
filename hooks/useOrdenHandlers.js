@@ -188,16 +188,16 @@ export function useOrdenHandlers({
         }
         // --- 🛡️ FIN DEL ESCUDO ---
 
-        // Mantenemos intacta tu lógica de meseros
+        // Capturamos a quién le pertenece esta comanda
         let meseroFinal = nombreMesero || localStorage.getItem('ultimoMesero') || (esModoCajero ? "Caja" : null);
         if (!meseroFinal) {
             alert("⚠️ Por favor, selecciona un mesero antes de guardar la orden.");
             return;
         }
 
-        localStorage.setItem('ultimoMesero', meseroFinal);
+        // 🚫 AQUÍ BORRAMOS EL ERROR: Ya no sobrescribimos el localStorage para no robarle la tablet al dueño original.
 
-     const platosParaGuardar = cart.map((i, index) => {
+        const platosParaGuardar = cart.map((i, index) => {
     const pId = i.id || i._id;
     const platoCatalogo = (rep || []).find(p => (p.id || p._id) === pId);
     const keyDefinitiva = i._key || i.lineId || `new-${pId}-${Date.now()}-${index}`;
@@ -263,10 +263,13 @@ export function useOrdenHandlers({
                 setOrdenActivaId(null); 
                 setOrdenMesa(null); 
                 clearCart(); 
-                if (meseroFinal) setNombreMesero(meseroFinal);
+                
+                // 🛡️ BISTURÍ SENIOR: Devolvemos la terminal a su dueño original (Caja o Mesero)
+                const duenoTerminal = esModoCajero ? 'Caja' : localStorage.getItem('ultimoMesero');
+                setNombreMesero(duenoTerminal);
             }, 1500);
 
-        } catch (e) { 
+        } catch (e) {
             console.error("🔥 [ERROR_GUARDAR_ORDEN]:", e);
             setMensajeExito(false);
             alert("Sin internet o servidor lento. Intenta de nuevo."); 
@@ -426,6 +429,10 @@ export function useOrdenHandlers({
                 clearCart(); 
                 await refreshOrdenes();
 
+                // 🛡️ BISTURÍ SENIOR: Restauramos la terminal al dueño original tras cobrar
+                const duenoTerminal = esModoCajero ? 'Caja' : localStorage.getItem('ultimoMesero');
+                setNombreMesero(duenoTerminal);
+
                 setTimeout(() => setMensajeExito(false), 1000); 
 
             } else {
@@ -460,15 +467,16 @@ export function useOrdenHandlers({
                 
                 await refreshOrdenes(); 
 
-                // ✅ BISTURÍ: Eliminamos el alert("🗑️ Eliminada.")
-                // Ahora el sistema simplemente se limpia y ya queda listo.
+                // 🛡️ BISTURÍ SENIOR: Restauramos la terminal al dueño original tras borrar
+                const duenoTerminal = esModoCajero ? 'Caja' : localStorage.getItem('ultimoMesero');
+                setNombreMesero(duenoTerminal);
 
                 // Liberamos el escudo después de un breve respiro para que la UI se asiente
                 setTimeout(() => {
                     setMensajeExito(false);
                 }, 300);
 
-            } catch (error) { 
+            } catch (error) {
                 setMensajeExito(false);
                 alert("❌ Error al eliminar la orden."); 
             }
