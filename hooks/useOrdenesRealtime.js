@@ -80,11 +80,17 @@ export function useOrdenesRealtime(tenantId, ordenesIniciales, fetchOrdenesFrecu
         };
     }, [tenantId, fetchOrdenesFrecuentes]);
 
-    // 3. Función auxiliar para emitir cambios manuales si la UI lo requiere (Fallback)
+   // 3. Función auxiliar para emitir cambios manuales (Soluciona el fantasma de mesas cobradas)
     const emitirCambio = (tipoAccion, data) => {
-        // Con el Multiplexor de Railway, ya no es estrictamente necesario emitir manualmente 
-        // porque Railway lee directo de Supabase y avisa a todos.
-        // Se mantiene la función vacía para no romper tu código en `useOrdenes.js`.
+        if (socketRef.current && tenantId) {
+            // Si el cajero cobra/elimina (DELETE), 'data' es el ID de la orden.
+            // Emitimos a Railway para que él dispare el 'sync_ordenes' a los demás celulares.
+            socketRef.current.emit('orden_actualizada', {
+                eventType: tipoAccion,
+                tenantId: tenantId,
+                old: { id: data } 
+            });
+        }
     };
 
     return { 
