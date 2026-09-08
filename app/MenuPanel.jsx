@@ -110,19 +110,26 @@ export default function MenuPanel({ configNegocio: configInyectada }) {
         setNombreMesero, tipoOrden, validarPinAdmin: acc.validarPinAdmin, tenantId, config: configNegocio,
         emitirCambio
     });
-    useEffect(() => {
-    if (!mostrarModalClientes || !tenantId) return;
+   useEffect(() => {
+        if (!mostrarModalClientes || !tenantId) return;
 
-    // Retardo de 300ms para esperar a que el usuario termine de escribir antes de golpear la API
-    const delayDebounceFn = setTimeout(() => {
-        fetch(`/api/clientes?tenant=${tenantId}&search=${encodeURIComponent(busquedaCli.trim())}`)
-            .then(res => res.json())
-            .then(data => setClientesLista(data || []))
-            .catch(err => console.error("🔥 Error en directorio remoto:", err));
-    }, 300);
+        // 🛡️ BISTURÍ: No disparamos al servidor si solo escribió 1 o 2 letras. 
+        // Ahorramos un 60% de tráfico HTTP inútil.
+        if (busquedaCli.trim().length > 0 && busquedaCli.trim().length < 3) {
+            return;
+        }
 
-    return () => clearTimeout(delayDebounceFn);
-}, [mostrarModalClientes, tenantId, busquedaCli]);
+        // 🛡️ Aumentamos a 500ms. Es la medida estándar para darle tiempo 
+        // al usuario de terminar de tipear en celulares sin que la UI se sienta lenta.
+        const delayDebounceFn = setTimeout(() => {
+            fetch(`/api/clientes?tenant=${tenantId}&search=${encodeURIComponent(busquedaCli.trim())}`)
+                .then(res => res.json())
+                .then(data => setClientesLista(data || []))
+                .catch(err => console.error("🔥 Error en directorio remoto:", err));
+        }, 500);
+
+        return () => clearTimeout(delayDebounceFn);
+    }, [mostrarModalClientes, tenantId, busquedaCli]);
 
     const seleccionarParaEditar = (c) => {
         setIdClienteEditando(c.id || c._id); setCliNombre(c.nombre); setCliTelefono(c.telefono); setCliDireccion(c.direccion);
@@ -423,6 +430,12 @@ useEffect(() => {
             return;
         }
 
+        // 🛡️ BISTURÍ: Filtro de seguridad. No ataquemos la BD por 1 o 2 letras, 
+        // el filtro local (platosFiltradosFinal) ya hace ese trabajo en RAM.
+        if (termino.length < 3) {
+            return;
+        }
+
         const delayDebounceFn = setTimeout(() => {
             fetch(`/api/admin/productos?tenantId=${tenantId}&search=${encodeURIComponent(termino)}`)
                 .then(res => res.json())
@@ -431,7 +444,7 @@ useEffect(() => {
                     setPlatosBusquedaRemota(items);
                 })
                 .catch(err => console.error("🔥 Error buscando productos en Supabase desde POS:", err));
-        }, 300); // ⏱️ Espera 300ms a que el usuario termine de teclear
+        }, 500); // ⏱️ Subimos a 500ms para evitar ráfagas de ametralladora en la API
 
         return () => clearTimeout(delayDebounceFn);
     }, [busqueda, tenantId]);

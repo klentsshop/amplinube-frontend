@@ -1,101 +1,96 @@
-import { useEffect, useState, useRef, useCallback } from 'react';
+'use client';
+import { useState, useEffect, useRef } from 'react';
 import { io } from 'socket.io-client';
 
-// URL de tu servicio desplegado en Railway
-const RAILWAY_SOCKET_URL = process.env.NEXT_PUBLIC_RAILWAY_SOCKET_URL || 'https://tu-app-production.up.railway.app';
+export function useOrdenesRealtime(tenantId, ordenesIniciales, fetchOrdenesFrecuentes) {
+    const [ordenes, setOrdenes] = useState(ordenesIniciales || []);
+    const [isConnected, setIsConnected] = useState(false);
+    const socketRef = useRef(null);
 
-export function useOrdenesRealtime(tenantId, initialOrdenes = [], fetchOrdenesFallback = null) {
-  const [ordenes, setOrdenes] = useState(initialOrdenes);
-  const [isConnected, setIsConnected] = useState(false);
-  
-  const fetchRef = useRef(fetchOrdenesFallback);
-  const socketRef = useRef(null);
+    // 1. Sincroniza el estado local cuando llegan los datos del fetch inicial
+    useEffect(() => {
+        setOrdenes(ordenesIniciales || []);
+    }, [ordenesIniciales]);
 
-  useEffect(() => {
-    fetchRef.current = fetchOrdenesFallback;
-  }, [fetchOrdenesFallback]);
+    // 2. 🚀 SUSCRIPCIÓN MULTIPLEXADA VÍA RAILWAY (Cero conexiones a Supabase)
+    useEffect(() => {
+        if (!tenantId) return;
 
-  useEffect(() => {
-    if (Array.isArray(initialOrdenes)) {
-      setOrdenes(initialOrdenes);
-    }
-  }, [initialOrdenes]);
+        const tenantLimpio = tenantId.toLowerCase().trim();
+        const SOCKET_URL = process.env.NEXT_PUBLIC_RAILWAY_SOCKET_URL || process.env.NEXT_PUBLIC_API_URL || 'https://amplinube-sockets-production.up.railway.app';
 
-  const refrescarOrdenes = useCallback(async () => {
-    if (fetchRef.current) {
-      try {
-        const data = await fetchRef.current();
-        if (Array.isArray(data)) {
-          setOrdenes(data);
+        // Evita crear múltiples sockets si ya hay uno vivo
+        if (!socketRef.current) {
+            socketRef.current = io(SOCKET_URL, {
+                transports: ['websocket'],
+                reconnection: true
+            });
         }
-      } catch (e) {
-        console.warn("⚠️ Error al sincronizar órdenes:", e);
-      }
-    }
-  }, []);
 
-  useEffect(() => {
-    if (!tenantId) return;
+        const socket = socketRef.current;
 
-    // Conexión directa a Railway (Socket.io)
-    const socket = io(RAILWAY_SOCKET_URL, {
-      transports: ['websocket'],
-      autoConnect: true
-    });
+        // Avisa a Railway a qué "habitación" pertenezco
+        socket.emit('join_tenant', tenantLimpio);
 
-    socketRef.current = socket;
+        socket.on('connect', () => setIsConnected(true));
+        socket.on('disconnect', () => setIsConnected(false));
 
-    socket.on('connect', () => {
-      setIsConnected(true);
-      // Unirse a la sala privada del restaurante
-      socket.emit('join_tenant', tenantId);
-    });
+        // 🟢 ESCUCHA EL EVENTO CENTRALIZADO DE RAILWAY
+        socket.on('sync_ordenes', (payload) => {
+            if (!payload || !payload.eventType) {
+                // Si Railway nos envía un evento genérico (ej. "RELOAD" manual), recargamos
+                if (typeof fetchOrdenesFrecuentes === 'function') {
+                    fetchOrdenesFrecuentes();
+                }
+                return;
+            }
 
-    socket.on('disconnect', () => {
-      setIsConnected(false);
-    });
+            const item = payload.new || payload.old;
+            if (!item) return;
 
-    // 🧠 BISTURÍ SENIOR: Escucha inteligente. Actualiza RAM directamente sin atacar Supabase
-    socket.on('sync_ordenes', (data) => {
-      if (!data) return;
-      if (data.accion === 'DELETE' && data.ordenId) {
-        setOrdenes(prev => prev.filter(o => (o.id || o._id) !== data.ordenId));
-      } else if (data.accion === 'UPSERT' && data.orden) {
-        setOrdenes(prev => {
-          const existe = prev.find(o => (o.id || o._id) === (data.orden.id || data.orden._id));
-          if (existe) {
-            return prev.map(o => (o.id || o._id) === (data.orden.id || data.orden._id) ? data.orden : o);
-          }
-          return [...prev, data.orden];
+            setOrdenes(prevOrdenes => {
+                const ordenIdModificada = item.id || item._id;
+                
+                if (payload.eventType === 'DELETE') {
+                    return prevOrdenes.filter(o => (o.id || o._id) !== ordenIdModificada);
+                }
+
+                if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+                    // En lugar de inyectar el item crudo de Supabase (que viene incompleto porque le faltan los platos relacionales),
+                    // le pedimos a la API que traiga la mesa fresca y completa.
+                    if (typeof fetchOrdenesFrecuentes === 'function') {
+                        // Usamos setTimeout ligero para evitar race conditions con Supabase
+                        setTimeout(() => fetchOrdenesFrecuentes(), 300);
+                    }
+                }
+
+                return prevOrdenes;
+            });
         });
-      } else {
-        // Salvavidas: si envían un ping antiguo vacío
-        refrescarOrdenes();
-      }
-    });
 
-    return () => {
-      socket.disconnect();
+        // 🛡️ DESCONEXIÓN: Al salir, desconecta el socket limpiamente
+        return () => {
+            if (socketRef.current) {
+                socketRef.current.off('sync_ordenes');
+                socketRef.current.off('connect');
+                socketRef.current.off('disconnect');
+                socketRef.current.disconnect();
+                socketRef.current = null;
+            }
+        };
+    }, [tenantId, fetchOrdenesFrecuentes]);
+
+    // 3. Función auxiliar para emitir cambios manuales si la UI lo requiere (Fallback)
+    const emitirCambio = (tipoAccion, data) => {
+        // Con el Multiplexor de Railway, ya no es estrictamente necesario emitir manualmente 
+        // porque Railway lee directo de Supabase y avisa a todos.
+        // Se mantiene la función vacía para no romper tu código en `useOrdenes.js`.
     };
-  }, [tenantId, refrescarOrdenes]);
 
-  // 🚀 BISTURÍ SENIOR: El emisor ahora manda el paquete de datos exacto a Railway
-  const emitirCambio = async (accion = 'RELOAD', dataPayload = null) => {
-    // Solo el dispositivo que hizo el cambio refresca su propia DB (1 sola conexión) si no es DELETE
-    if (accion === 'RELOAD') {
-      await refrescarOrdenes();
-    }
-    if (socketRef.current && isConnected) {
-      // Notifica a Railway CON EL PAYLOAD para que actúe de cartero
-      const payload = { 
-        tenantId, 
-        accion, 
-        orden: accion === 'UPSERT' ? dataPayload : null,
-        ordenId: accion === 'DELETE' ? dataPayload : null
-      };
-      socketRef.current.emit('orden_actualizada', payload);
-    }
-  };
-
-  return { ordenes, setOrdenes, isConnected, emitirCambio };
+    return { 
+        ordenes, 
+        setOrdenes, 
+        isConnected, 
+        emitirCambio 
+    };
 }

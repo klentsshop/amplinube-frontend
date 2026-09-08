@@ -1,13 +1,7 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import useSWR from 'swr';
 import { useCart } from '@/app/context/CartContext';
-import { createClient } from '@supabase/supabase-js'; // 👈 Importamos directo la librería
-
-// 🌐 Instancia ligera para el cliente (Suscripción Realtime)
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const SUPABASE_ANON = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
-const supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON);
+import { io } from 'socket.io-client'; // 👈 Reemplazamos Supabase por Socket.io
 
 const fetcher = async (url) => {
     const separator = url.includes('?') ? '&' : '?';
@@ -22,6 +16,7 @@ const fetcher = async (url) => {
 
 export function useInventario(tenantId, search = '', activo = false) {
     const { refreshStockLocal } = useCart();
+    const socketRef = useRef(null); // Usamos useRef para mantener la misma conexión viva
 
     // 1️⃣ Carga limpia e instantánea al abrir el modal (Cero caché rancia)
     const { data, error, mutate, isLoading } = useSWR(
@@ -30,89 +25,88 @@ export function useInventario(tenantId, search = '', activo = false) {
         {
             refreshInterval: 0,          // Cero polling redundante
             revalidateOnFocus: true,     // Revalida si cambias de pestaña
-            revalidateOnMount: 'always', // 🚀 OBLIGATORIO: Fuerza traer el stock fresco descontado por ventas al abrir
+            revalidateOnMount: 'always', // 🚀 OBLIGATORIO: Fuerza traer el stock fresco
             dedupingInterval: 0,         // Cero bloqueo de caché en aperturas
             revalidateIfStale: true      // Revalida si hay data almacenada previamente
         }
     );
 
-    // 2️⃣ 🚀 SUSCRIPCIÓN CONEXIÓN "LAZY" (Solo activa si la vista está ABIERTA)
+    // 2️⃣ 🚀 SUSCRIPCIÓN MULTIPLEXADA VÍA RAILWAY (No quema conexiones de Supabase)
     useEffect(() => {
         if (!tenantId || !activo) return;
 
         const tenantLimpio = tenantId.toLowerCase().trim();
+        const SOCKET_URL = process.env.NEXT_PUBLIC_RAILWAY_SOCKET_URL || process.env.NEXT_PUBLIC_API_URL || 'https://amplinube-sockets-production.up.railway.app';
 
-        const channel = supabaseClient
-            .channel(`realtime-inventario-${tenantLimpio}`)
-            .on(
-                'postgres_changes',
-                {
-                    event: '*',
-                    schema: 'public',
-                    table: 'inventarios',
-                    filter: `tenant_id=eq.${tenantLimpio}`
-                },
-                (payload) => {
-                    const insumoCambia = payload.new;
-                    if (!insumoCambia) return;
-
-                    mutate((prevData) => {
-                        if (!Array.isArray(prevData)) return prevData;
-
-                        const idModificado = insumoCambia.insumo_id || insumoCambia.id;
-                        const existe = prevData.some(i => (i.id || i._id || i.insumo_id) === idModificado);
-
-                        if (payload.eventType === 'UPDATE' || payload.eventType === 'INSERT') {
-                            if (existe) {
-                                return prevData.map(item => {
-                                    const itemId = item.id || item._id || item.insumo_id;
-                                    if (itemId === idModificado) {
-                                        return {
-                                            ...item,
-                                            stockActual: Number(insumoCambia.stock_actual ?? insumoCambia.stockActual ?? 0),
-                                            stock_actual: Number(insumoCambia.stock_actual ?? insumoCambia.stockActual ?? 0),
-                                            stockMinimo: Number(insumoCambia.stock_minimo ?? item.stockMinimo ?? 0),
-                                            nombre: insumoCambia.nombre || item.nombre,
-                                            updated_at: insumoCambia.updated_at
-                                        };
-                                    }
-                                    return item;
-                                });
-                            } else {
-                                const nuevoItem = {
-                                    ...insumoCambia,
-                                    _id: idModificado,
-                                    id: idModificado,
-                                    stockActual: Number(insumoCambia.stock_actual ?? 0),
-                                    stock_actual: Number(insumoCambia.stock_actual ?? 0)
-                                };
-                                return [...prevData, nuevoItem];
-                            }
-                        }
-
-                        return prevData;
-                    }, false);
-                }
-            )
-            .subscribe((status) => {
-                if (status === 'SUBSCRIBED') {
-                    console.log(`🟢 Realtime Inventario CONECTADO [${tenantLimpio}]`);
-                }
+        // Evita crear múltiples sockets si ya hay uno vivo
+        if (!socketRef.current) {
+            socketRef.current = io(SOCKET_URL, {
+                transports: ['websocket'],
+                reconnection: true
             });
+        }
 
-        // 🛡️ DESCONEXIÓN AUTOMÁTICA: Al cerrar el modal, destruye la suscripción en Supabase
+        const socket = socketRef.current;
+
+        // Avisa a Railway a qué "habitación" pertenezco
+        socket.emit('join_tenant', tenantLimpio);
+
+        // Escucha el evento unificado de inventario
+        socket.on('sync_inventario', (payload) => {
+            const insumoCambia = payload.new;
+            if (!insumoCambia) return;
+
+            mutate((prevData) => {
+                if (!Array.isArray(prevData)) return prevData;
+
+                const idModificado = insumoCambia.insumo_id || insumoCambia.id;
+                const existe = prevData.some(i => (i.id || i._id || i.insumo_id) === idModificado);
+
+                if (payload.eventType === 'UPDATE' || payload.eventType === 'INSERT') {
+                    if (existe) {
+                        return prevData.map(item => {
+                            const itemId = item.id || item._id || item.insumo_id;
+                            if (itemId === idModificado) {
+                                return {
+                                    ...item,
+                                    stockActual: Number(insumoCambia.stock_actual ?? insumoCambia.stockActual ?? 0),
+                                    stock_actual: Number(insumoCambia.stock_actual ?? insumoCambia.stockActual ?? 0),
+                                    stockMinimo: Number(insumoCambia.stock_minimo ?? item.stockMinimo ?? 0),
+                                    nombre: insumoCambia.nombre || item.nombre,
+                                    updated_at: insumoCambia.updated_at
+                                };
+                            }
+                            return item;
+                        });
+                    } else {
+                        const nuevoItem = {
+                            ...insumoCambia,
+                            _id: idModificado,
+                            id: idModificado,
+                            stockActual: Number(insumoCambia.stock_actual ?? 0),
+                            stock_actual: Number(insumoCambia.stock_actual ?? 0)
+                        };
+                        return [...prevData, nuevoItem];
+                    }
+                }
+                return prevData;
+            }, false);
+        });
+
+        // 🛡️ DESCONEXIÓN: Al cerrar la pestaña de inventario, desconecta el socket limpiamente
         return () => {
-            console.log(`🔴 Realtime Inventario DESCONECTADO [${tenantLimpio}]`);
-            supabaseClient.removeChannel(channel);
+            if (socketRef.current) {
+                socketRef.current.off('sync_inventario');
+                socketRef.current.disconnect();
+                socketRef.current = null;
+            }
         };
     }, [tenantId, activo, mutate]);
 
     // 3️⃣ Carga manual / Actualización directa de stock desde el frontend
     const cargarStock = async (insumoId, cantidad, tenantId) => {
         try {
-            // 🧠 ACTUALIZACIÓN OPTIMISTA:
-            // Modificamos el estado local en React al instante para que el cajero vea reflejado 
-            // el stock en 0 milisegundos.
+            // 🧠 ACTUALIZACIÓN OPTIMISTA
             const nuevoMonto = Number(cantidad);
             if (data && Array.isArray(data)) {
                 const stockOptimista = data.map(insumo => {
@@ -128,7 +122,7 @@ export function useInventario(tenantId, search = '', activo = false) {
                     }
                     return insumo;
                 });
-                mutate(stockOptimista, false); // Actualiza la UI de inmediato sin revalidar aún
+                mutate(stockOptimista, false); 
             }
 
             // 📡 Petición real al servidor Next.js para persistir en BD
@@ -143,11 +137,11 @@ export function useInventario(tenantId, search = '', activo = false) {
                 return true;
             }
             
-            await mutate(); // Si falla el servidor, revertimos al stock real
+            await mutate(); // Si falla, revertimos al stock real
             return false;
         } catch (err) {
             console.error("Error actualizando stock:", err);
-            await mutate(); // Revertimos en caso de fallo crítico de red
+            await mutate(); 
             return false;
         }
     };

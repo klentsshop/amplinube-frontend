@@ -140,21 +140,16 @@ export async function DELETE(request) {
                 cantidad
             }));
 
-            // Rehidratamos la tabla en paralelo
+           // Rehidratamos la tabla con un solo viaje a la base de datos (Atómico)
             if (devalucionesFinales.length > 0) {
-                await Promise.all(
-                    devalucionesFinales.map(async (dev) => {
-                        const { error: errStock } = await supabaseServer.rpc('descontar_stock_pos', {
-                            p_tenant_id: tenantLimpio,
-                            p_insumo_id: dev.insumo_id,
-                            p_cantidad: dev.cantidad * -1 // Suma al stock
-                        });
-
-                        if (errStock) {
-                            console.error(`⚠️ Error al devolver stock del insumo ${dev.insumo_id}:`, errStock.message);
-                        }
-                    })
-                );
+                const { error: errStock } = await supabaseServer.rpc('devolver_stock_masivo', {
+                    p_tenant_id: tenantLimpio,
+                    p_insumos: devalucionesFinales
+                });
+                
+                if (errStock) {
+                    console.error(`⚠️ Error masivo al devolver stock de insumos:`, errStock.message);
+                }
             }
 
         } catch (invError) {
