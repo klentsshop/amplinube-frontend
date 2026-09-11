@@ -143,6 +143,34 @@ return (
 )}
             {/* Menú lateral de categorías */}
             <div className={`${styles.categoriesBar} ${mostrarCategoriasMobile ? styles.categoriesBarShowMobile : ''}`}>
+                
+               {/* 🚀 BOTÓN DE CIERRE MÓVIL (Estilo App Nativa) */}
+                {mostrarCategoriasMobile && (
+                    <button 
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            setMostrarCategoriasMobile(false);
+                        }}
+                        style={{
+                            position: 'absolute', top: '12px', right: '12px',
+                            backgroundColor: '#111827', // Fondo negro/gris oscuro
+                            color: 'white',             // Letra/Icono en blanco
+                            border: 'none', 
+                            width: '30px',              // Tamaño exacto del círculo
+                            height: '30px', 
+                            borderRadius: '50%',        // Lo hace perfectamente circular
+                            display: 'flex', 
+                            alignItems: 'center', 
+                            justifyContent: 'center',
+                            fontSize: '1.1rem',         // X un poco más pequeña y centrada
+                            cursor: 'pointer', zIndex: 100,
+                            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.2)' // Sombra sutil para darle volumen
+                        }}
+                    >
+                        ✕
+                    </button>
+                )}
+
                 <h3 className={styles.mobileOnlyTitle}>Categorías</h3>
             {listaCategorias.map(cat => {
                     const catId = typeof cat === 'object' ? cat.id : cat;

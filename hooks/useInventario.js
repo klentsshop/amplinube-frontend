@@ -15,7 +15,7 @@ const fetcher = async (url) => {
 };
 
 export function useInventario(tenantId, search = '', activo = false) {
-    const { refreshStockLocal } = useCart();
+    const { refreshStockLocal, actualizarCacheStockMasivo } = useCart();
     const socketRef = useRef(null); // Usamos useRef para mantener la misma conexión viva
 
     // 1️⃣ Carga limpia e instantánea al abrir el modal (Cero caché rancia)
@@ -30,10 +30,15 @@ export function useInventario(tenantId, search = '', activo = false) {
             revalidateIfStale: true      // Revalida si hay data almacenada previamente
         }
     );
+    useEffect(() => {
+        if (data && Array.isArray(data)) {
+            actualizarCacheStockMasivo(data);
+        }
+    }, [data, actualizarCacheStockMasivo]);
 
     // 2️⃣ 🚀 SUSCRIPCIÓN MULTIPLEXADA VÍA RAILWAY (No quema conexiones de Supabase)
     useEffect(() => {
-        if (!tenantId || !activo) return;
+        if (!tenantId) return;
 
         const tenantLimpio = tenantId.toLowerCase().trim();
         const SOCKET_URL = process.env.NEXT_PUBLIC_RAILWAY_SOCKET_URL || process.env.NEXT_PUBLIC_API_URL || 'https://amplinube-sockets-production.up.railway.app';
