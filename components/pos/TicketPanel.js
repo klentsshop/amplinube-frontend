@@ -88,17 +88,8 @@ export default function TicketPanel({
     config,
     tenantId,
     setMostrarModalClientes,
+    permisos,
 }) {
-    // 🛡️ EXTRACTOR SENIOR: Busca el mesero activo en la lista para leer sus permisos individuales en tiempo real
-    const meseroActualObj = listaMeseros?.find(m => m.nombre === nombreMesero);
-    const permisos = {
-        verReporte: meseroActualObj?.verReporte || false,
-        verAdmin: meseroActualObj?.verAdmin || false,
-        puedeCargarGasto: meseroActualObj?.puedeCargarGasto || false,
-        verVentas: meseroActualObj?.verVentas || false,
-        verInventario: meseroActualObj?.verInventario || false,
-        puedeCobrar: meseroActualObj?.puedeCobrar || false,
-    };
     // 🔍 Mejora: Función para limpiar el emoji del título y evitar el doble icono
     const limpiarIconoDeTexto = (texto) => {
         const partes = texto.split(' ');

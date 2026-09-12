@@ -117,15 +117,9 @@ const generarCierreDia = async () => {
             const data = await res.json();
             if (!res.ok) throw new Error(data.error || 'Error en el servidor');
 
-            let ventasTotales = 0;
-            let porMesero = {};
-
-            (data.ventas || []).forEach(v => {
-                const monto = Number(v.totalPagado ?? v.total_pagado ?? 0);
-                ventasTotales += monto;
-                const nombre = v.mesero || "General";
-                porMesero[nombre] = (porMesero[nombre] || 0) + monto;
-            });
+            // 🚀 BISTURÍ SENIOR: Tomamos los valores absolutos que el Backend ya calculó en Supabase.
+            const ventasTotales = data.ventasTotales || 0;
+            const porMesero = data.porMesero || {};
 
             const totalGastos = (data.gastos || []).reduce(
                 (acc, g) => acc + Number(g.monto || 0),
