@@ -62,8 +62,8 @@ export default function MenuPanel({ configNegocio: configInyectada }) {
     const [platoAPesar, setPlatoAPesar] = useState(null);
     const [platosCategoriaRemota, setPlatosCategoriaRemota] = useState(null);
     const [permisosActivos, setPermisosActivos] = useState({
-        verReporte: true, verAdmin: true, puedeCargarGasto: true, 
-        verVentas: true, verInventario: true, puedeCobrar: true
+        verReporte: false, verAdmin: false, puedeCargarGasto: false, 
+        verVentas: false, verInventario: false, puedeCobrar: false
     });
     const [modalPinSeguroOpen, setModalPinSeguroOpen] = useState(false);
     const [accionPinPendiente, setAccionPinPendiente] = useState(null);
@@ -169,16 +169,24 @@ useEffect(() => {
         // 2. Evaluación de persistencia de meseros comunes
         const vendedorPersistido = localStorage.getItem('ultimoMesero');
         if (!vendedorPersistido || vendedorPersistido === 'Caja') {
-            setNombreMesero(null);
+            setNombreMesero(prev => prev ? prev : null);
             setEstaActivo(true);
+            // 🔒 BLOQUEO MAESTRO: Si entra un link nuevo, cerramos todas las puertas
+            setPermisosActivos({
+                verReporte: false, verAdmin: false, puedeCargarGasto: false, 
+                verVentas: false, verInventario: false, puedeCobrar: false
+            });
             return;
         }
 
-        setNombreMesero(vendedorPersistido);
+        // 🧠 LA MAGIA: Solo seteamos el nombre en pantalla si está vacío. 
+        // Si ya tiene un nombre (ej: "Pedro" porque cargó una mesa de él), lo respetamos intacto.
+        setNombreMesero(prev => prev ? prev : vendedorPersistido);
+        
         const llaveSesion = `check_mesero_${vendedorPersistido}_${tenantId}`;
         const yaVerificado = sessionStorage.getItem(llaveSesion);
 
-        // 🛡️ CIRUGÍA DEL ESCUDO GRANULAR: Extraemos los campos vivos de la lista local
+        // 🛡️ CIRUGÍA DEL ESCUDO GRANULAR: Evaluamos los permisos basados en el dueño de la tablet
         if (listaMeseros.length > 0) {
             const coincidencia = listaMeseros.find(m => m.nombre === vendedorPersistido);
             if (coincidencia) {
@@ -206,7 +214,7 @@ useEffect(() => {
         }
     };
     verificarSeguridadMesero();
-}, [tenantId, acc.esModoCajero, listaMeseros]);
+}, [tenantId, acc.esModoCajero, listaMeseros, nombreMesero]);
 
 const datosAgrupados = React.useMemo(() => {
         if (!cart?.length)return { cliente: [], cocina: [] };

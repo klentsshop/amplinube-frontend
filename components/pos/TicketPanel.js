@@ -276,8 +276,9 @@ export default function TicketPanel({
         maxWidth: '180px'
     }}
 >
-    <option value="">👤 Vendedor...</option>
-    {esModoCajero && <option value="Caja">💰 Caja (Auto)</option>}
+   <option value="">👤 Vendedor...</option>
+    {/* 🛡️ BISTURÍ: Si es cajero o si la orden actual ya le pertenece a Caja, mostramos la opción para que HTML no se confunda */}
+    {(esModoCajero || nombreMesero === 'Caja') && <option value="Caja">💰 Caja (Auto)</option>}
     {listaMeseros?.map(m => (
         <option key={m.id || m._id} value={m.nombre}>{m.nombre}</option>
     ))}

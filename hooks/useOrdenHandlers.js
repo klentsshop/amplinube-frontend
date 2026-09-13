@@ -351,7 +351,7 @@ export function useOrdenHandlers({
                     mesa: mesaParaVenta,
                     tipoOrden: tipoOrden || "mesa",
                     datosEntrega,
-                    mesero: nombreMesero || "Caja", 
+                    mesero: (ordenActivaId ? (ordenesActivas.find(o => (o.id || o._id) === ordenActivaId)?.mesero || nombreMesero) : nombreMesero) || "Caja",
                     // 🛡️ BISTURÍ: Si es mixto clásico, forzamos que guarde el método combinado en el string general
                     metodoPago: metodoPrimario === 'mixto' ? 'MIXTO_EFECTIVO_TARJETA' : metodoPrimario,
                     detallePagos: detalleFinal,
