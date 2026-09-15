@@ -109,55 +109,8 @@ export function CartProvider({ children, tenantId }) {
     const precioNum = typeof product.precio === 'number' ? product.precio : cleanPrice(product.precio);
     const cantAAgregar = cantidadManual !== null ? Number(cantidadManual) : 1;
 
-    // 🛑 ESCUDO PREVENTIVO ANTI-SOBREVENTA Y ALERTAS
-    const controlaInv = product.controlaInventario === true || product.controla_inventario === true;
-
-    if (controlaInv) {
-        const receta = (product.recetaInsumos || product.insumosReceta || []).length > 0 
-            ? (product.recetaInsumos || product.insumosReceta) 
-            : (product.insumoVinculado?._ref || product.insumoId || product.insumo_id || product.insumoVinculadoRef ? [{ 
-                insumoId: product.insumoVinculado?._ref || product.insumoId || product.insumo_id || product.insumoVinculadoRef, 
-                cantidad: Number(product.cantidadADescontar || product.cantidad_a_descontar) || 1 
-              }] : []);
-
-        if (receta.length > 0) {
-            for (const rec of receta) {
-                const idDelInsumo = rec.insumoId || rec.insumo_id || rec._ref || rec.id;
-                const infoInsumo = stockLocalCache.get(idDelInsumo);
-                
-                // 🧠 Leemos de RAM (stockLocalCache) o directo del producto si la RAM falló
-                const stockDisponible = infoInsumo !== undefined 
-                    ? (typeof infoInsumo === 'object' ? infoInsumo.stockActual : Number(infoInsumo)) 
-                    : Number(product.stock_actual ?? product.stockActual ?? 9999);
-                
-                const stockMinimoBD = infoInsumo !== undefined 
-                    ? (typeof infoInsumo === 'object' ? infoInsumo.stockMinimo : 5) 
-                    : Number(product.stock_minimo ?? product.stockMinimo ?? 5);
-
-                const yaEnCarrito = items.reduce((acc, it) => {
-                    if ((it._id === pId || it.id === pId)) {
-                        return acc + (it.cantidad * rec.cantidad);
-                    }
-                    return acc;
-                }, 0);
-
-                const necesidadTotal = yaEnCarrito + (rec.cantidad * cantAAgregar);
-                const stockRestante = stockDisponible - necesidadTotal;
-
-                // ⚠️ ALERTA SUAVE Y SIN BLOQUEOS (Jamás se usa 'return' para abortar la venta)
-                if (stockDisponible !== 9999 && stockRestante <= stockMinimoBD && !avisosDados.has(pId)) {
-                    avisosDados.add(pId);
-                    
-                    if (stockRestante < 0) {
-                        alert(`⚠️ INVENTARIO AGOTADO: "${product.nombre || product.nombrePlato}" SE AGREGA AL CARRITO PARA NO DETENER LA VENTA. VALIDAR`);
-                    } else {
-                        alert(`⚠️ STOCK MÍNIMO: A "${product.nombre || product.nombrePlato}" solo le quedan ${stockRestante} unidades.`);
-                    }
-                }
-            }
-        }
-    }
-
+    // 🛑 ESCUDO PREVENTIVO (Desactivado temporalmente para estabilizar la operación)
+    // const controlaInv = product.controlaInventario === true || product.controla_inventario === true;
 setItems(prev => {
     const esPesado = cantidadManual !== null;
     const existingIdx = !esPesado ? prev.findIndex(it => 
