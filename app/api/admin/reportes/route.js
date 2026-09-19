@@ -14,20 +14,22 @@ export async function POST(request) {
         }
 
         // 🛡️ 1. VALIDACIÓN DIRECTA Y PRIVADA DE PIN ADMIN (Sanity + Backup ENV)
+        // 🛡️ 1. VALIDACIÓN DIRECTA EN SUPABASE (Privada en servidor, inmune a Sanity)
         let PIN_ADMIN_REAL = process.env.PIN_ADMIN;
         let catalogoPlatosLocal = []; 
+        const cleanTenant = tenantId.toLowerCase().trim();
 
         try {
-            // A. Extraemos el PIN Admin real de forma privada en servidor desde Sanity
-            const docSeguridad = await sanityClientServer.fetch(
-                `*[_type == "seguridad" && tenant == $tenantId][0]{ pinAdmin }`,
-                { tenantId: tenantId.toLowerCase().trim() }
-            );
+            // A. Consulta a tu tabla privada por tenant_id exacto
+            const { data: segDb } = await supabaseServer
+                .from('tenant_security')
+                .select('pin_admin')
+                .eq('tenant_id', cleanTenant)
+                .maybeSingle();
 
-            if (docSeguridad?.pinAdmin) {
-                PIN_ADMIN_REAL = String(docSeguridad.pinAdmin).trim();
+            if (segDb?.pin_admin) {
+                PIN_ADMIN_REAL = String(segDb.pin_admin).trim();
             }
-
             // B. Para la lista de platos, seguimos aprovechando la caché ultrarrápida de Supabase
             const { data: configNegocio } = await supabaseServer
                 .from('catalog_cache')

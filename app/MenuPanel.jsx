@@ -22,6 +22,7 @@ import TicketPanel from '@/components/pos/TicketPanel';
 import ProductGrid from '@/components/pos/ProductGrid';
 import styles from './MenuPanel.module.css';
 import HistorialVentasModal from '@/components/modals/HistorialVentasModal';
+import ModalReporteVendedor from '@/components/modals/ModalReporteVendedor';
 import InventarioModal from '@/components/modals/InventarioModal';
 import ModalClientesDomicilios from '@/components/modals/ModalClientesDomicilios';
 import ConfigImpresionModal from '@/components/modals/ConfigImpresionModal/ConfigImpresionModal';
@@ -47,6 +48,7 @@ export default function MenuPanel({ configNegocio: configInyectada }) {
     const [errorPin, setErrorPin] = useState(false);
     const [busqueda, setBusqueda] = useState(''); // 🔍 Nuevo estado para el buscador
     const [mostrarModalHistorial, setMostrarModalHistorial] = useState(false);
+    const [mostrarReporteVendedor, setMostrarReporteVendedor] = useState(false);
     const [mostrarInventario, setMostrarInventario] = useState(false);
     const [idClienteEditando, setIdClienteEditando] = useState(null);
     const [cliNombre, setCliNombre] = useState('');
@@ -203,7 +205,8 @@ useEffect(() => {
                         puedeCargarGasto: coincidencia.puedeCargarGasto === true,
                         verVentas: coincidencia.verVentas === true,
                         verInventario: coincidencia.verInventario === true,
-                        puedeCobrar: coincidencia.puedeCobrar === true
+                        puedeCobrar: coincidencia.puedeCobrar === true,
+                        verComision: Boolean(coincidencia.ver_comision ?? coincidencia.verComision ?? false)
                     });
                 }
             } else {
@@ -787,7 +790,7 @@ if (!estaActivo) {
                     setErrorMesaOcupada={ord.setErrorMesaOcupada}cobrarOrden={ord.cobrarOrden}
                     generarCierreDia={rep.generarCierreDia} solicitarAccesoCajero={acc.solicitarAccesoCajero}
                     solicitarAccesoAdmin={acc.solicitarAccesoAdmin} registrarGasto={gst.registrarGasto}
-                    refreshOrdenes={refreshOrdenes} setMostrarListaOrdenes={setMostrarListaOrdenes}
+                    refreshOrdenes={refreshOrdenes} setMostrarListaOrdenes={setMostrarListaOrdenes} setMostrarReporteVendedor={setMostrarReporteVendedor}
                     mostrarCarritoMobile={mostrarCarritoMobile} setMostrarCarritoMobile={setMostrarCarritoMobile}
                     ordenMesa={ord.ordenMesa} nombreMesero={nombreMesero} setNombreMesero={ord.setNombreMesero || setNombreMesero}
                     listaMeseros={listaMeseros} esModoCajero={acc.esModoCajero}
@@ -875,6 +878,12 @@ if (!estaActivo) {
              onClose={() => setMostrarModalHistorial(false)} 
              onReimprimir={handleReimprimirVenta}
              tenantId={tenantId}
+            />
+            <ModalReporteVendedor 
+            isOpen={mostrarReporteVendedor}
+            onClose={() => setMostrarReporteVendedor(false)}
+            tenantId={tenantId}
+            nombreVendedor={nombreMesero}
             />
             <InventarioModal 
             isOpen={mostrarInventario} 

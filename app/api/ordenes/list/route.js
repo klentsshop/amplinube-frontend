@@ -192,32 +192,78 @@ export async function POST(request) {
 
         const estacionesSet = new Set();
 
-        const platosNormalizados = platosOrdenados.map(p => {
-            // A) UUID Relacional Puro (para la DB)
-            const catUuidLimpio = typeof p.categoria === 'object' 
-                ? (p.categoria?.id || p.categoria?._id || p.categoria?._ref || '') 
-                : String(p.categoria || p.categoria_id || '').trim().toLowerCase();
+        // 🛡️ Extraemos la lista de nombres reales en mayúsculas de este restaurante
+        const titulosValidosNegocio = new Map();
+        mapaTitulosCategorias.forEach((titulo, uuid) => {
+            titulosValidosNegocio.set(titulo.toUpperCase().trim(), titulo.toUpperCase().trim());
+        });
 
-            // B) Nombre Legible para Impresión (para estaciones_pendientes)
-            let nombreLegibleCat = String(p.categoriaNombre || p.categoriaLabel || p.nombreCategoria || "").trim().toUpperCase();
-            
-            // 🛡️ REGLA ATÓMICA: Si no viene nombre o venía el UUID enmascarado, se rescata el nombre legible real del mapa
-            if (!nombreLegibleCat || nombreLegibleCat.toLowerCase() === catUuidLimpio) {
-                nombreLegibleCat = mapaTitulosCategorias.get(catUuidLimpio) || "GENERAL";
+        const platosNormalizados = platosOrdenados.map(p => {
+            const catOriginal = typeof p.categoria === 'object'
+                ? (p.categoria?.titulo || p.categoria?.nombre || p.categoria?.id || '')
+                : String(p.categoria || '').trim();
+
+            const catLabelOriginal = String(p.categoriaNombre || p.categoriaLabel || p.nombreCategoria || '').trim();
+            const catUuidLimpio = String(catOriginal).toLowerCase();
+
+            // 🎯 RESOLUCIÓN ESTRICTA:
+            // 1. ¿Ya es un nombre válido de categoría en este negocio? (ej: "DIARIO") -> Se respeta.
+            // 2. ¿Es un UUID? -> Se traduce con el mapa al nombre real.
+            // 3. ¿El label ya traía un nombre válido? -> Se respeta.
+            let nombreLegibleCat = "";
+
+            // 1. ¿El texto de categoria o categoriaNombre ya es un título válido del negocio?
+            if (titulosValidosNegocio.has(catOriginal.toUpperCase()) && catOriginal.toUpperCase() !== "GENERAL") {
+                nombreLegibleCat = titulosValidosNegocio.get(catOriginal.toUpperCase());
+            } else if (titulosValidosNegocio.has(catLabelOriginal.toUpperCase()) && catLabelOriginal.toUpperCase() !== "GENERAL") {
+                nombreLegibleCat = titulosValidosNegocio.get(catLabelOriginal.toUpperCase());
+            } 
+            // 2. ¿Es un UUID registrado en el mapa?
+            else if (mapaTitulosCategorias.has(catUuidLimpio) && mapaTitulosCategorias.get(catUuidLimpio) !== "GENERAL") {
+                nombreLegibleCat = mapaTitulosCategorias.get(catUuidLimpio);
+            } 
+            // 3. Si venía como "GENERAL" o vacío, buscamos la categoría real del plato en la caché del negocio
+            else if (cacheRow?.payload_json && Array.isArray(cacheRow.payload_json)) {
+                const platoIdBuscar = String(p._id || p.id || p.plato_id || "").trim();
+                const platoMaestro = cacheRow.payload_json.find(item => 
+                    (item._id === platoIdBuscar || item.id === platoIdBuscar) ||
+                    (item.nombre && item.nombre.trim().toUpperCase() === String(p.nombrePlato || p.nombre).trim().toUpperCase())
+                );
+
+                if (platoMaestro) {
+                    const cRef = typeof platoMaestro.categoria === 'object' 
+                        ? (platoMaestro.categoria?._ref || platoMaestro.categoria?.id) 
+                        : platoMaestro.categoria;
+                    const cRefLimpio = String(cRef || "").trim().toLowerCase();
+
+                    if (mapaTitulosCategorias.has(cRefLimpio)) {
+                        nombreLegibleCat = mapaTitulosCategorias.get(cRefLimpio);
+                    } else if (titulosValidosNegocio.has(String(platoMaestro.categoriaNombre || "").toUpperCase())) {
+                        nombreLegibleCat = String(platoMaestro.categoriaNombre).toUpperCase();
+                    }
+                }
+            }
+
+            // Si después de todo no resolvió, nunca forzar GENERAL; se conserva texto limpio
+            if (!nombreLegibleCat || nombreLegibleCat.toUpperCase() === "GENERAL") {
+                nombreLegibleCat = (catLabelOriginal && catLabelOriginal.toUpperCase() !== "GENERAL") 
+                    ? catLabelOriginal 
+                    : ((catOriginal && catOriginal.toUpperCase() !== "GENERAL") ? catOriginal : "");
             }
 
             const catSlugLimpio = String(p.categoriaSlug || p.slug || "").trim().toLowerCase();
 
-            // C) Validación de Exclusión
+            // Validación estricta de exclusión
             const esCategoriaExcluida = idsExcluidos.has(catUuidLimpio) || 
-                                       titulosExcluidos.has(nombreLegibleCat) || 
+                                       titulosExcluidos.has(nombreLegibleCat.toUpperCase()) || 
                                        slugsExcluidos.has(catSlugLimpio);
 
-            const debeImprimir = !esCategoriaExcluida && p.seImprime !== false;
+            const debeImprimir = !esCategoriaExcluida && p.seImprime !== false && p.se_imprime !== false;
 
-            // Se registra el NOMBRE LEGIBLE (ej: "PAQUETES") en la comanda de la tablet
-            if (debeImprimir && nombreLegibleCat) {
-                estacionesSet.add(nombreLegibleCat);
+            // 🛡️ Solo se agrega a estaciones pendientes si el plato debe imprimirse
+            // y tiene una categoría válida real distinta de "GENERAL" y vacíos
+            if (debeImprimir && nombreLegibleCat && nombreLegibleCat.toUpperCase() !== 'GENERAL') {
+                estacionesSet.add(nombreLegibleCat.toUpperCase());
             }
 
             // D) Preparación del Comentario de Inventario

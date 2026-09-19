@@ -362,7 +362,7 @@
     padding: 8px 20px;
     border-radius: 25px;
     border: 1px solid #e2e8f0;
-    font-size: 14px;
+    font-size: 16px; /* 🍏 Mínimo requerido por iOS para no activar auto-zoom */
     outline: none;
     transition: all 0.3s ease;
     background-color: #ffffff;

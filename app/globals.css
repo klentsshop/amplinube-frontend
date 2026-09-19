@@ -245,3 +245,25 @@ body {
   background-color: white !important;
   min-height: 100vh;
 }
+/* 🍏 Blindaje de gestos táctiles exclusivo para iOS y toques rápidos */
+html, body {
+  -webkit-text-size-adjust: 100%;
+}
+
+button, 
+input, 
+select, 
+textarea,
+[class*="productCard"],
+[class*="catBtn"] {
+  touch-action: manipulation;
+}
+
+/* 🍏 Evita el zoom automático en inputs dentro de dispositivos iOS */
+@supports (-webkit-touch-callout: none) {
+  input, 
+  select, 
+  textarea {
+    font-size: 16px !important;
+  }
+}

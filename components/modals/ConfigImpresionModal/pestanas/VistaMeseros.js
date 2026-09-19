@@ -23,6 +23,7 @@ export default function VistaMeseros({
     const [verVentas, setVerVentas] = useState(false);
     const [verInventario, setVerInventario] = useState(false);
     const [puedeCobrar, setPuedeCobrar] = useState(false);
+    const [verComision, setVerComision] = useState(false);
 
     const [subPestana, setSubPestana] = useState(editandoMeseroId ? 'formulario' : 'listado');
 
@@ -41,6 +42,7 @@ export default function VistaMeseros({
             setVerVentas(false);
             setVerInventario(false);
             setPuedeCobrar(false);
+            setVerComision(false);
         } else {
             const idBuscado = editandoMeseroId;
             const meseroMatch = meserosFiltrados.find(m => (m.id || m._id) === idBuscado);
@@ -53,6 +55,7 @@ export default function VistaMeseros({
                 setVerVentas(Boolean(meseroMatch.ver_ventas ?? meseroMatch.verVentas ?? false));
                 setVerInventario(Boolean(meseroMatch.ver_inventario ?? meseroMatch.verInventario ?? false));
                 setPuedeCobrar(Boolean(meseroMatch.puede_cobrar ?? meseroMatch.puedeCobrar ?? false));
+                setVerComision(Boolean(meseroMatch.ver_comision ?? meseroMatch.verComision ?? false));
             }
         }
     }, [editandoMeseroId, meserosFiltrados]);
@@ -68,6 +71,7 @@ export default function VistaMeseros({
                 setVerVentas(Boolean(item.ver_ventas ?? item.verVentas ?? false));
                 setVerInventario(Boolean(item.ver_inventario ?? item.verInventario ?? false));
                 setPuedeCobrar(Boolean(item.puede_cobrar ?? item.puedeCobrar ?? false));
+                setVerComision(Boolean(item.ver_comision ?? item.verComision ?? false));
             }
         };
 
@@ -105,7 +109,7 @@ export default function VistaMeseros({
                         e.preventDefault();
                         const pseudoEvento = {
                             preventDefault: () => {},
-                            target: { verReporte, verAdmin, puedeCargarGasto, verVentas, verInventario, puedeCobrar }
+                            target: { verReporte, verAdmin, puedeCargarGasto, verVentas, verInventario, puedeCobrar, verComision }
                         };
                         handleGuardarMesero(pseudoEvento);
                         setSubPestana('listado');
@@ -168,7 +172,7 @@ export default function VistaMeseros({
                                     e.preventDefault();
                                     const pseudoEvento = {
                                         preventDefault: () => {},
-                                        target: { verReporte, verAdmin, puedeCargarGasto, verVentas, verInventario, puedeCobrar }
+                                        target: { verReporte, verAdmin, puedeCargarGasto, verVentas, verInventario, puedeCobrar, verComision }
                                     };
                                     handleGuardarMesero(pseudoEvento);
                                     setSubPestana('listado');
@@ -220,6 +224,10 @@ export default function VistaMeseros({
                                 <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.7rem', fontWeight: 'bold', color: '#374151', cursor: 'pointer' }}>
                                     <input type="checkbox" checked={puedeCobrar} onChange={e => setPuedeCobrar(e.target.checked)} style={{ width: '14px', height: '14px' }} />
                                     💵 COBRAR
+                                </label>
+                                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.7rem', fontWeight: 'bold', color: '#059669', cursor: 'pointer' }}>
+                                    <input type="checkbox" checked={verComision} onChange={e => setVerComision(e.target.checked)} style={{ width: '14px', height: '14px', accentColor: '#059669' }} />
+                                    📈 COMISIÓN (MI DÍA)
                                 </label>
                             </div>
                         </div>

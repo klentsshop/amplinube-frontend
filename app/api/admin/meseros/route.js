@@ -57,7 +57,7 @@ export async function GET(request) {
 
         const { data, error } = await supabaseServer
             .from('meseros')
-            .select('id, tenant, nombre, activo, ver_reporte, ver_admin, puede_cargar_gasto, ver_ventas, ver_inventario, puede_cobrar, created_at')
+            .select('id, tenant, nombre, activo, ver_reporte, ver_admin, puede_cargar_gasto, ver_ventas, ver_inventario, puede_cobrar, ver_comision, created_at')
             .eq('tenant', tenantId)
             .order('nombre', { ascending: true });
 
@@ -76,7 +76,7 @@ export async function POST(request) {
         const body = await request.json();
         const { 
             nombre, activo, tenantId,
-            verReporte, verAdmin, puedeCargarGasto, verVentas, verInventario, puedeCobrar 
+            verReporte, verAdmin, puedeCargarGasto, verVentas, verInventario, puedeCobrar, verComision
         } = body;
 
         const tenantLimpio = tenantId?.toLowerCase().trim();
@@ -96,7 +96,8 @@ export async function POST(request) {
                 puede_cargar_gasto: Boolean(puedeCargarGasto),
                 ver_ventas: Boolean(verVentas),
                 ver_inventario: Boolean(verInventario),
-                puede_cobrar: Boolean(puedeCobrar)
+                puede_cobrar: Boolean(puedeCobrar),
+                ver_comision: Boolean(verComision)
             }])
             .select()
             .single();
@@ -118,7 +119,8 @@ export async function POST(request) {
             puedeCargarGasto: data.puede_cargar_gasto ?? false,
             verVentas: data.ver_ventas ?? false,
             verInventario: data.ver_inventario ?? false,
-            puedeCobrar: data.puede_cobrar ?? false
+            puedeCobrar: data.puede_cobrar ?? false,
+            verComision: data.ver_comision ?? false
         };
 
         await actualizarCacheLocal(tenantLimpio, meseroCache, false);
@@ -138,7 +140,7 @@ export async function PUT(request) {
         const body = await request.json();
         const { 
             itemId, id, _id, nombre, activo, tenantId,
-            verReporte, verAdmin, puedeCargarGasto, verVentas, verInventario, puedeCobrar 
+            verReporte, verAdmin, puedeCargarGasto, verVentas, verInventario, puedeCobrar, verComision
         } = body;
 
         const tenantLimpio = tenantId?.toLowerCase().trim();
@@ -158,6 +160,7 @@ export async function PUT(request) {
         if (verVentas !== undefined) camposAActualizar.ver_ventas = Boolean(verVentas);
         if (verInventario !== undefined) camposAActualizar.ver_inventario = Boolean(verInventario);
         if (puedeCobrar !== undefined) camposAActualizar.puede_cobrar = Boolean(puedeCobrar);
+        if (verComision !== undefined) camposAActualizar.ver_comision = Boolean(verComision);
 
         const { data, error } = await supabaseServer
             .from('meseros')
@@ -186,7 +189,8 @@ export async function PUT(request) {
             puedeCargarGasto: data.puede_cargar_gasto ?? false,
             verVentas: data.ver_ventas ?? false,
             verInventario: data.ver_inventario ?? false,
-            puedeCobrar: data.puede_cobrar ?? false
+            puedeCobrar: data.puede_cobrar ?? false,
+            verComision: data.ver_comision ?? false
         };
 
         await actualizarCacheLocal(tenantLimpio, meseroCache, false);

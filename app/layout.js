@@ -37,6 +37,13 @@ export const metadata = {
   description: `Sistema de ventas para ${SITE_CONFIG.brand.name}`,
 };
 
+export const viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+};
+
 export default function RootLayout({ children }) {
   const tenantId = getTenantKey(); 
 

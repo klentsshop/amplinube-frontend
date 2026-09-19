@@ -179,7 +179,7 @@ setItems(prev => {
         precioNum: precioUnit,
         subtotalNum: Number((precioUnit * cant).toFixed(2)),
         comentario: p.comentario || "",
-        categoria: String(p.categoria || "").trim().toLowerCase(), // 🛡️ UUID Relacional
+        categoria: String(p.categoria || "").trim(), // 🛡️ UUID Relacional
         categoriaNombre: String(p.categoriaNombre || p.categoriaLabel || p.categoria_label || p.categoria || "").toString().toUpperCase().trim(), // 🖨️ Nombre Legible Impresión
         categoriaLabel: String(p.categoriaNombre || p.categoriaLabel || p.categoria_label || p.categoria || "").toString().toUpperCase().trim(),
         controlaInventario: p.controlaInventario === true || p.controla_inventario === true,

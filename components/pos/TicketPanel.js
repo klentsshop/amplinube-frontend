@@ -89,6 +89,7 @@ export default function TicketPanel({
     tenantId,
     setMostrarModalClientes,
     permisos,
+    setMostrarReporteVendedor,
 }) {
     // 🔍 Mejora: Función para limpiar el emoji del título y evitar el doble icono
     const limpiarIconoDeTexto = (texto) => {
@@ -305,6 +306,27 @@ export default function TicketPanel({
     >
         ÓRDENES ({numOrdenesActivas})
     </button>
+    {/* BOTÓN MI REPORTE (Visible para el vendedor activo) */}
+{nombreMesero && nombreMesero !== 'Caja' && permisos?.verComision && (
+    <button 
+        type="button"
+        onClick={() => setMostrarReporteVendedor(true)}
+        style={{
+            flex: '1 1 30%',
+            minWidth: '80px',
+            padding: 'clamp(8px, 2.4vw, 7px) 2px',
+            backgroundColor: '#059669', // Verde Esmeralda
+            color: 'white',
+            border: 'none',
+            borderRadius: '6px',
+            fontSize: 'clamp(0.85rem, 2.5vw, 0.75rem)',
+            fontWeight: '900',
+            cursor: 'pointer'
+        }}
+    >
+        MI DÍA (40%)
+    </button>
+)}
     {/* 5. + GASTO */}
     {(esModoCajero || permisos.puedeCargarGasto) && (
         <button 

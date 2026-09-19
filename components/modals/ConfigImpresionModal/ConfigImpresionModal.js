@@ -672,12 +672,13 @@ const activarEdicionProducto = (prod) => {
     }, [listaMeserosCompletas, busquedaMesero]);
 
     // 🚀 OPERACIONES CRUD VENDEDORES (PAYLOAD GRANULAR EXTRAÍDO)
+    // 🚀 OPERACIONES CRUD VENDEDORES (PAYLOAD GRANULAR EXTRAÍDO)
     const handleGuardarMesero = async (e) => {
         if (e && typeof e.preventDefault === 'function') e.preventDefault();
         if (!meseroNombre.trim()) return alert("⚠️ El nombre es obligatorio.");
         setGuardando(true);
         
-        // 🧠 DESESTRUCTURACIÓN AVANZADA: Extraemos los 6 interruptores empaquetados en el hijo
+        // 🧠 DESESTRUCTURACIÓN AVANZADA: Extraemos los 7 interruptores empaquetados en el hijo
         const targetPermisos = e?.target || {};
         const permisosPayload = {
             verReporte: targetPermisos.verReporte === true,
@@ -685,7 +686,8 @@ const activarEdicionProducto = (prod) => {
             puedeCargarGasto: targetPermisos.puedeCargarGasto === true,
             verVentas: targetPermisos.verVentas === true,
             verInventario: targetPermisos.verInventario === true,
-            puedeCobrar: targetPermisos.puedeCobrar === true
+            puedeCobrar: targetPermisos.puedeCobrar === true,
+            verComision: targetPermisos.verComision === true // 👈 AQUÍ FALTABA EXTRAERLO
         };
 
         try {
@@ -697,14 +699,13 @@ const activarEdicionProducto = (prod) => {
                     nombre: meseroNombre.trim(), 
                     activo: meseroActivo,
                     tenantId, 
-                    ...permisosPayload, // 🎯 INYECCIÓN ATÓMICA DE LOS 6 PERMISOS HACIA TU API
+                    ...permisosPayload, // 🎯 INYECCIÓN ATÓMICA DE LOS 7 PERMISOS
                     ...(editandoMeseroId && { itemId: editandoMeseroId }) 
                 })
             });
             const data = await res.json();
             
             if (data.ok) {
-                // 🧠 Con el 'return' detenemos la ejecución de inmediato para evitar alertas fantasmas
                 if (editandoMeseroId) {
                     alert('🔄 ¡Vendedor modificado con éxito!');
                 } else {
@@ -712,7 +713,7 @@ const activarEdicionProducto = (prod) => {
                 }
                 cancelarEdicionMesero();
                 await cargarMeserosNegocio();
-                return; // 👈 Salida limpia de la función
+                return;
             } else { 
                 alert(`❌ Error en el servidor: ${data.error || 'No se pudo procesar'}`); 
             }
