@@ -324,7 +324,7 @@ export default function TicketPanel({
             cursor: 'pointer'
         }}
     >
-        MI DÍA (40%)
+        MI DÍA 
     </button>
 )}
     {/* 5. + GASTO */}
