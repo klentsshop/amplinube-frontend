@@ -55,7 +55,10 @@ export default function VistaProductos({
                     controlaInventario: producto.controla_inventario ?? producto.controlaInventario ?? false,
                     categoria: producto.categoria_id || producto.categoria,
                     tenantId: tenantId,
-                    esVentaPorPeso: producto.es_venta_por_peso ?? producto.esVentaPorPeso ?? false
+                    esVentaPorPeso: producto.es_venta_por_peso ?? producto.esVentaPorPeso ?? false,
+                    barcode: producto.barcode || null,
+                    codigoBalanza: producto.codigo_balanza || producto.codigoBalanza || null
+                
                 })
             });
 
