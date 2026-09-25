@@ -22,11 +22,121 @@ export default function VistaProductos({
     const timerBusquedaRef = useRef(null);
     const [subPestana, setSubPestana] = useState(editandoProductoId ? 'formulario' : 'listado');
     
-    // 🧠 ESTADOS PARA BÚSQUEDA AUTÓNOMA EN TODA LA BASE DE DATOS
-    const [productosVisuales, setProductosVisuales] = useState(listaProductosCompletas);
+   const [productosVisuales, setProductosVisuales] = useState(listaProductosCompletas);
     const timerBusquedaTablaRef = useRef(null);
 
-   React.useEffect(() => {
+    // ⚡ Estados para cambio de precios individuales y margen masivo
+    const [preciosRapidos, setPreciosRapidos] = useState({});
+    const [guardandoPrecioId, setGuardandoPrecioId] = useState(null);
+    const [margenGlobalPeso, setMargenGlobalPeso] = useState('');
+    const [aplicandoMargenMasivo, setAplicandoMargenMasivo] = useState(false);
+
+    // 1️⃣ Guardar precio individual (Cajita blanca + Chulito)
+    const handleGuardarPrecioRapido = async (e, producto) => {
+        e.stopPropagation();
+        const prodId = producto.id || producto._id;
+        const nuevoPrecio = Number(preciosRapidos[prodId]);
+
+        if (!nuevoPrecio || nuevoPrecio <= 0) {
+            return alert("⚠️ Escribe un precio válido mayor a 0.");
+        }
+
+        setGuardandoPrecioId(prodId);
+        try {
+            const res = await fetch('/api/admin/productos', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    productoId: prodId,
+                    nombre: producto.nombre,
+                    precio: nuevoPrecio,
+                    precioCosto: Number(producto.precio_costo ?? producto.precioCosto ?? 0),
+                    disponible: producto.disponible !== false,
+                    controlaInventario: producto.controla_inventario ?? producto.controlaInventario ?? false,
+                    categoria: producto.categoria_id || producto.categoria,
+                    tenantId: tenantId,
+                    esVentaPorPeso: producto.es_venta_por_peso ?? producto.esVentaPorPeso ?? false
+                })
+            });
+
+            const data = await res.json();
+            if (res.ok && data.ok) {
+                producto.precio = nuevoPrecio;
+                producto.precioNum = nuevoPrecio;
+                setPreciosRapidos(prev => {
+                    const copia = { ...prev };
+                    delete copia[prodId];
+                    return copia;
+                });
+                window.dispatchEvent(new Event('inventarioActualizado'));
+            } else {
+                alert(`❌ Error al actualizar precio: ${data.error || 'No se pudo guardar'}`);
+            }
+        } catch (err) {
+            console.error("Error al actualizar precio rápido:", err);
+            alert("❌ Fallo de comunicación al guardar el precio.");
+        } finally {
+            setGuardandoPrecioId(null);
+        }
+    };
+
+    // 2️⃣ Aplicar margen atómico con 1 sola petición HTTP hacia Supabase
+    const handleAplicarMargenMasivo = async () => {
+        const margen = Number(margenGlobalPeso);
+        if (!margen || margen <= 0) {
+            return alert("⚠️ Escribe un porcentaje de margen válido (Ej: 40 para 40%).");
+        }
+
+        if (!confirm(`⚖️ ¿Deseas aplicar un +${margen}% de ganancia sobre el costo a todos los productos por peso?`)) {
+            return;
+        }
+
+        setAplicandoMargenMasivo(true);
+
+        try {
+            // 🚀 UN SOLO DISPARO DE RED
+            const res = await fetch('/api/admin/productos/margen-peso', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    tenantId: tenantId,
+                    margen: margen
+                })
+            });
+
+            const data = await res.json();
+
+            if (res.ok && data.ok) {
+                if (data.actualizados === 0) {
+                    alert("⚠️ No se encontraron productos por peso con Precio de Costo diligenciado.");
+                } else {
+                    // Mapeo en memoria local en 1 milisegundo para reflejo inmediato en pantalla
+                    const mapaActualizados = new Map((data.itemsActualizados || []).map(u => [u.id, u.precio]));
+
+                    (listaProductosCompletas || []).forEach(prod => {
+                        const id = prod.id || prod._id;
+                        if (mapaActualizados.has(id)) {
+                            prod.precio = mapaActualizados.get(id);
+                            prod.precioNum = mapaActualizados.get(id);
+                        }
+                    });
+
+                    alert(`✅ ¡Éxito! Se actualizaron ${data.actualizados} producto(s) por peso con el +${margen}% de margen en una sola transacción.`);
+                    setMargenGlobalPeso('');
+                    window.dispatchEvent(new Event('inventarioActualizado'));
+                }
+            } else {
+                alert(`❌ Error al procesar margen masivo: ${data.error || 'Fallo interno'}`);
+            }
+        } catch (err) {
+            console.error("Error en margen masivo:", err);
+            alert("❌ Fallo de comunicación al aplicar el margen masivo.");
+        } finally {
+            setAplicandoMargenMasivo(false);
+        }
+    };
+
+    React.useEffect(() => {
         if (busquedaProd && busquedaProd.trim() !== '') {
             const termino = busquedaProd.toLowerCase().trim();
             const filtrados = listaProductosCompletas.filter(p => 
@@ -35,7 +145,6 @@ export default function VistaProductos({
             );
             setProductosVisuales(filtrados);
         } else {
-            // Protección Híbrida: Mantiene la referencia original del padre
             setProductosVisuales(listaProductosCompletas || []);
         }
     }, [listaProductosCompletas, busquedaProd]);
@@ -404,38 +513,85 @@ export default function VistaProductos({
                 </button>
             </div>
             )}
-            {/* 🎯 CONVERGENCIA SENIOR: Si la pestaña es listado, renderizamos la tabla */}
+           {/* 🎯 CONVERGENCIA SENIOR: Si la pestaña es listado, renderizamos la tabla */}
             {subPestana === 'listado' && (
             <>
-            {/* BUSCADOR AUTÓNOMO QUE ESCANEA LOS 1,600 PRODUCTOS EN BD */}
-            <input 
-                type="text" 
-                placeholder="🔍 Buscar producto en toda la BD (Ej: Marlboro, Agua)..." 
-                value={busquedaProd} 
-                onChange={(e) => {
-                    const texto = e.target.value;
-                    setBusquedaProd(texto);
+            {/* 🔍 BUSCADOR + ⚖️ CALCULADORA MASIVA DE MARGEN POR PESO */}
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', width: '100%', flexShrink: 0 }}>
+                {/* Buscador de productos */}
+                <input 
+                    type="text" 
+                    placeholder="🔍 Buscar producto en toda la BD (Ej: Marlboro, Carne)..." 
+                    value={busquedaProd} 
+                    onChange={(e) => {
+                        const texto = e.target.value;
+                        setBusquedaProd(texto);
 
-                    if (timerBusquedaTablaRef.current) clearTimeout(timerBusquedaTablaRef.current);
+                        if (timerBusquedaTablaRef.current) clearTimeout(timerBusquedaTablaRef.current);
 
-                    timerBusquedaTablaRef.current = setTimeout(() => {
-                        const termino = texto.trim();
-                        if (!termino) {
-                            setProductosVisuales(listaProductosCompletas);
-                            return;
-                        }
+                        timerBusquedaTablaRef.current = setTimeout(() => {
+                            const termino = texto.trim();
+                            if (!termino) {
+                                setProductosVisuales(listaProductosCompletas);
+                                return;
+                            }
 
-                        fetch(`/api/admin/productos?tenantId=${tenantId}&search=${encodeURIComponent(termino)}`)
-                            .then(res => res.json())
-                            .then(data => {
-                                const resultados = Array.isArray(data) ? data : (data.data || []);
-                                setProductosVisuales(resultados);
-                            })
-                            .catch(err => console.error("🔥 Error buscando en BD:", err));
-                    }, 300);
-                }} 
-                style={{ padding: '8px 10px', borderRadius: '6px', border: '1px solid #3b82f6', fontSize: '0.85rem', backgroundColor: '#fff', flexShrink: 0, outline: 'none' }} 
-            />
+                            fetch(`/api/admin/productos?tenantId=${tenantId}&search=${encodeURIComponent(termino)}`)
+                                .then(res => res.json())
+                                .then(data => {
+                                    const resultados = Array.isArray(data) ? data : (data.data || []);
+                                    setProductosVisuales(resultados);
+                                })
+                                .catch(err => console.error("🔥 Error buscando en BD:", err));
+                        }, 300);
+                    }} 
+                    style={{ flex: 1, padding: '8px 10px', borderRadius: '6px', border: '1px solid #3b82f6', fontSize: '0.82rem', backgroundColor: '#fff', outline: 'none', minWidth: 0 }} 
+                />
+
+                {/* ⚖️ Cajita editable vacía de % para productos por peso */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', backgroundColor: '#eff6ff', border: '1px solid #93c5fd', borderRadius: '6px', padding: '3px 6px', flexShrink: 0 }}>
+                    <span style={{ fontSize: '0.72rem', fontWeight: 'bold', color: '#1e40af' }}>⚖️ % Peso:</span>
+                    <input 
+                        type="number"
+                        min="0"
+                        max="500"
+                        placeholder="%"
+                        value={margenGlobalPeso}
+                        onChange={(e) => setMargenGlobalPeso(e.target.value)}
+                        style={{
+                            width: '45px',
+                            padding: '4px 2px',
+                            borderRadius: '4px',
+                            border: '1px solid #3b82f6',
+                            fontSize: '0.8rem',
+                            fontWeight: 'bold',
+                            textAlign: 'center',
+                            outline: 'none',
+                            backgroundColor: '#fff',
+                            color: '#1e40af'
+                        }}
+                    />
+                    <button
+                        type="button"
+                        disabled={aplicandoMargenMasivo}
+                        onClick={handleAplicarMargenMasivo}
+                        title="Aplica este margen sobre el costo a todos los productos por peso"
+                        style={{
+                            backgroundColor: aplicandoMargenMasivo ? '#9ca3af' : '#2563eb',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '4px',
+                            padding: '5px 8px',
+                            fontSize: '0.72rem',
+                            fontWeight: 'bold',
+                            cursor: aplicandoMargenMasivo ? 'not-allowed' : 'pointer',
+                            whiteSpace: 'nowrap'
+                        }}
+                    >
+                        {aplicandoMargenMasivo ? '⏳...' : 'APLICAR'}
+                    </button>
+                </div>
+            </div>
             
             {/* 📈 TABLA INTELIGENTE */}
             <div style={{ height: 'auto', minHeight: '150px', maxHeight: '400px', overflowY: 'auto', border: '1px solid #e5e7eb', borderRadius: '8px', backgroundColor: '#fff' }}>
@@ -484,7 +640,76 @@ export default function VistaProductos({
                 setSubPestana('formulario');
             }} style={{ borderBottom: '1px solid #e5e7eb', cursor: 'pointer' }}>
                 <td style={{ padding: '10px', fontWeight: '500', color: '#111827', textTransform: 'uppercase' }}>{p.nombre}</td>
-                <td style={{ padding: '10px', textAlign: 'right', fontWeight: 'bold', color: '#059669' }}>${Number(p.precio || 0).toLocaleString('es-CO')}</td>
+                <td 
+    onClick={(e) => e.stopPropagation()} 
+    style={{ padding: '6px 10px', textAlign: 'right', whiteSpace: 'nowrap' }}
+>
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '6px' }}>
+        {/* Precio Actual */}
+        <span style={{ fontWeight: 'bold', color: '#059669', fontSize: '0.85rem' }}>
+            ${Number(p.precio || 0).toLocaleString('es-CO')}
+            {(p.es_venta_por_peso === true || p.esVentaPorPeso === true) && (
+                <span style={{ fontSize: '0.65rem', color: '#2563eb', display: 'block', fontWeight: 'bold' }}>⚖️ x Kg</span>
+            )}
+        </span>
+
+        {/* ⚡ Cajón blanco para nuevo precio */}
+        <input 
+            type="number" 
+            placeholder="$"
+            value={preciosRapidos[idProducto] || ''}
+            onClick={(e) => e.stopPropagation()}
+            onChange={(e) => {
+                const val = e.target.value;
+                setPreciosRapidos(prev => ({
+                    ...prev,
+                    [idProducto]: val
+                }));
+            }}
+            onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                    handleGuardarPrecioRapido(e, p);
+                }
+            }}
+            style={{
+                width: '70px',
+                padding: '3px 4px',
+                borderRadius: '4px',
+                border: '1px solid #cbd5e1',
+                fontSize: '0.8rem',
+                fontWeight: 'bold',
+                textAlign: 'right',
+                outline: 'none',
+                backgroundColor: '#ffffff',
+                color: '#111827'
+            }}
+        />
+
+        {/* ✔️ Chulito para guardar precio de inmediato */}
+        <button
+            type="button"
+            disabled={guardandoPrecioId === idProducto}
+            onClick={(e) => handleGuardarPrecioRapido(e, p)}
+            title="Guardar precio"
+            style={{
+                backgroundColor: '#10b981',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                width: '24px',
+                height: '24px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: guardandoPrecioId === idProducto ? 'not-allowed' : 'pointer',
+                fontWeight: '900',
+                fontSize: '0.8rem'
+            }}
+        >
+            {guardandoPrecioId === idProducto ? '...' : '✔'}
+        </button>
+    </div>
+</td>
                 <td style={{ padding: '10px', textAlign: 'center' }}>
                     <button 
                         type="button"
