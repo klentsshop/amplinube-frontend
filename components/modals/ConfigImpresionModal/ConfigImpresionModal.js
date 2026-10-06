@@ -518,18 +518,24 @@ const activarEdicionProducto = (prod) => {
                 body: JSON.stringify({ productoId, tenantId })
             });
             const data = await res.json();
-            if (data.ok) {
+            
+            if (res.ok && data.ok) {
                 if (editandoProductoId === productoId) cancelarEdicionProducto();
-                // ⚡ ELIMINACIÓN OPTIMISTA EN MEMORIA: Lo remueve del estado del padre de inmediato
-            setListaProductosCompletas(prev => prev.filter(p => (p.id || p._id) !== productoId));
-                await cargarProductosNegocio();
+                
+                // 🛡️ Actualiza la lista maestra en memoria sin pedirle nada a la red
+                setListaProductosCompletas(prev => prev.filter(p => (p.id || p._id) !== productoId));
+                
+                // Notifica a las demás áreas del POS
                 window.dispatchEvent(new Event('inventarioActualizado'));
+                return true; // 👈 Confirmación limpia de éxito
             } else {
-                alert(`❌ No se pudo eliminar: ${data.error}`);
+                alert(`❌ No se pudo eliminar: ${data.error || 'Error en base de datos'}`);
+                return false;
             }
         } catch (error) {
             console.error("🔥 Error eliminando producto:", error);
             alert('❌ Error de comunicación con el servidor.');
+            return false;
         } finally {
             setGuardando(false);
         }

@@ -66,6 +66,26 @@ export default function VistaProductos({
             if (res.ok && data.ok) {
                 producto.precio = nuevoPrecio;
                 producto.precioNum = nuevoPrecio;
+
+                // 🛡️ ACTUALIZACIÓN REACTIVA PARA QUE NO DESAPAREZCA AL BUSCAR CON PISTOLA
+                setProductosVisuales(prev => 
+                    prev.map(p => {
+                        const idActual = p.id || p._id;
+                        if (idActual === prodId) {
+                            return { ...p, precio: nuevoPrecio, precioNum: nuevoPrecio };
+                        }
+                        return p;
+                    })
+                );
+
+                if (Array.isArray(listaProductosCompletas)) {
+                    const prodEncontrado = listaProductosCompletas.find(p => (p.id || p._id) === prodId);
+                    if (prodEncontrado) {
+                        prodEncontrado.precio = nuevoPrecio;
+                        prodEncontrado.precioNum = nuevoPrecio;
+                    }
+                }
+
                 setPreciosRapidos(prev => {
                     const copia = { ...prev };
                     delete copia[prodId];
@@ -596,9 +616,19 @@ export default function VistaProductos({
                 </div>
             </div>
             
-            {/* 📈 TABLA INTELIGENTE */}
-            <div style={{ height: 'auto', minHeight: '150px', maxHeight: '400px', overflowY: 'auto', border: '1px solid #e5e7eb', borderRadius: '8px', backgroundColor: '#fff' }}>
-                <table style={{ width: '100%', fontSize: '0.85rem', borderCollapse: 'collapse' }}>
+            {/* 📈 TABLA INTELIGENTE CON SCROLL HORIZONTAL ADAPTATIVO PARA MÓVILES */}
+            <div style={{ 
+                height: 'auto', 
+                minHeight: '150px', 
+                maxHeight: '400px', 
+                overflowY: 'auto', 
+                overflowX: 'auto', // 📱 Habilita el desplazamiento lateral con el dedo
+                WebkitOverflowScrolling: 'touch', // 🍏 Fluidez táctil nativa en iPhone y Android
+                border: '1px solid #e5e7eb', 
+                borderRadius: '8px', 
+                backgroundColor: '#fff' 
+            }}>
+                <table style={{ width: '100%', minWidth: '470px', fontSize: '0.85rem', borderCollapse: 'collapse' }}>
                     <thead>
                         <tr style={{ backgroundColor: '#f3f4f6', position: 'sticky', top: 0, borderBottom: '2px solid #e5e7eb', zIndex: 1 }}>
                             <th style={{ padding: '10px', textAlign: 'left', color: '#4b5563', fontWeight: 'bold' }}>PRODUCTO</th>
@@ -713,19 +743,38 @@ export default function VistaProductos({
         </button>
     </div>
 </td>
-                <td style={{ padding: '10px', textAlign: 'center' }}>
+                <td style={{ padding: '6px 12px', textAlign: 'center', width: '44px', minWidth: '44px' }}>
                     <button 
-                        type="button"
-                        onClick={(e) => { 
-                            e.stopPropagation();
-                            if (confirm(`¿Seguro que deseas eliminar el producto "${p.nombre}"?`)) {
-                                handleBorrarProducto(idProducto); 
-                            }
-                        }} 
-                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', fontSize: '1rem' }}
-                    >
-                        🗑️
-                    </button>
+    type="button"
+    onClick={async (e) => { 
+        e.stopPropagation();
+        if (!confirm(`¿Seguro que deseas eliminar el producto "${p.nombre}"?`)) return;
+
+        // 🛡️ 1. Esperamos confirmación REAL de Supabase
+        const eliminado = await handleBorrarProducto(idProducto);
+
+        // 🛡️ 2. Solo si la base de datos lo borró con éxito, lo retiramos de la pantalla actual
+        if (eliminado) {
+            setProductosVisuales(prev => prev.filter(item => (item.id || item._id) !== idProducto));
+        }
+    }} 
+    title="Eliminar producto"
+    style={{ 
+        background: '#fee2e2', 
+        border: 'none', 
+        borderRadius: '6px',
+        cursor: 'pointer', 
+        color: '#ef4444', 
+        fontSize: '0.9rem',
+        width: '28px',
+        height: '28px',
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center'
+    }}
+>
+    🗑️
+</button>
                 </td>
             </tr>
         );

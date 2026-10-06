@@ -118,7 +118,7 @@ return (
         <div className={styles.searchContainer}>
             <input 
                 type="text" 
-                placeholder="Buscar plato o pistolear código..." 
+                placeholder="Buscar producto o pistolear código..." 
                 value={busqueda}
                 onChange={(e) => setBusqueda(e.target.value)}
                 className={styles.searchInput}

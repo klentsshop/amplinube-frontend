@@ -401,7 +401,7 @@ useEffect(() => {
             }
 
             // 🔫 REGLA PISTOLA: Ráfaga de NÚMEROS
-            if (deltaTiempo > 100) buffer = ""; // Limpia búfer si no viene a velocidad de escáner
+            if (deltaTiempo > 250) buffer = ""; // Limpia búfer si no viene a velocidad de escáner
 
             if (e.key === 'Enter') {
                 if (buffer.length > 3) {
