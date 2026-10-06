@@ -336,10 +336,18 @@ onClick={() => {
                         /* MODO 2: CARRITO ACTIVO */
                         <>
                             <div className={styles.rappiCount}>
-                                {cart.reduce((acc, item) => acc + (Number(item.cantidad) || 0), 0)}
-                                {' '}
-                                {cart.length === 1 && cart[0].cantidad === 1 ? 'Producto' : 'Productos'}
-                            </div>
+                                        {cart.reduce((sum, item) => {
+                                            const cant = Number(item.cantidad) || 0;
+                                            const esPesadoODecimal = item.esVentaPorPeso || (cant % 1 !== 0);
+                                            return sum + (esPesadoODecimal ? 1 : cant);
+                                        }, 0)}
+                                        {' '}
+                                        {cart.reduce((sum, item) => {
+                                            const cant = Number(item.cantidad) || 0;
+                                            const esPesadoODecimal = item.esVentaPorPeso || (cant % 1 !== 0);
+                                            return sum + (esPesadoODecimal ? 1 : cant);
+                                        }, 0) === 1 ? 'Producto' : 'Productos'}
+                                    </div>
                             <div className={styles.rappiText}>Ver pedido</div>
                             {!mensajeExito && (
                                 <div className={styles.rappiTotal}>
