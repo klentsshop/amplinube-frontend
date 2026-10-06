@@ -513,7 +513,7 @@ export default function TicketPanel({
 
                 {/* 2. PRECIO TOTAL DEL ITEM (En el medio) */}
                 <strong style={{ fontSize: '1rem', fontWeight: '700', color: '#111827', minWidth: '55px', textAlign: 'center' }}>
-                    {((item.precioNum || 0) * item.cantidad).toLocaleString(SITE_CONFIG.brand.currency)}
+                {Math.round((item.precioNum || 0) * item.cantidad).toLocaleString(SITE_CONFIG.brand.currency)}
                 </strong>
 
                {/* 3. BOTÓN MENOS (Circular Rojo) */}
@@ -750,8 +750,8 @@ export default function TicketPanel({
         )}
         
         <span style={{ fontSize: '1.45rem', fontWeight: '950', color: '#000', lineHeight: '1.1' }}>
-            {SITE_CONFIG.brand.symbol}{total.toLocaleString(SITE_CONFIG.brand.currency)}
-        </span>
+       {SITE_CONFIG.brand.symbol}{Math.round(total).toLocaleString(SITE_CONFIG.brand.currency)}
+       </span>
     </div>
 </div>
 </div>
