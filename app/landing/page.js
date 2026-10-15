@@ -64,32 +64,65 @@ export default function LandingPage() {
       </div>
 
       {/* NAVBAR */}
-      <header className="sticky top-0 z-40 bg-ampli-dark/95 backdrop-blur-md border-b border-slate-800">
-        <div className="max-w-6xl mx-auto px-4 py-3.5 flex items-center justify-between">
-          <a href="#" className="flex items-center gap-2.5">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-ampli-cyan to-ampli-blue flex items-center justify-center shadow-lg shadow-ampli-blue/30 overflow-hidden p-1">
-              <img src="https://res.cloudinary.com/dqod8tmkq/image/upload/v1792028701/logo_hh5oz7.jpg" alt="Logo Amplinube" className="w-full h-full object-contain" />
-            </div>
-            <div>
-              <span className="font-extrabold text-xl tracking-tight text-white block leading-none">AMPLI<span className="text-ampli-cyan">NUBE</span></span>
-              <span className="text-[11px] text-slate-400">De dueño de negocio a dueño de negocio</span>
-            </div>
-          </a>
+<header className="sticky top-0 z-40 bg-ampli-dark/95 backdrop-blur-md border-b border-slate-800">
+  <div className="max-w-6xl mx-auto px-4 py-3.5 flex items-center justify-between">
+    <a href="#" className="flex items-center gap-2.5">
+      <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-ampli-cyan to-ampli-blue flex items-center justify-center shadow-lg shadow-ampli-blue/30 overflow-hidden p-1">
+        <img src="https://res.cloudinary.com/dqod8tmkq/image/upload/v1792028701/logo_hh5oz7.jpg" alt="Logo Amplinube" className="w-full h-full object-contain" />
+      </div>
+      <div>
+        <span className="font-extrabold text-xl tracking-tight text-white block leading-none">AMPLI<span className="text-ampli-cyan">NUBE</span></span>
+        <span className="text-[11px] text-slate-400">De dueño de negocio a dueño de negocio</span>
+      </div>
+    </a>
 
-          <div className="hidden md:flex items-center gap-2.5 text-sm font-medium">
-            <a href="#clientes" className="px-4 py-2 rounded-xl bg-slate-900/90 border border-ampli-cyan text-ampli-cyan shadow-lg shadow-ampli-cyan/10 hover:text-white hover:border-white hover:bg-slate-800/90 transition-all duration-200">Clientes Reales</a>
-            <a href="#instalacion" className="px-4 py-2 rounded-xl bg-slate-900/90 border border-ampli-cyan text-ampli-cyan shadow-lg shadow-ampli-cyan/10 hover:text-white hover:border-white hover:bg-slate-800/90 transition-all duration-200">Instalación en tu Local</a>
-            <a href="#calculadora" className="px-4 py-2 rounded-xl bg-slate-900/90 border border-ampli-cyan text-ampli-cyan shadow-lg shadow-ampli-cyan/10 hover:text-white hover:border-white hover:bg-slate-800/90 transition-all duration-200">Calculadora</a>
-            <a href="#precio" className="px-4 py-2 rounded-xl bg-slate-900/90 border border-ampli-cyan text-ampli-cyan shadow-lg shadow-ampli-cyan/10 hover:text-white hover:border-white hover:bg-slate-800/90 transition-all duration-200">Qué Incluye</a>
-          </div>
+    {/* Enlaces de escritorio (md para arriba) */}
+    <div className="hidden md:flex items-center gap-2.5 text-sm font-medium">
+      <a href="#clientes" className="px-4 py-2 rounded-xl bg-slate-900/90 border border-ampli-cyan text-ampli-cyan shadow-lg shadow-ampli-cyan/10 hover:text-white hover:border-white hover:bg-slate-800/90 transition-all duration-200">Clientes Reales</a>
+      <a href="#instalacion" className="px-4 py-2 rounded-xl bg-slate-900/90 border border-ampli-cyan text-ampli-cyan shadow-lg shadow-ampli-cyan/10 hover:text-white hover:border-white hover:bg-slate-800/90 transition-all duration-200">Instalación en tu Local</a>
+      <a href="#calculadora" className="px-4 py-2 rounded-xl bg-slate-900/90 border border-ampli-cyan text-ampli-cyan shadow-lg shadow-ampli-cyan/10 hover:text-white hover:border-white hover:bg-slate-800/90 transition-all duration-200">Calculadora</a>
+      <a href="#precio" className="px-4 py-2 rounded-xl bg-slate-900/90 border border-ampli-cyan text-ampli-cyan shadow-lg shadow-ampli-cyan/10 hover:text-white hover:border-white hover:bg-slate-800/90 transition-all duration-200">Qué Incluye</a>
+    </div>
 
-          <button onClick={() => openFilterModal('Navbar')}
-             className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold text-xs sm:text-sm px-4 py-2.5 rounded-xl flex items-center gap-2 shadow-lg shadow-emerald-500/25 transition">
-            <i data-lucide="calendar-check" className="w-4 h-4"></i>
-            <span>Agendar Instalación</span>
-          </button>
-        </div>
-      </header>
+    {/* Botones de acción derecha (Agendar + Hamburguesa en móvil) */}
+    <div className="flex items-center gap-2">
+      <button onClick={() => openFilterModal('Navbar')}
+         className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold text-xs sm:text-sm px-3.5 sm:px-4 py-2.5 rounded-xl flex items-center gap-1.5 shadow-lg shadow-emerald-500/25 transition">
+        <i data-lucide="calendar-check" className="w-4 h-4"></i>
+        <span className="hidden sm:inline">Agendar Instalación</span>
+        <span className="sm:hidden">Agendar</span>
+      </button>
+
+      {/* Botón de Menú Hamburguesa (Solo visible en Celular/Tablet) */}
+      <button 
+        onClick={() => {
+          const menu = document.getElementById('mobileMenu');
+          menu.classList.toggle('hidden');
+        }}
+        className="md:hidden p-2.5 rounded-xl bg-slate-900 border border-slate-700 text-ampli-cyan hover:bg-slate-800 transition"
+        aria-label="Abrir menú"
+      >
+        <i data-lucide="menu" className="w-5 h-5"></i>
+      </button>
+    </div>
+  </div>
+
+  {/* Menú Desplegable para Celular (Oculto por defecto) */}
+  <div id="mobileMenu" className="hidden md:hidden bg-ampli-navy border-b border-slate-800 px-4 py-4 space-y-3">
+    <a href="#clientes" onClick={() => document.getElementById('mobileMenu').classList.add('hidden')} className="block text-sm font-medium text-slate-200 hover:text-ampli-cyan py-1.5 border-b border-slate-800/60">
+      ☕ Clientes Reales (Videos)
+    </a>
+    <a href="#instalacion" onClick={() => document.getElementById('mobileMenu').classList.add('hidden')} className="block text-sm font-medium text-slate-200 hover:text-ampli-cyan py-1.5 border-b border-slate-800/60">
+      📍 Instalación en tu Local
+    </a>
+    <a href="#calculadora" onClick={() => document.getElementById('mobileMenu').classList.add('hidden')} className="block text-sm font-medium text-slate-200 hover:text-ampli-cyan py-1.5 border-b border-slate-800/60">
+      🧮 Calculadora de Fugas
+    </a>
+    <a href="#precio" onClick={() => document.getElementById('mobileMenu').classList.add('hidden')} className="block text-sm font-medium text-slate-200 hover:text-ampli-cyan py-1.5">
+      💎 Qué Incluye el Kit
+    </a>
+  </div>
+</header>
 
       {/* 1. HERO SECTION (EMBUDO DE FILTRADO DIRECTO) */}
       <section className="relative pt-10 pb-16 sm:py-20 px-4" style={{ background: 'radial-gradient(circle at 50% 15%, rgba(0, 149, 255, 0.22) 0%, rgba(6, 13, 26, 0) 70%)' }}>

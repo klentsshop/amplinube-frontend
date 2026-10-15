@@ -5,9 +5,8 @@ export const metadata = {
 
 export default function LandingLayout({ children }) {
   return (
-    <html lang="es" className="scroll-smooth">
+    <html lang="es" className="scroll-smooth h-full">
       <head>
-        {/* Cargamos Tailwind CSS y Lucide Icons de forma nativa para la landing */}
         <script src="https://cdn.tailwindcss.com"></script>
         <script src="https://unpkg.com/lucide@latest"></script>
         <script dangerouslySetInnerHTML={{ __html: `
@@ -27,7 +26,7 @@ export default function LandingLayout({ children }) {
           }
         `}} />
       </head>
-      <body className="bg-[#060D1A] text-slate-100 font-sans antialiased selection:bg-[#0095FF] selection:text-white m-0 p-0">
+      <body className="bg-[#060D1A] text-slate-100 font-sans antialiased selection:bg-[#0095FF] selection:text-white min-h-full overflow-x-hidden">
         {children}
       </body>
     </html>
