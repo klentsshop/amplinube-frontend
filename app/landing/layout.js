@@ -5,7 +5,7 @@ export const metadata = {
 
 export default function LandingLayout({ children }) {
   return (
-    <html lang="es" className="scroll-smooth h-full">
+    <html lang="es" className="scroll-smooth">
       <head>
         <script src="https://cdn.tailwindcss.com"></script>
         <script src="https://unpkg.com/lucide@latest"></script>
@@ -26,7 +26,8 @@ export default function LandingLayout({ children }) {
           }
         `}} />
       </head>
-      <body className="bg-[#060D1A] text-slate-100 font-sans antialiased selection:bg-[#0095FF] selection:text-white min-h-full overflow-x-hidden">
+      {/* QUITAMOS h-full o min-h-full que fuercen alturas extrañas y dejamos que el body fluya */}
+      <body className="bg-[#060D1A] text-slate-100 font-sans antialiased selection:bg-[#0095FF] selection:text-white m-0 p-0">
         {children}
       </body>
     </html>

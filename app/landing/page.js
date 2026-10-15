@@ -56,7 +56,7 @@ export default function LandingPage() {
   };
 
   return (
-    <div className="bg-ampli-dark text-slate-100 font-sans antialiased selection:bg-ampli-blue selection:text-white min-h-screen">
+    <div className="bg-ampli-dark text-slate-100 font-sans antialiased selection:bg-ampli-blue selection:text-white">
       
       {/* BARRA SUPERIOR DE CONFIANZA Y PAGO CONTRA ENTREGA */}
       <div className="bg-gradient-to-r from-emerald-500 via-teal-400 to-cyan-400 text-slate-950 text-xs sm:text-sm font-extrabold py-2.5 px-4 text-center">
