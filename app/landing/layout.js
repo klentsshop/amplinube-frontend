@@ -5,31 +5,13 @@ export const metadata = {
 
 export default function LandingLayout({ children }) {
   return (
-    <>
-      <script src="https://cdn.tailwindcss.com" async></script>
-      <script src="https://unpkg.com/lucide@latest" async></script>
-      <script
-        dangerouslySetInnerHTML={{
-          __html: `
-            window.tailwind = window.tailwind || {};
-            tailwind.config = {
-              theme: {
-                extend: {
-                  colors: {
-                    ampli: {
-                      dark: '#060D1A',
-                      navy: '#0D1B35',
-                      blue: '#0095FF',
-                      cyan: '#00E0FF'
-                    }
-                  }
-                }
-              }
-            }
-          `,
-        }}
-      />
-      {children}
-    </>
+    <html lang="es" className="scroll-smooth">
+      <head>
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+      </head>
+      <body className="bg-[#060D1A] text-slate-100 font-sans antialiased m-0 p-0 selection:bg-[#0095FF] selection:text-white">
+        {children}
+      </body>
+    </html>
   );
 }

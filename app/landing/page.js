@@ -3,34 +3,16 @@
 import React, { useState, useEffect } from 'react';
 
 export default function LandingPage() {
-  // Estado para el modal de filtrado
   const [isModalOpen, setIsModalOpen] = useState(false);
-  
-  // Estado nativo en React para el Menú Hamburguesa en celular (100% seguro)
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-
-  // Estado para saber desde qué botón abrió el modal
   const [modalSource, setModalSource] = useState('General');
-
-  // Estado para la calculadora de fugas
   const [dailyLoss, setDailyLoss] = useState(15000);
-
-  // Estado para disparar una sola vez el evento de calculadora
   const [calcTracked, setCalcTracked] = useState(false);
 
-  // Número de WhatsApp personal
   const PERSONAL_WA_NUMBER = "573102501107";
-  
-  // ID real de tu Píxel de Meta
   const PIXEL_ID = "1416312110608555";
 
   useEffect(() => {
-    // 1. Inicializar iconos de Lucide si están disponibles
-    if (window.lucide) {
-      window.lucide.createIcons();
-    }
-
-    // 2. Cargar e inicializar el Meta Pixel con tu ID
     if (typeof window !== 'undefined' && !window.fbq) {
       (function(f, b, e, v, n, t, s) {
         if (f.fbq) return;
@@ -54,7 +36,6 @@ export default function LandingPage() {
     }
   }, []);
 
-  // Función auxiliar para disparar eventos del Píxel
   const trackPixelEvent = (eventName, params = {}) => {
     if (typeof window !== 'undefined' && window.fbq) {
       window.fbq('track', eventName, params);
@@ -68,7 +49,6 @@ export default function LandingPage() {
   const monthlyLoss = dailyLoss * 30;
   const saved = monthlyLoss - 70000;
 
-  // PASO INTERMEDIO DEL EMBUDO: Abrió el modal de preguntas
   const openFilterModal = (source = 'Boton CTA') => {
     setModalSource(source);
     setIsModalOpen(true);
@@ -85,7 +65,6 @@ export default function LandingPage() {
     setIsModalOpen(false);
   };
 
-  // INTERACCIÓN 1: Dio Play a un video testimonial
   const handleVideoPlay = (casoNombre) => {
     trackPixelEvent('ViewContent', {
       content_name: `Video Testimonial: ${casoNombre}`,
@@ -93,7 +72,6 @@ export default function LandingPage() {
     });
   };
 
-  // INTERACCIÓN 2: Usó la calculadora de fugas
   const handleCalculatorChange = (val) => {
     setDailyLoss(Number(val));
     if (!calcTracked) {
@@ -105,7 +83,6 @@ export default function LandingPage() {
     }
   };
 
-  // CONVERSIÓN FINAL: Pasó el filtro y va a WhatsApp
   const sendToPersonalWhatsApp = () => {
     const bizType = document.getElementById('bizType')?.value || "Comercio";
     const bizCity = document.getElementById('bizCity')?.value || "Bogotá";
@@ -116,7 +93,6 @@ export default function LandingPage() {
       return;
     }
 
-    // 🎯 DISPARO PRINCIPAL DE CAMPAÑA: Lead Calificado
     trackPixelEvent('Lead', {
       content_name: 'Solicitud Demo/Instalacion POS',
       content_category: bizType,
@@ -125,7 +101,7 @@ export default function LandingPage() {
       currency: 'COP'
     });
 
-    const text = `[AMPLI-WEB] Hola Ingeniera, vi la página de Amplinube y quiero agendar mi demostración/instalación.\n\n` +
+    const text = `Hola Ingeniera, vi la página de Amplinube y quiero agendar mi demostración/instalación.\n\n` +
                  `• *Mi negocio:* ${bizType}\n` +
                  `• *Ubicación:* ${bizCity}\n` +
                  `• *Presupuesto confirmado:* Kit $770.000 COP con equipos + $70.000/mes.\n\n` +
@@ -137,10 +113,9 @@ export default function LandingPage() {
   };
 
   return (
-    /* CÁPSULA DE SCROLL INDEPENDIENTE: fixed inset-0 overflow-y-auto garantiza que deslice en PC y celular sin tocar el CSS del POS */
     <div className="fixed inset-0 w-full h-full overflow-y-auto overflow-x-hidden scroll-smooth bg-[#060D1A] text-slate-100 font-sans antialiased selection:bg-[#0095FF] selection:text-white z-50">
       
-      {/* BARRA SUPERIOR DE CONFIANZA Y PAGO CONTRA ENTREGA */}
+      {/* BARRA SUPERIOR DE CONFIANZA */}
       <div className="bg-gradient-to-r from-emerald-500 via-teal-400 to-cyan-400 text-slate-950 text-xs sm:text-sm font-extrabold py-2.5 px-4 text-center">
         🤝 BOGOTÁ Y SABANA: Llevamos los equipos a tu local, instalamos y te capacitamos paso a paso. ¡Pagas los $770.000 al recibir!
       </div>
@@ -158,7 +133,6 @@ export default function LandingPage() {
             </div>
           </a>
 
-          {/* Enlaces de escritorio (md para arriba) */}
           <div className="hidden md:flex items-center gap-2.5 text-sm font-medium">
             <a href="#clientes" className="px-4 py-2 rounded-xl bg-slate-900/90 border border-[#00E0FF] text-[#00E0FF] shadow-lg shadow-[#00E0FF]/10 hover:text-white hover:border-white hover:bg-slate-800/90 transition-all duration-200">Clientes Reales</a>
             <a href="#instalacion" className="px-4 py-2 rounded-xl bg-slate-900/90 border border-[#00E0FF] text-[#00E0FF] shadow-lg shadow-[#00E0FF]/10 hover:text-white hover:border-white hover:bg-slate-800/90 transition-all duration-200">Instalación en tu Local</a>
@@ -166,22 +140,13 @@ export default function LandingPage() {
             <a href="#precio" className="px-4 py-2 rounded-xl bg-slate-900/90 border border-[#00E0FF] text-[#00E0FF] shadow-lg shadow-[#00E0FF]/10 hover:text-white hover:border-white hover:bg-slate-800/90 transition-all duration-200">Qué Incluye</a>
           </div>
 
-          {/* Botones de acción derecha (Agendar + Hamburguesa en móvil) */}
           <div className="flex items-center gap-2">
             <button onClick={() => openFilterModal('Navbar')}
                className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold text-xs sm:text-sm px-3.5 sm:px-4 py-2.5 rounded-xl flex items-center gap-1.5 shadow-lg shadow-emerald-500/25 transition">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
-                <rect width="18" height="18" x="3" y="4" rx="2" ry="2"/>
-                <line x1="16" x2="16" y1="2" y2="6"/>
-                <line x1="8" x2="8" y1="2" y2="6"/>
-                <line x1="3" x2="21" y1="10" y2="10"/>
-                <path d="m9 16 2 2 4-4"/>
-              </svg>
               <span className="hidden sm:inline">Agendar Instalación</span>
               <span className="sm:hidden">Agendar</span>
             </button>
 
-            {/* Botón de Menú Hamburguesa (Controlado por estado React + SVG nativo que nunca falla) */}
             <button 
               type="button"
               onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
@@ -201,7 +166,6 @@ export default function LandingPage() {
           </div>
         </div>
 
-        {/* Menú Desplegable para Celular */}
         {isMobileMenuOpen && (
           <div className="md:hidden bg-[#0D1B35] border-b border-slate-800 px-4 py-4 space-y-3">
             <a href="#clientes" onClick={() => setIsMobileMenuOpen(false)} className="block text-sm font-medium text-slate-200 hover:text-[#00E0FF] py-1.5 border-b border-slate-800/60">
@@ -237,7 +201,6 @@ export default function LandingPage() {
               No te enviamos una caja para que te defiendas como puedas. <strong>Soy ingeniera de software y creadora de Amplinube:</strong> voy a tu negocio en Bogotá y alrededores, armo tus equipos, conecto tu inventario y no me voy hasta que tú y tu cajero cobren en segundos.
             </p>
 
-            {/* Oferta Transparente */}
             <div className="bg-[#0D1B35]/95 border-2 border-[#0095FF]/50 rounded-2xl p-5 sm:p-6 shadow-2xl max-w-xl mx-auto lg:mx-0">
               <div className="grid grid-cols-2 gap-4 items-center border-b border-slate-800 pb-4">
                 <div>
@@ -264,7 +227,6 @@ export default function LandingPage() {
             </div>
           </div>
 
-          {/* Tarjeta Visual: Promesa Presencial */}
           <div className="lg:col-span-5">
             <div className="bg-slate-900 border-2 border-slate-700 rounded-3xl p-6 shadow-2xl space-y-5">
               <div className="flex items-center justify-between border-b border-slate-800 pb-4">
@@ -308,7 +270,7 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* 2. PRUEBA SOCIAL REAL (TUS CLIENTES REALES EN VIDEO) */}
+      {/* 2. PRUEBA SOCIAL REAL */}
       <section id="clientes" className="py-16 px-4 bg-slate-900/70 border-y border-slate-800">
         <div className="max-w-6xl mx-auto">
           <div className="text-center max-w-3xl mx-auto mb-12">
@@ -323,7 +285,6 @@ export default function LandingPage() {
 
           <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-5">
             
-            {/* Caso 1: Cafetería / Repostería */}
             <div className="bg-[#060D1A] border border-slate-800 rounded-2xl p-5 flex flex-col justify-between overflow-hidden">
               <div>
                 <div className="relative w-full aspect-[9/16] rounded-xl overflow-hidden bg-slate-950 mb-4 border border-slate-800/60 shadow-md">
@@ -346,7 +307,6 @@ export default function LandingPage() {
               </div>
             </div>
 
-            {/* Caso 2: Restaurante La Avenida */}
             <div className="bg-[#060D1A] border border-slate-800 rounded-2xl p-5 flex flex-col justify-between overflow-hidden">
               <div>
                 <div className="relative w-full aspect-[9/16] rounded-xl overflow-hidden bg-slate-950 mb-4 border border-slate-800/60 shadow-md">
@@ -369,7 +329,6 @@ export default function LandingPage() {
               </div>
             </div>
 
-            {/* Caso 3: Leo Salsamentaria */}
             <div className="bg-[#060D1A] border border-slate-800 rounded-2xl p-5 flex flex-col justify-between overflow-hidden">
               <div>
                 <div className="relative w-full aspect-[9/16] rounded-xl overflow-hidden bg-slate-950 mb-4 border border-slate-800/60 shadow-md">
@@ -392,7 +351,6 @@ export default function LandingPage() {
               </div>
             </div>
 
-            {/* Caso 4: Asadero y Fruver */}
             <div className="bg-[#060D1A] border border-slate-800 rounded-2xl p-5 flex flex-col justify-between overflow-hidden">
               <div>
                 <div className="relative w-full aspect-[9/16] rounded-xl overflow-hidden bg-slate-950 mb-4 border border-slate-800/60 shadow-md">
@@ -419,7 +377,7 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* 3. CÓMO FUNCIONA LA INSTALACIÓN PRESENCIAL EN BOGOTÁ */}
+      {/* 3. CÓMO FUNCIONA LA INSTALACIÓN */}
       <section id="instalacion" className="py-16 px-4">
         <div className="max-w-5xl mx-auto">
           <div className="text-center max-w-3xl mx-auto mb-12">
@@ -428,7 +386,7 @@ export default function LandingPage() {
               ¿Cómo entregamos e instalamos en tu negocio?
             </h2>
             <p className="text-slate-300 mt-2 text-sm sm:text-base">
-              Mientras otros te mandan un enlace por correo y no vuelven a contestar, nosotros vamos personalmente a tu local en Bogotá y Sabana.
+              Mientras otros te mandan un enlace por correo y não vuelven a contestar, nosotros vamos personalmente a tu local en Bogotá y Sabana.
             </p>
           </div>
 
@@ -460,7 +418,7 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* 4. CALCULADORA DE FUGA DE DINERO */}
+      {/* 4. CALCULADORA DE FUGA */}
       <section id="calculadora" className="py-16 px-4 bg-slate-900/60 border-y border-slate-800">
         <div className="max-w-5xl mx-auto">
           <div className="bg-[#0D1B35] border border-slate-700 rounded-2xl p-6 sm:p-8 shadow-xl grid md:grid-cols-2 gap-8 items-center">
