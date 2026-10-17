@@ -6,8 +6,18 @@ export const metadata = {
 export default function LandingLayout({ children }) {
   return (
     <>
-      <script src="https://cdn.tailwindcss.com" async></script>
-      <script src="https://unpkg.com/lucide@latest" async></script>
+      {/* Fondo oscuro inmediato desde el milisegundo cero */}
+      <style
+        dangerouslySetInnerHTML={{
+          __html: `
+            html, body {
+              background-color: #060D1A !important;
+              color: #f8fafc !important;
+            }
+          `,
+        }}
+      />
+      <script src="https://cdn.tailwindcss.com"></script>
       <script
         dangerouslySetInnerHTML={{
           __html: `
@@ -25,7 +35,7 @@ export default function LandingLayout({ children }) {
                   }
                 }
               }
-            }
+            };
           `,
         }}
       />

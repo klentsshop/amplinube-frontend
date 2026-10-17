@@ -25,12 +25,7 @@ export default function LandingPage() {
   const PIXEL_ID = "1416312110608555";
 
   useEffect(() => {
-    // 1. Inicializar iconos de Lucide si están disponibles
-    if (window.lucide) {
-      window.lucide.createIcons();
-    }
-
-    // 2. Cargar e inicializar el Meta Pixel con tu ID
+    // Cargar e inicializar el Meta Pixel con tu ID
     if (typeof window !== 'undefined' && !window.fbq) {
       (function(f, b, e, v, n, t, s) {
         if (f.fbq) return;
@@ -109,27 +104,22 @@ export default function LandingPage() {
   const sendToPersonalWhatsApp = () => {
     const bizType = document.getElementById('bizType')?.value || "Comercio";
     const bizCity = document.getElementById('bizCity')?.value || "Bogotá";
-    const priceOk = document.getElementById('priceCheck')?.checked;
-
-    if (!priceOk) {
-      alert("Por favor confirma que conoces el valor del Kit ($770.000 COP + $70.000/mes) para continuar.");
-      return;
-    }
+    const bizPlan = document.getElementById('bizPlan')?.value || "Kit Completo ($770.000 + $70.000/mes)";
 
     // 🎯 DISPARO PRINCIPAL DE CAMPAÑA: Lead Calificado
     trackPixelEvent('Lead', {
-      content_name: 'Solicitud Demo/Instalacion POS',
+      content_name: bizPlan,
       content_category: bizType,
       status: modalSource,
-      value: 770000,
+      value: bizPlan.includes('770.000') ? 770000 : 70000,
       currency: 'COP'
     });
 
-    const text = `[AMPLI-WEB] Hola Ingeniera, vi la página de Amplinube y quiero agendar mi demostración/instalación.\n\n` +
+    const text = `[AMPLI-WEB] Hola Ingeniera, vi la página de Amplinube y quiero recibir atención para mi negocio:\n\n` +
                  `• *Mi negocio:* ${bizType}\n` +
                  `• *Ubicación:* ${bizCity}\n` +
-                 `• *Presupuesto confirmado:* Kit $770.000 COP con equipos + $70.000/mes.\n\n` +
-                 `¿Qué disponibilidad tienes para visitarme o mostrarme el sistema?`;
+                 `• *Opción que busco:* ${bizPlan}\n\n` +
+                 `¿Me ayudas por favor con los pasos a seguir?`;
 
     const url = `https://wa.me/${PERSONAL_WA_NUMBER}?text=${encodeURIComponent(text)}`;
     window.open(url, '_blank');
@@ -177,8 +167,8 @@ export default function LandingPage() {
                 <line x1="3" x2="21" y1="10" y2="10"/>
                 <path d="m9 16 2 2 4-4"/>
               </svg>
-              <span className="hidden sm:inline">Agendar Instalación</span>
-              <span className="sm:hidden">Agendar</span>
+              <span className="hidden sm:inline">Ver Demo / Instalar</span>
+              <span className="sm:hidden">Ver Demo</span>
             </button>
 
             {/* Botón de Menú Hamburguesa (Controlado por estado React + SVG nativo que nunca falla) */}
@@ -234,19 +224,19 @@ export default function LandingPage() {
             </h1>
 
             <p className="text-base sm:text-lg text-slate-300 max-w-2xl mx-auto lg:mx-0 leading-relaxed">
-              No te enviamos una caja para que te defiendas como puedas. <strong>Soy ingeniera de software y creadora de Amplinube:</strong> voy a tu negocio en Bogotá y alrededores, armo tus equipos, conecto tu inventario y no me voy hasta que tú y tu cajero cobren en segundos.
+              No te enviamos una caja para que te defiendas como puedas. <strong>Soy ingeniera de software y creadora de Amplinube:</strong> te muestro el sistema en vivo en 5 minutos por videollamada y, cuando estés listo, voy a tu local en Bogotá y Sabana, instalo tus equipos y dejo a tu cajero cobrando en segundos.
             </p>
 
-            {/* Oferta Transparente */}
+            {/* Oferta Transparente con Doble Puerta */}
             <div className="bg-[#0D1B35]/95 border-2 border-[#0095FF]/50 rounded-2xl p-5 sm:p-6 shadow-2xl max-w-xl mx-auto lg:mx-0">
               <div className="grid grid-cols-2 gap-4 items-center border-b border-slate-800 pb-4">
                 <div>
                   <span className="text-xs uppercase tracking-wider text-slate-400 block">Kit Equipos + Sistema</span>
                   <span className="text-2xl sm:text-3xl font-black text-white">$770.000 <small className="text-xs font-normal text-slate-400">COP</small></span>
-                  <span className="text-xs text-emerald-400 font-bold block mt-0.5">✓ Pagas al instalar en Bogotá</span>
+                  <span className="text-xs text-emerald-400 font-bold block mt-0.5">✓ Pagas al instalar en tu local</span>
                 </div>
                 <div className="border-l border-slate-800 pl-4">
-                  <span className="text-xs uppercase tracking-wider text-slate-400 block">Mensualidad en la nube</span>
+                  <span className="text-xs uppercase tracking-wider text-slate-400 block">Mensualidad (O si ya tienes PC)</span>
                   <span className="text-2xl sm:text-3xl font-black text-[#00E0FF]">$70.000 <small className="text-xs font-normal text-slate-400">/mes</small></span>
                   <span className="text-xs text-slate-300 font-medium block mt-0.5">Solo $2.333 pesos al día</span>
                 </div>
@@ -255,11 +245,11 @@ export default function LandingPage() {
               <div className="pt-4">
                 <button onClick={() => openFilterModal('Hero Principal')}
                    className="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black py-4 px-6 rounded-xl text-center flex items-center justify-center gap-2 text-base shadow-lg shadow-emerald-500/30 transition transform hover:-translate-y-0.5">
-                  <span>Verificar Disponibilidad y Agendar Cita</span>
+                  <span>Pedir Demo por Videollamada o Agendar Instalación</span>
                 </button>
               </div>
-              <p className="text-[12px] text-slate-400 text-center mt-3">
-                Ideal para control interno, comandas e inventario sin obligarte a facturación electrónica.
+              <p className="text-[12px] text-slate-300 text-center mt-3">
+                💡 <strong>¿Ya tienes computador o tablet?</strong> Ahorra el kit e inicia solo con el sistema. Control interno sin obligarte a facturación electrónica.
               </p>
             </div>
           </div>
@@ -428,16 +418,16 @@ export default function LandingPage() {
               ¿Cómo entregamos e instalamos en tu negocio?
             </h2>
             <p className="text-slate-300 mt-2 text-sm sm:text-base">
-              Mientras otros te mandan un enlace por correo y no vuelven a contestar, nosotros vamos personalmente a tu local en Bogotá y Sabana.
+              Primero ves cómo funciona en 5 minutos por videollamada y, cuando decidas avanzar, vamos personalmente a tu local en Bogotá y Sabana.
             </p>
           </div>
 
           <div className="grid md:grid-cols-3 gap-6">
             <div className="bg-[#0D1B35] border border-slate-700 rounded-2xl p-6">
               <div className="w-10 h-10 rounded-xl bg-[#0095FF] text-slate-950 font-black flex items-center justify-center mb-4">1</div>
-              <h3 className="text-lg font-extrabold text-white mb-2">Agendamos tu cita por WhatsApp</h3>
+              <h3 className="text-lg font-extrabold text-white mb-2">Demo rápida por WhatsApp o Videollamada</h3>
               <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
-                Nos cuentas qué tipo de negocio tienes (restaurante, fruver, minimarket, cafetería o salón) y acordamos el día y hora para visitarte en tu local.
+                Me cuentas qué negocio tienes (restaurante, fruver, minimarket, cafetería o salón), te muestro en vivo cómo funciona el sistema y resolvemos todas tus dudas en 5 minutos.
               </p>
             </div>
 
@@ -517,19 +507,19 @@ export default function LandingPage() {
             ¿Listo para sistematizar tu negocio sin complicarte la vida?
           </h2>
           <p className="text-sm sm:text-base text-slate-300 max-w-xl mx-auto">
-            Haz clic abajo, responde 3 preguntas rápidas sobre tu negocio y pasa directo a mi WhatsApp personal para agendar tu demostración o instalación.
+            Haz clic abajo, responde 3 preguntas rápidas sobre tu negocio y pasa directo a mi WhatsApp personal para ver una demo en vivo o agendar tu instalación.
           </p>
           <div className="text-3xl sm:text-4xl font-black text-white">
             $770.000 COP <span className="text-base font-normal text-[#00E0FF] block sm:inline">+ $70.000/mes</span>
           </div>
           <button onClick={() => openFilterModal('Cierre Final')}
              className="w-full sm:w-auto mx-auto bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black py-4 px-8 rounded-xl flex items-center justify-center gap-2 text-base shadow-lg shadow-emerald-500/30 transition">
-            <span>Agendar Visita o Demo en mi WhatsApp</span>
+            <span>Pedir Demo o Agendar Instalación en WhatsApp</span>
           </button>
         </div>
       </section>
 
-      {/* MODAL FILTRO DE VENTAS */}
+      {/* MODAL FILTRO DE VENTAS INTELIGENTE */}
       {isModalOpen && (
         <div id="filterModal" className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-[#0D1B35] border-2 border-[#0095FF] rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-5 relative">
@@ -538,10 +528,10 @@ export default function LandingPage() {
             </button>
 
             <div>
-              <span className="text-xs font-bold uppercase text-[#00E0FF]">Paso único antes de ir a WhatsApp</span>
-              <h3 className="text-xl font-black text-white mt-1">Personalicemos tu atención</h3>
+              <span className="text-xs font-bold uppercase text-[#00E0FF]">Atención directa con la Ingeniera</span>
+              <h3 className="text-xl font-black text-white mt-1">Personalicemos tu solicitud</h3>
               <p className="text-xs text-slate-300 mt-1">
-                Para atenderte personalmente y sin demoras, indícanos estos 3 datos de tu comercio:
+                Elige estas 3 opciones rápidas para atenderte al instante en WhatsApp:
               </p>
             </div>
 
@@ -551,8 +541,8 @@ export default function LandingPage() {
                 <select id="bizType" className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2.5 text-white focus:border-[#00E0FF] outline-none">
                   <option value="Restaurante / Asadero / Comidas Rápidas">Restaurante / Asadero / Comidas Rápidas</option>
                   <option value="Fruver / Salsamentaria / Carnicería">Fruver / Salsamentaria / Carnicería</option>
-                  <option value="Minimarket / Tienda / Panadería">Minimarket / Tienda</option>
-                  <option value="Cafetería / Heladería / Repostería">Cafetería / Heladería</option>
+                  <option value="Minimarket / Tienda / Panadería">Minimarket / Tienda / Panadería</option>
+                  <option value="Cafetería / Heladería / Repostería">Cafetería / Heladería / Repostería</option>
                   <option value="Salón de Belleza / Barbería / Nails">Salón de Belleza / Barbería / Nails</option>
                   <option value="Otro comercio">Otro comercio</option>
                 </select>
@@ -561,23 +551,31 @@ export default function LandingPage() {
               <div>
                 <label className="block text-xs font-bold text-slate-300 mb-1">2. ¿Dónde está ubicado tu local?</label>
                 <select id="bizCity" className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2.5 text-white focus:border-[#00E0FF] outline-none">
-                  <option value="Bogotá (Instalación presencial)">Bogotá (Quiero instalación en mi local)</option>
+                  <option value="Bogotá">Bogotá</option>
                   <option value="Sabana / Cundinamarca (Soacha, Chía, Fusa, etc.)">Sabana / Cundinamarca (Soacha, Chía, Fusa, etc.)</option>
-                  <option value="Otra ciudad de Colombia">Otra ciudad de Colombia (Envío configurado)</option>
+                  <option value="Otra ciudad de Colombia">Otra ciudad de Colombia</option>
                 </select>
               </div>
 
-              <div className="bg-slate-950 border border-slate-800 rounded-xl p-3">
-                <label className="flex items-start gap-2.5 cursor-pointer text-xs text-slate-200">
-                  <input id="priceCheck" type="checkbox" defaultChecked className="mt-0.5 accent-emerald-500 w-4 h-4 rounded" />
-                  <span>Tengo claro que el Kit con Equipos + Sistema tiene un valor de <strong>$770.000 COP</strong> y una mensualidad de <strong>$70.000 COP</strong> (control interno sin facturación electrónica).</span>
-                </label>
+              <div>
+                <label className="block text-xs font-bold text-emerald-400 mb-1">3. ¿Cómo prefieres empezar?</label>
+                <select id="bizPlan" className="w-full bg-slate-900 border border-emerald-500/60 rounded-xl px-3.5 py-2.5 text-white focus:border-emerald-400 outline-none">
+                  <option value="Ver Demo de 5 min por Videollamada/WhatsApp (Conocer el sistema antes de instalar)">
+                    📱 Quiero ver una Demo rápida por Videollamada/WhatsApp primero
+                  </option>
+                  <option value="Kit Completo + Instalación en mi local ($770.000 pago al recibir + $70k/mes)">
+                    🔥 Quiero agendar instalación del Kit Completo ($770.000 + $70k/mes)
+                  </option>
+                  <option value="Ya tengo equipos, quiero solo el Sistema ($70.000/mes)">
+                    💻 Ya tengo computador/tablet, me interesa solo el Sistema ($70.000/mes)
+                  </option>
+                </select>
               </div>
             </div>
 
             <button onClick={sendToPersonalWhatsApp}
                className="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black py-3.5 px-5 rounded-xl flex items-center justify-center gap-2 text-sm shadow-lg shadow-emerald-500/25 transition">
-              <span>Hablar con la Ingeniera en WhatsApp</span>
+              <span>Continuar al WhatsApp de la Ingeniera →</span>
             </button>
           </div>
         </div>
